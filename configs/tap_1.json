@@ -1,0 +1,52 @@
+{
+  "input_pdf": "../input/Tap-1_Bia-Hau-the-ki-XVII_760-trang.pdf",
+  "output_jsonl": "../output/tap_1.jsonl",
+  "glyph_profile": "../data/glyph_profiles/tap_1.json",
+  "title_pattern": "^VĂN BIA SỐ\\s+(?P<number>\\d+)\\s*$",
+  "content_start": "Nguyên văn chữ Hán Nôm",
+  "content_sections": [
+    "Nguyên văn chữ Hán Nôm",
+    "Phiên âm Hán Việt",
+    "Dịch nghĩa",
+    "Toát yếu",
+    "Chú thích"
+  ],
+  "marker_pattern": "^\\s*<\\s*(?P<id>\\d+)\\s*>?\\s*(?P<rest>.*)$",
+  "encoded_fonts": [
+    "PalatinoLinotype",
+    "NomNaTong",
+    "PMingLiU"
+  ],
+  "page_margins": {
+    "top": 40,
+    "bottom": 45
+  },
+  "expected_record_count": 100,
+  "require_consecutive_numbers": true,
+  "metadata": [
+    {
+      "label": "Tên bia",
+      "field": "ten_bia",
+      "type": "string",
+      "required": true
+    },
+    {
+      "label": "Địa điểm",
+      "field": "dia_diem",
+      "type": "string",
+      "required": true
+    },
+    {
+      "label": "Niên đại",
+      "field": "nien_dai",
+      "type": "string",
+      "required": true
+    },
+    {
+      "label": "Kí hiệu VNCHN",
+      "field": "ky_hieu_vnchn",
+      "type": "identifiers",
+      "required": true
+    }
+  ]
+}

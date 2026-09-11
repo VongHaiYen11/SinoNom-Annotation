@@ -44,8 +44,8 @@ def rasterize(commands: str) -> bytes:
     return document[0].get_pixmap(colorspace=pymupdf.csGRAY, alpha=False).samples
 
 
-def signature(pixels: bytes) -> str:
-    return hashlib.sha256(pixels).hexdigest()[:24]
+def signature(commands: str) -> str:
+    return hashlib.sha256(commands.encode("utf-8")).hexdigest()[:24]
 
 
 def glyph_bounds(glyph, glyph_set=None, scale: float = 1):
@@ -61,6 +61,10 @@ def bounds_distance(left, right) -> float:
 
 
 def unicode_priority(codepoint: int):
+    # Palatino maps Latin capital Eth and Vietnamese D with stroke to the same
+    # outline. This corpus is Vietnamese, so prefer the Vietnamese code point.
+    if codepoint in {0x0110, 0x0111}:
+        return -1, codepoint
     if 0x4E00 <= codepoint <= 0x9FFF:
         return 0, codepoint
     if 0x3400 <= codepoint <= 0x4DBF:
@@ -98,8 +102,9 @@ def match_subset(
 
     for name in top.charset[1:]:
         glyph = top.CharStrings[name]
-        pixels = rasterize(glyph_commands(glyph))
-        digest = signature(pixels)
+        commands = glyph_commands(glyph)
+        pixels = rasterize(commands)
+        digest = signature(commands)
         if digest in profile:
             continue
         if glyph_bounds(glyph) is None:
@@ -143,18 +148,12 @@ def match_nomna(document: pymupdf.Document, reference_path: Path, profile: dict[
         }
     )
     reference_pixels: dict[str, bytes] = {}
-    command_signatures: dict[str, str] = {}
     for xref in xrefs:
         top = cff_top(document, xref)
         for name in top.charset[1:]:
             glyph = top.CharStrings[name]
             commands = glyph_commands(glyph)
-            digest = command_signatures.get(commands)
-            if digest is not None:
-                continue
-            pixels = rasterize(commands)
-            digest = signature(pixels)
-            command_signatures[commands] = digest
+            digest = signature(commands)
             if digest in profile:
                 continue
             bounds = glyph_bounds(glyph)
@@ -172,6 +171,10 @@ def match_nomna(document: pymupdf.Document, reference_path: Path, profile: dict[
                         if abs(item[2] - glyph.width) < 0.1
                     )[:30]
                 ]
+            if len(candidates) == 1:
+                profile[digest] = chr(candidates[0][0])
+                continue
+            pixels = rasterize(commands)
             ranked = []
             for codepoint, reference_name, _, _ in candidates:
                 if reference_name not in reference_pixels:
@@ -214,7 +217,23 @@ def main() -> None:
         match_subset(document, xref, path, profile, latin)
     match_nomna(document, args.nomna, profile)
     if args.pmingliu:
-        match_subset(document, 106, args.pmingliu, profile, lambda cp: 0x3000 <= cp <= 0x3134F, 1)
+        pmingliu_xrefs = sorted(
+            {
+                row[0]
+                for page_number in range(document.page_count)
+                for row in document.get_page_fonts(page_number, full=True)
+                if "PMingLiU" in row[3]
+            }
+        )
+        for xref in pmingliu_xrefs:
+            match_subset(
+                document,
+                xref,
+                args.pmingliu,
+                profile,
+                lambda cp: 0x3000 <= cp <= 0x3134F,
+                1,
+            )
 
     args.output.write_text(
         json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
