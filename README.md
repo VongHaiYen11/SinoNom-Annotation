@@ -23,19 +23,27 @@ uv sync --frozen
 
 ## Cấu trúc mã nguồn
 
-`extract_pdf.py` và `extract_support.py` là các façade tương thích cho CLI/caller
-cũ. Logic nằm trong package `extraction/` để mỗi phần có một trách nhiệm rõ ràng:
+`extract_pdf.py` là CLI chính, còn toàn bộ logic nằm trong package
+`extraction/`. Không còn module `extract_support.py` ở root; code mới import
+trực tiếp module có trách nhiệm phù hợp.
 
-- `models.py`: cấu hình, model dữ liệu, hằng số và lỗi miền.
-- `config.py`: đọc/kiểm tra config và glyph profile.
-- `text.py`: làm sạch Unicode và chuẩn hoá dòng.
-- `decoder.py`: đọc trang PDF, nhận diện font resource và giải mã CID glyph.
-- `records.py`: tách bản ghi, metadata, chuyên mục, marker và warnings.
-- `jsonl.py`: validate, serialize và atomic write.
-- `service.py`: nối decoder với parser thành `extract_document()`.
+| File | Vai trò |
+| --- | --- |
+| `extract_pdf.py` | CLI extract JSONL; điều phối config, extract, cleanup và ghi output. |
+| `export_searchable_pdf.py` | CLI tạo PDF mới có nền trang gốc và text layer Unicode vô hình. |
+| `extraction/models.py` | Dataclass (`ExtractConfig`, `TextLine`, …), hằng số mặc định và `ExtractionError`. |
+| `extraction/config.py` | Đọc/validate JSON config, resolve path và đọc glyph profile. |
+| `extraction/text.py` | Nhận diện Unicode lỗi, loại control/replacement character, chuẩn hoá dòng. |
+| `extraction/decoder.py` | Đọc raw PDF spans, font resource/CID, đối chiếu glyph profile và giữ toạ độ text. |
+| `extraction/records.py` | Tách tiêu đề văn bia, metadata, mặt bia, chuyên mục và tạo warning có ngữ cảnh. |
+| `extraction/jsonl.py` | Validate Unicode, JSONL compact, JSON review có indent, cleanup `van_ban`, atomic write. |
+| `extraction/service.py` | API `extract_document()` nối decoder và parser, không ghi file. |
+| `extraction/searchable_pdf.py` | Render nền PDF và nhúng Unicode text layer; kiểm tra coverage của font TTF. |
+| `tools/build_glyph_profiles.py` | Tạo ánh xạ `glyph signature → Unicode` từ PDF/font tham chiếu. |
+| `tools/extract_ttc_face.py` | Utility một lần để tách một face TTC thành TTF cho pipeline. |
 
-Import công khai cũ như `from extract_pdf import extract_document` hoặc
-`from extract_support import load_config` vẫn được hỗ trợ.
+Các hàm public và các hàm nội bộ có logic quan trọng đều có docstring ngay tại
+nguồn; docstring nêu input, trách nhiệm và lý do kiểm tra an toàn khi phù hợp.
 
 ## Workflow
 

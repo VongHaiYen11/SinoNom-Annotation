@@ -8,7 +8,8 @@ from typing import Any, Iterable
 
 import pymupdf
 
-from extract_support import ExtractionError, TextLine, clean_extracted_text, normalize_line
+from extraction.models import ExtractionError, TextLine
+from extraction.text import clean_extracted_text, normalize_line
 from tools.build_glyph_profiles import cff_top, glyph_commands, signature
 
 
@@ -29,6 +30,7 @@ class _FontRun:
 
 
 def _font_basename(name: str) -> str:
+    """Remove a PDF subset prefix and spaces from a font name."""
     return re.sub(r"^[A-Z]{6}\+", "", name).replace(" ", "")
 
 
@@ -47,6 +49,7 @@ class GlyphDecoder:
         self._font_maps: dict[int, dict[int, str]] = {}
 
     def _is_encoded(self, font_name: str) -> bool:
+        """Return whether this span needs CID outline decoding."""
         return any(token in font_name for token in self.encoded_fonts)
 
     def _page_fonts(self, page: pymupdf.Page) -> dict[str, tuple[_PageFont, ...]]:
@@ -141,6 +144,7 @@ class GlyphDecoder:
         return result
 
     def _build_font_map(self, xref: int) -> dict[int, str]:
+        """Map every CID of one embedded CFF font through the glyph profile."""
         top = cff_top(self.document, xref)
         result: dict[int, str] = {}
         for glyph_name in top.charset:
@@ -167,6 +171,7 @@ class GlyphDecoder:
         chars: list[dict[str, Any]] | None = None,
         font_runs: dict[tuple[str, float, float, int], list[_FontRun]] | None = None,
     ) -> str:
+        """Decode one raw PDF span while resolving subset-font ambiguity."""
         if not self._is_encoded(font_name):
             # Fonts such as TimesNewRoman use PyMuPDF's normal decoding, but
             # an unknown glyph may still arrive as U+0001 or another control.
@@ -296,6 +301,7 @@ class GlyphDecoder:
     def extract_lines(
         self, top_margin: float, bottom_margin: float
     ) -> list[TextLine]:
+        """Extract margin-filtered, position-preserving decoded lines."""
         output: list[TextLine] = []
         for page_index, page in enumerate(self.document):
             page_number = page_index + 1

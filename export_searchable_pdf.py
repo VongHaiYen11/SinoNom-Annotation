@@ -8,7 +8,8 @@ import sys
 from pathlib import Path
 
 from extraction.searchable_pdf import export_searchable_pdf
-from extract_support import ExtractionError, load_config
+from extraction.config import load_config
+from extraction.models import ExtractionError
 
 
 def _parse_pages(value: str | None) -> set[int] | None:

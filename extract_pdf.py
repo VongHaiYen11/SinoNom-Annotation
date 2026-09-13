@@ -10,20 +10,15 @@ from pathlib import Path
 from extraction.decoder import GlyphDecoder
 from extraction.records import parse_records
 from extraction.service import extract_document
-from extract_support import (
-    ExtractConfig,
-    ExtractionError,
-    MetadataSpec,
-    TextLine,
+from extraction.config import load_config, load_glyph_profile
+from extraction.jsonl import (
     atomic_write,
-    clean_extracted_text,
-    load_config,
-    load_glyph_profile,
-    normalize_line,
     prepare_records_for_output,
     serialize_jsonl,
     serialize_pretty_json,
 )
+from extraction.models import ExtractConfig, ExtractionError, MetadataSpec, TextLine
+from extraction.text import clean_extracted_text, normalize_line
 
 __all__ = [
     "ExtractConfig", "ExtractionError", "GlyphDecoder", "MetadataSpec",

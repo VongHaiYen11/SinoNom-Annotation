@@ -7,7 +7,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
-from extract_support import ExtractConfig, ExtractionError, MetadataSpec, TextLine
+from extraction.models import ExtractConfig, ExtractionError, MetadataSpec, TextLine
 
 
 @dataclass
@@ -31,6 +31,7 @@ class _FaceAccumulator:
         section.lines.append(text)
 
 def _label_key(text: str) -> str:
+    """Create an accent-insensitive key for tolerant heading matching."""
     decomposed = unicodedata.normalize("NFD", text.casefold()).replace("đ", "d")
     key = " ".join(
         "".join(char for char in decomposed if not unicodedata.combining(char)).split()
@@ -39,6 +40,7 @@ def _label_key(text: str) -> str:
 
 
 def _match_label(text: str, label: str) -> str | None:
+    """Match a heading and return its optional inline remainder."""
     escaped = re.escape(label.rstrip(":"))
     match = re.fullmatch(
         rf"{escaped}(?:\s*:\s*(.*)|\s+(.*)|\s*)", text
@@ -79,6 +81,7 @@ def _parse_content(
     record_number: int,
     warnings: list[str],
 ) -> list[dict[str, Any]]:
+    """Assign content lines to sections and face markers, retaining ambiguity."""
     marker_re = re.compile(config.marker_pattern)
     faces: dict[str | None, _FaceAccumulator] = {
         identifier: _FaceAccumulator(identifier) for identifier in identifiers
@@ -170,6 +173,7 @@ def _parse_record(
     config: ExtractConfig,
     warnings: list[str],
 ) -> dict[str, Any]:
+    """Build one inscription record from lines between two title headings."""
     values: dict[str, list[str]] = {spec.field: [] for spec in config.metadata}
     current_spec: MetadataSpec | None = None
     content_index: int | None = None
@@ -243,6 +247,7 @@ def _parse_record(
 def parse_records(
     lines: list[TextLine], config: ExtractConfig
 ) -> tuple[list[dict[str, Any]], list[str]]:
+    """Split ordered PDF lines into validated records and structural warnings."""
     title_re = re.compile(config.title_pattern)
     starts: list[tuple[int, int]] = []
     for index, line in enumerate(lines):

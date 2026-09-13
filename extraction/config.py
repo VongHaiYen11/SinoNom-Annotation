@@ -14,12 +14,14 @@ from extraction.models import (
 )
 
 def _require_string(value: Any, name: str) -> str:
+    """Validate a required non-blank string from configuration."""
     if not isinstance(value, str) or not value.strip():
         raise ExtractionError(f"Config field {name!r} must be a non-empty string")
     return value
 
 
 def _resolve_path(config_dir: Path, value: Any, name: str) -> Path:
+    """Resolve a configured path relative to its config file."""
     path = Path(_require_string(value, name)).expanduser()
     return path if path.is_absolute() else (config_dir / path).resolve()
 
@@ -112,6 +114,7 @@ def load_config(path: Path) -> ExtractConfig:
 
 
 def load_glyph_profile(path: Path) -> dict[str, str]:
+    """Read and validate the signature-to-Unicode glyph profile."""
     try:
         profile = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -121,5 +124,4 @@ def load_glyph_profile(path: Path) -> dict[str, str]:
     if not all(isinstance(key, str) and isinstance(value, str) for key, value in profile.items()):
         raise ExtractionError("Glyph profile entries must map strings to strings")
     return profile
-
 

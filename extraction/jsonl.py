@@ -14,6 +14,7 @@ from extraction.models import ExtractionError
 from extraction.text import is_invalid_text_character
 
 def validate_json_value(value: Any, location: str = "record") -> None:
+    """Recursively reject invalid Unicode before JSON serialization."""
     if isinstance(value, str):
         for char in value:
             if is_invalid_text_character(char) and char != "\n":
@@ -27,6 +28,7 @@ def validate_json_value(value: Any, location: str = "record") -> None:
 
 
 def serialize_jsonl(records: list[dict[str, Any]]) -> str:
+    """Serialize validated records as one compact JSON object per line."""
     _validate_records(records)
     return "".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records)
 
@@ -67,6 +69,7 @@ def prepare_records_for_output(
 
 
 def _validate_records(records: list[dict[str, Any]]) -> None:
+    """Validate record ordering and every nested JSON value."""
     for index, record in enumerate(records):
         if not record or next(reversed(record)) != "noi_dung":
             raise ExtractionError(f"Record {index} does not end with field 'noi_dung'")
@@ -74,6 +77,7 @@ def _validate_records(records: list[dict[str, Any]]) -> None:
 
 
 def atomic_write(path: Path, content: str) -> None:
+    """Write content atomically so a failed extraction preserves old output."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:

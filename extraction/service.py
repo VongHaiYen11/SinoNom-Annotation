@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pymupdf
 
-from extract_support import ExtractConfig, ExtractionError, load_glyph_profile
+from extraction.config import load_glyph_profile
+from extraction.models import ExtractConfig, ExtractionError
 from extraction.decoder import GlyphDecoder
 from extraction.records import parse_records
 
