@@ -6,6 +6,7 @@ New code should import the focused modules in :mod:`extraction` directly.
 from extraction.config import load_config, load_glyph_profile
 from extraction.jsonl import (
     atomic_write,
+    prepare_records_for_output,
     serialize_jsonl,
     serialize_pretty_json,
     validate_json_value,
@@ -17,5 +18,5 @@ __all__ = [
     "ExtractConfig", "ExtractionError", "MetadataSpec", "TextLine",
     "atomic_write", "clean_extracted_text", "is_invalid_text_character",
     "load_config", "load_glyph_profile", "normalize_line", "serialize_jsonl",
-    "serialize_pretty_json", "validate_json_value",
+    "serialize_pretty_json", "prepare_records_for_output", "validate_json_value",
 ]

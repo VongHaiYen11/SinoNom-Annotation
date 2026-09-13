@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,35 @@ def serialize_pretty_json(records: list[dict[str, Any]]) -> str:
     """Serialize records as indented JSON for human review, not JSONL."""
     _validate_records(records)
     return json.dumps(records, ensure_ascii=False, indent=2) + "\n"
+
+
+def prepare_records_for_output(
+    records: list[dict[str, Any]],
+    content_layout: str = "preserve",
+    strip_literal_backslashes: bool = False,
+) -> list[dict[str, Any]]:
+    """Return a copy with optional display-oriented cleanup of ``van_ban``.
+
+    ``preserve`` keeps source line breaks. ``space`` joins PDF line breaks into
+    spaces. A literal backslash is distinct from JSON's escaped representation
+    of a newline and is removed only when explicitly requested.
+    """
+    if content_layout not in {"preserve", "space"}:
+        raise ExtractionError("content_layout must be 'preserve' or 'space'")
+    prepared = deepcopy(records)
+    for record in prepared:
+        for face in record.get("noi_dung", []):
+            for section in face.get("chuyen_muc", []):
+                text = section.get("van_ban")
+                if not isinstance(text, str):
+                    continue
+                if content_layout == "space":
+                    text = re.sub(r"\s*\n\s*", " ", text)
+                    text = re.sub(r" {2,}", " ", text).strip()
+                if strip_literal_backslashes:
+                    text = text.replace("\\", "")
+                section["van_ban"] = text
+    return prepared
 
 
 def _validate_records(records: list[dict[str, Any]]) -> None:

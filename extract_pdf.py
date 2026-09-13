@@ -20,6 +20,7 @@ from extract_support import (
     load_config,
     load_glyph_profile,
     normalize_line,
+    prepare_records_for_output,
     serialize_jsonl,
     serialize_pretty_json,
 )
@@ -28,7 +29,7 @@ __all__ = [
     "ExtractConfig", "ExtractionError", "GlyphDecoder", "MetadataSpec",
     "TextLine", "atomic_write", "clean_extracted_text", "extract_document",
     "load_config", "load_glyph_profile", "normalize_line", "parse_records",
-    "serialize_jsonl", "serialize_pretty_json",
+    "prepare_records_for_output", "serialize_jsonl", "serialize_pretty_json",
 ]
 
 
@@ -42,14 +43,28 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="Optional indented JSON file for manual review; JSONL remains unchanged.",
     )
+    parser.add_argument(
+        "--content-layout",
+        choices=("preserve", "space"),
+        default="preserve",
+        help="Keep PDF line breaks or replace them with spaces in van_ban.",
+    )
+    parser.add_argument(
+        "--strip-literal-backslashes",
+        action="store_true",
+        help="Remove actual U+005C backslashes from van_ban; does not target JSON escapes.",
+    )
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
         records, warnings = extract_document(config)
-        payload = serialize_jsonl(records)
+        output_records = prepare_records_for_output(
+            records, args.content_layout, args.strip_literal_backslashes
+        )
+        payload = serialize_jsonl(output_records)
         atomic_write(config.output_jsonl, payload)
         if args.pretty_output is not None:
-            atomic_write(args.pretty_output, serialize_pretty_json(records))
+            atomic_write(args.pretty_output, serialize_pretty_json(output_records))
     except ExtractionError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

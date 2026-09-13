@@ -15,6 +15,7 @@ from extract_pdf import (
     clean_extracted_text,
     normalize_line,
     parse_records,
+    prepare_records_for_output,
     serialize_jsonl,
     serialize_pretty_json,
 )
@@ -193,6 +194,21 @@ class ParserTests(unittest.TestCase):
         self.assertIn('\n    "so_van_bia": 1,', pretty)
         with self.assertRaisesRegex(ExtractionError, "U\+FFFD"):
             serialize_jsonl([{"noi_dung": "bad\ufffdtext"}])
+
+    def test_output_cleanup_is_explicit_and_only_changes_content(self) -> None:
+        records = [{
+            "so_van_bia": 1,
+            "ten_bia": "Tên\\bia",
+            "noi_dung": [{"ky_hieu": "1", "chuyen_muc": [{
+                "tieu_de": "Nguyên văn chữ Hán Nôm",
+                "van_ban": "Dòng một\\\nDòng hai\\thừa",
+            }]}],
+        }]
+
+        cleaned = prepare_records_for_output(records, "space", True)
+        self.assertEqual("Dòng một Dòng haithừa", cleaned[0]["noi_dung"][0]["chuyen_muc"][0]["van_ban"])
+        self.assertEqual("Tên\\bia", cleaned[0]["ten_bia"])
+        self.assertEqual("Dòng một\\\nDòng hai\\thừa", records[0]["noi_dung"][0]["chuyen_muc"][0]["van_ban"])
 
     def test_atomic_write_replaces_complete_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

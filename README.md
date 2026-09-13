@@ -211,6 +211,23 @@ uv run python extract_pdf.py \
 `output_jsonl` vẫn là JSONL chuẩn (một record một dòng). File `--pretty-output`
 là một JSON array có indent, thuận tiện mở bằng editor; không dùng nó như JSONL.
 
+Mặc định `van_ban` giữ line break do PDF. Khi cần file dễ đọc hoặc dễ so sánh,
+có thể gộp các line break thành khoảng trắng và bỏ ký tự backslash thật sự:
+
+```bash
+uv run python extract_pdf.py \
+  --config configs/tap_1.json \
+  --pretty-output output/tap_1_review.json \
+  --content-layout space \
+  --strip-literal-backslashes
+```
+
+`--content-layout preserve` (mặc định) giữ `\n`; `space` thay newline trong
+`van_ban` bằng khoảng trắng. `--strip-literal-backslashes` chỉ bỏ ký tự `\\`
+thật sự trong nội dung; `\n` hiển thị trong JSON là cách JSON mã hoá newline,
+không phải backslash cần xoá. Dùng các cờ này chỉ khi cần bản review/cleaned
+output, vì chúng thay đổi cách trình bày văn bản gốc.
+
 Các bước nội bộ:
 
 1. Đọc raw text, font và toạ độ từng span bằng PyMuPDF; bỏ phần đầu/cuối trang
