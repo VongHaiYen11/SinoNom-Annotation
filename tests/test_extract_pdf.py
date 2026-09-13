@@ -8,9 +8,12 @@ from pathlib import Path
 from extract_pdf import (
     ExtractConfig,
     ExtractionError,
+    GlyphDecoder,
     MetadataSpec,
     TextLine,
     atomic_write,
+    clean_extracted_text,
+    normalize_line,
     parse_records,
     serialize_jsonl,
 )
@@ -38,6 +41,23 @@ def config(**overrides) -> ExtractConfig:
 
 
 class ParserTests(unittest.TestCase):
+    def test_pdf_control_characters_are_removed_before_serialization(self) -> None:
+        # TimesNewRoman is intentionally not in encoded_fonts, so it takes
+        # the PyMuPDF fallback path that previously returned U+0001 unchanged.
+        decoder = GlyphDecoder.__new__(GlyphDecoder)
+        decoder.encoded_fonts = ("NomNaTong",)
+        fallback = decoder.decode_span(
+            "Times\x01New\ufffdRoman", "TimesNewRoman", {}, 1
+        )
+
+        self.assertEqual("TimesNewRoman", fallback)
+        self.assertEqual("AB", clean_extracted_text("A\x01B\ufffd"))
+        self.assertEqual("AB", normalize_line("A\x01B\ufffd"))
+        self.assertEqual(
+            '{"noi_dung":"TimesNewRoman"}\n',
+            serialize_jsonl([{"noi_dung": fallback}]),
+        )
+
     def test_metadata_faces_sections_and_missing_closing_bracket(self) -> None:
         source = [
             line("VĂN BIA SỐ 1"),
@@ -76,7 +96,10 @@ class ParserTests(unittest.TestCase):
             [item["tieu_de"] for item in first_sections],
         )
         self.assertEqual("Phiên âm hai", record["noi_dung"][1]["chuyen_muc"][1]["van_ban"])
-        self.assertIn("không tìm thấy nội dung cho <4351>", "\n".join(warnings))
+        self.assertIn(
+            "metadata khai báo marker <4351> nhưng không có dòng nội dung nào",
+            "\n".join(warnings),
+        )
 
     def test_unmarked_content_is_preserved_and_warned(self) -> None:
         source = [
@@ -98,7 +121,27 @@ class ParserTests(unittest.TestCase):
             "Đoạn chưa có marker",
             records[0]["noi_dung"][-1]["chuyen_muc"][0]["van_ban"],
         )
-        self.assertTrue(any("không thuộc marker" in item for item in warnings))
+        warning = next(item for item in warnings if "không thuộc marker" in item)
+        self.assertIn("trang 1", warning)
+        self.assertIn("Nội dung chưa gán: 'Đoạn chưa có marker'", warning)
+
+    def test_unknown_marker_warning_includes_source_and_metadata(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1"),
+            line("Tên bia: A"),
+            line("Địa điểm: B"),
+            line("Niên đại: C"),
+            line("Kí hiệu VNCHN: <10>"),
+            line("Nguyên văn chữ Hán Nôm:"),
+            line("<11> Nội dung ngoài metadata", page=7),
+        ]
+
+        _, warnings = parse_records(source, config())
+
+        warning = next(item for item in warnings if "<11> không có" in item)
+        self.assertIn("danh sách marker metadata: <10>", warning)
+        self.assertIn("trang 7", warning)
+        self.assertIn("dòng: '<11> Nội dung ngoài metadata'", warning)
 
     def test_abbreviated_and_accent_variant_labels(self) -> None:
         source = [
