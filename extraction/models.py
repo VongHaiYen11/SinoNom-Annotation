@@ -54,4 +54,6 @@ class TextLine:
     text: str
     page_number: int
     y0: float = 0.0
-
+    x0: float = 0.0
+    y1: float = 0.0
+    font_size: float = 0.0

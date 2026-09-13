@@ -1,7 +1,5 @@
-"""Components for deterministic Vietnamica PDF extraction."""
+"""Components for deterministic Vietnamica PDF extraction.
 
-from .decoder import GlyphDecoder
-from .records import parse_records
-from .service import extract_document
-
-__all__ = ["GlyphDecoder", "extract_document", "parse_records"]
+Import from focused submodules (for example ``extraction.decoder``) to avoid
+loading the PDF stack when only configuration helpers are needed.
+"""

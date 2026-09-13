@@ -25,11 +25,21 @@ def validate_json_value(value: Any, location: str = "record") -> None:
 
 
 def serialize_jsonl(records: list[dict[str, Any]]) -> str:
+    _validate_records(records)
+    return "".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records)
+
+
+def serialize_pretty_json(records: list[dict[str, Any]]) -> str:
+    """Serialize records as indented JSON for human review, not JSONL."""
+    _validate_records(records)
+    return json.dumps(records, ensure_ascii=False, indent=2) + "\n"
+
+
+def _validate_records(records: list[dict[str, Any]]) -> None:
     for index, record in enumerate(records):
         if not record or next(reversed(record)) != "noi_dung":
             raise ExtractionError(f"Record {index} does not end with field 'noi_dung'")
         validate_json_value(record, f"record[{index}]")
-    return "".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records)
 
 
 def atomic_write(path: Path, content: str) -> None:

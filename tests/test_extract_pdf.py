@@ -16,6 +16,7 @@ from extract_pdf import (
     normalize_line,
     parse_records,
     serialize_jsonl,
+    serialize_pretty_json,
 )
 
 
@@ -187,6 +188,9 @@ class ParserTests(unittest.TestCase):
             ["so_van_bia", "ten_bia", "noi_dung"],
             list(json.loads(first).keys()),
         )
+        pretty = serialize_pretty_json([record])
+        self.assertEqual([record], json.loads(pretty))
+        self.assertIn('\n    "so_van_bia": 1,', pretty)
         with self.assertRaisesRegex(ExtractionError, "U\+FFFD"):
             serialize_jsonl([{"noi_dung": "bad\ufffdtext"}])
 

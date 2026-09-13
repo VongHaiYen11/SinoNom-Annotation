@@ -68,12 +68,21 @@ uv run python tools/build_glyph_profiles.py \
   --palatino-bold fonts/reference/Palatino-Bold.ttf \
   --palatino-italic fonts/reference/Palatino-Italic.ttf \
   --palatino-bold-italic fonts/reference/Palatino-BoldItalic.ttf \
-  --pmingliu fonts/reference/PMingLiU-ExtB.ttc \
+  --pmingliu fonts/reference/PMingLiU-ExtB.ttf \
   --output data/glyph_profiles/tap_1.json
 ```
 
 `--pmingliu` chỉ cần khi font này có trong PDF. Font tham chiếu nằm tại
 `fonts/reference/` và không được Git theo dõi vì có thể bị giới hạn giấy phép.
+Nếu chỉ có bản collection `.ttc`, tạo TTF một lần rồi dùng TTF đó cho toàn bộ
+pipeline:
+
+```bash
+uv run python tools/extract_ttc_face.py \
+  --input fonts/reference/PMingLiU-ExtB.ttc \
+  --font-number 1 \
+  --output fonts/reference/PMingLiU-ExtB.ttf
+```
 
 #### Cách so sánh glyph hoạt động
 
@@ -145,11 +154,62 @@ viewer sẽ copy cả mapping cũ lẫn mapping mới, gây ký tự lặp hoặ
 character. Nếu bạn muốn triển khai, hướng 1 có thể được thêm thành một command
 riêng (ví dụ `export_searchable_pdf.py`) với output mới, không sửa PDF gốc.
 
+### Xuất PDF có thể search/copy Unicode
+
+`export_searchable_pdf.py` tạo PDF mới: mỗi trang gốc được render làm nền, sau
+đó text đã decode được nhúng vô hình ở toạ độ tương ứng. PDF nguồn không bị sửa.
+
+```bash
+uv run python export_searchable_pdf.py \
+  --config configs/tap_1.json \
+  --output output/tap_1_searchable.pdf \
+  --font fonts/reference/NomNaTong.ttf \
+  --font fonts/reference/PMingLiU-ExtB.ttf \
+  --font fonts/reference/Palatino-Regular.ttf \
+  --dpi 150
+```
+
+`--font` có thể lặp lại: exporter chọn font đầu tiên có glyph tương ứng. Với tập
+mẫu, NomNaTong bao phủ tiếng Việt và phần lớn Hán Nôm; PMingLiU-ExtB là fallback
+cho Hán tự mở rộng; Palatino bổ sung dấu câu như `U+2012`. Exporter chỉ nhận TTF
+và dừng trước khi ghi output nếu bất kỳ ký tự nào không có trong các font đã đưa
+vào, để tránh tạo lớp copy/search bị mất chữ.
+
+`--dpi` quyết định chất lượng nền ảnh và dung lượng file; `150` phù hợp để đọc,
+`300` phù hợp hơn để in nhưng file lớn hơn nhiều. Có thể kiểm tra nhanh một số
+trang trước khi xuất cả volume:
+
+```bash
+uv run python export_searchable_pdf.py \
+  --config configs/tap_1.json \
+  --output /private/tmp/tap_1_qa.pdf \
+  --font fonts/reference/NomNaTong.ttf \
+  --font fonts/reference/PMingLiU-ExtB.ttf \
+  --font fonts/reference/Palatino-Regular.ttf \
+  --dpi 100 \
+  --pages 5,121-122
+```
+
+`--pages` chỉ dành cho QA và tạo PDF chứa đúng các trang được chỉ định; bỏ tham
+số này để xuất toàn bộ PDF. Sau khi export, kiểm tra bằng một PDF viewer: tìm một
+cụm Hán Nôm/Vietnamese, chọn text qua nhiều dòng rồi copy sang editor Unicode.
+
 ### 3. Trích xuất PDF
 
 ```bash
 uv run python extract_pdf.py --config configs/tap_1.json
 ```
+
+Giữ JSONL cho pipeline và tạo thêm JSON có xuống dòng để kiểm tra thủ công:
+
+```bash
+uv run python extract_pdf.py \
+  --config configs/tap_1.json \
+  --pretty-output output/tap_1_review.json
+```
+
+`output_jsonl` vẫn là JSONL chuẩn (một record một dòng). File `--pretty-output`
+là một JSON array có indent, thuận tiện mở bằng editor; không dùng nó như JSONL.
 
 Các bước nội bộ:
 

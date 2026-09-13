@@ -301,7 +301,7 @@ class GlyphDecoder:
             page_number = page_index + 1
             fonts = self._page_fonts(page)
             font_runs = self._page_font_runs(page, fonts)
-            page_lines: list[tuple[float, float, str]] = []
+            page_lines: list[tuple[float, float, float, float, str]] = []
             raw = page.get_text("rawdict", sort=True)
             for block in raw["blocks"]:
                 for line in block.get("lines", []):
@@ -329,10 +329,18 @@ class GlyphDecoder:
                     text = normalize_line("".join(pieces))
                     if text:
                         x0 = min(span["bbox"][0] for span in spans)
-                        page_lines.append((y0, x0, text))
+                        font_size = max(float(span["size"]) for span in spans)
+                        page_lines.append((y0, x0, y1, font_size, text))
             page_lines.sort(key=lambda item: (round(item[0], 2), item[1]))
             output.extend(
-                TextLine(text=text, page_number=page_number, y0=y0)
-                for y0, _, text in page_lines
+                TextLine(
+                    text=text,
+                    page_number=page_number,
+                    y0=y0,
+                    x0=x0,
+                    y1=y1,
+                    font_size=font_size,
+                )
+                for y0, x0, y1, font_size, text in page_lines
             )
         return output

@@ -199,7 +199,11 @@ def main() -> None:
     parser.add_argument("--palatino-bold", required=True, type=Path)
     parser.add_argument("--palatino-italic", required=True, type=Path)
     parser.add_argument("--palatino-bold-italic", required=True, type=Path)
-    parser.add_argument("--pmingliu", type=Path)
+    parser.add_argument(
+        "--pmingliu",
+        type=Path,
+        help="Standalone PMingLiU-ExtB TTF (extract TTC face 1 first if needed)",
+    )
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
@@ -232,7 +236,6 @@ def main() -> None:
                 args.pmingliu,
                 profile,
                 lambda cp: 0x3000 <= cp <= 0x3134F,
-                1,
             )
 
     args.output.write_text(

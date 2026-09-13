@@ -180,7 +180,14 @@ def _parse_record(
             content_index = index + 1
             if content_remainder:
                 lines = lines[: index + 1] + [
-                    TextLine(content_remainder, line.page_number, line.y0)
+                    TextLine(
+                        content_remainder,
+                        line.page_number,
+                        line.y0,
+                        line.x0,
+                        line.y1,
+                        line.font_size,
+                    )
                 ] + lines[index + 1 :]
             break
         matched_spec: MetadataSpec | None = None
