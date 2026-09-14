@@ -15,6 +15,84 @@ hoặc glyph không giải mã được. Chương trình dừng khi dữ liệu 
 an toàn; các bất thường về cấu trúc nhưng còn bảo toàn được dữ liệu sẽ được in ra
 thành `warning` để người dùng đối chiếu PDF.
 
+## Flow: xử lý PDF không copy được chữ
+
+Áp dụng flow này khi mở PDF thấy chữ bình thường nhưng chọn/copy ra ký tự lạ,
+trống, `U+0001` hoặc `�`. Nguyên nhân thường là font CID subset không có bảng
+`ToUnicode` đáng tin cậy: PDF biết cách vẽ glyph nhưng không biết glyph đó là mã
+Unicode nào.
+
+```text
+PDF nguồn không copy được
+        │
+        ├─► 1. Kiểm tra font nhúng và raw text/CID
+        │       └─ Có ToUnicode đúng? Có thể extract Unicode trực tiếp.
+        │       └─ Không/sai ToUnicode? Dùng glyph-profile flow bên dưới.
+        │
+        ├─► 2. Chuẩn bị font tham chiếu TTF có Unicode
+        │       └─ NomNaTong: Nôm/tiếng Việt; PMingLiU-ExtB: Hán tự mở rộng;
+        │          Palatino: Latin và dấu câu.
+        │
+        ├─► 3. Tạo glyph profile
+        │       └─ Outline glyph PDF + outline font tham chiếu
+        │          → signature → Unicode.
+        │
+        ├─► 4. Extract PDF theo config
+        │       └─ CID → glyph signature → Unicode → line/marker/section
+        │          → JSONL + warning/error có ngữ cảnh.
+        │
+        ├─► 5. Review và sửa dữ liệu nguồn/config nếu cần
+        │       └─ Kiểm tra missing signature, marker sai, marker thiếu,
+        │          control character và các warning cấu trúc.
+        │
+        └─► 6. Tuỳ chọn: export searchable PDF mới
+                └─ Render trang gốc làm nền + Unicode text layer vô hình
+                   → mở PDF có thể search/copy Unicode.
+```
+
+Các đầu ra được tách riêng để không làm mất PDF gốc:
+
+| Đầu ra | Mục đích |
+| --- | --- |
+| `data/glyph_profiles/*.json` | Bảng ánh xạ xác định glyph outline sang Unicode. |
+| `output/*.jsonl` | Dữ liệu máy đọc được, mỗi văn bia một JSON object trên một dòng. |
+| `output/*_review.json` | Bản JSON có indent để con người kiểm tra. |
+| `output/*_searchable.pdf` | PDF mới để search/copy; PDF đầu vào không bị sửa. |
+
+## Vì sao cần font reference?
+
+Font subset nhúng trong PDF thường chỉ đủ để **vẽ** chữ: nó chứa glyph outline
+nhưng tên glyph là CID cục bộ như `cid123`, không phải `U+4E00` hay `U+1EA1`.
+Khi bảng `ToUnicode` thiếu hoặc sai, không thể suy ra Unicode chỉ từ PDF. Font
+reference là bản font có `cmap` chuẩn, cung cấp quan hệ `Unicode → glyph` để
+so sánh outline và đảo chiều thành `glyph PDF → Unicode`.
+
+Reference font không được dùng để thay đổi hình ảnh của JSONL hoặc PDF nguồn.
+Nó chỉ có hai vai trò:
+
+1. **Tạo glyph profile:** đối chiếu outline của glyph subset với outline trong
+   font reference để tạo `signature → Unicode`.
+2. **Xuất searchable PDF:** nhúng font Unicode mới trong text layer vô hình để
+   viewer có thể search/copy chữ đã decode.
+
+| Font reference trong `fonts/reference/` | Dùng ở đâu | Vai trò |
+| --- | --- | --- |
+| `NomNaTong.ttf` | `tools/build_glyph_profiles.py`, `export_searchable_pdf.py` | Nguồn chính cho chữ Nôm, Hán Nôm và tiếng Việt; ưu tiên đầu tiên trong lớp Unicode. |
+| `Palatino-Regular.ttf` | `tools/build_glyph_profiles.py`, `export_searchable_pdf.py` | Đối chiếu Palatino Latin thường; fallback cho Latin/dấu câu, gồm một số ký tự như `U+2012`. |
+| `Palatino-Bold.ttf` | `tools/build_glyph_profiles.py` | Đối chiếu glyph của subset Palatino bold trong PDF. |
+| `Palatino-Italic.ttf` | `tools/build_glyph_profiles.py` | Đối chiếu glyph của subset Palatino italic trong PDF. |
+| `Palatino-BoldItalic.ttf` | `tools/build_glyph_profiles.py` | Đối chiếu glyph của subset Palatino bold-italic trong PDF. |
+| `PMingLiU-ExtB.ttf` | `tools/build_glyph_profiles.py`, `export_searchable_pdf.py` | Bổ sung Hán tự mở rộng mà NomNaTong không có; fallback thứ hai trong lớp Unicode. |
+| `PMingLiU-ExtB.ttc` | Chỉ là nguồn để chạy `tools/extract_ttc_face.py` một lần | Không dùng trực tiếp trong pipeline; face `1` được tách thành `PMingLiU-ExtB.ttf`. |
+
+Thứ tự `--font` trong lệnh export có ý nghĩa: exporter chọn font **đầu tiên**
+có glyph cho ký tự đó. Dùng theo thứ tự `NomNaTong → PMingLiU-ExtB → Palatino`
+để ưu tiên glyph phù hợp corpus trước, rồi mới dùng fallback.
+
+Các font reference có thể bị giới hạn giấy phép nên nằm local và không nên được
+commit vào Git. Khi thay font reference, phải tạo lại glyph profile và chạy test
+trên PDF tương ứng; cùng một Unicode có thể có outline khác giữa các font.
+
 ## Cài đặt
 
 ```bash
