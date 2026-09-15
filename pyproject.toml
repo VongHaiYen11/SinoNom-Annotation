@@ -6,5 +6,6 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "fonttools==4.65.0",
+    "pillow>=12.3.0",
     "pymupdf==1.28.2",
 ]
