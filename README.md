@@ -532,3 +532,8 @@ uv run python -m unittest discover -s tests -v
 ```
 
 Integration test sẽ chạy khi PDF mẫu và glyph profile tương ứng đã có. Nếu thiếu dữ liệu test bên ngoài, test đó có thể được bỏ qua.
+
+# To-do
+* [ ] Phân loại font theo PDF font resource: font TrueType dùng trực tiếp Unicode từ PyMuPDF, font CID/Type0 giải mã thông qua `glyph_profile`.
+* [ ] Rà soát toàn bộ font resource trong PDF và đảm bảo các font CID có `glyph_profile` tương ứng.
+* [ ] Xem lại các trường hợp kí tự có mã unicode đặc biệt có thể gây lỗi (lúc trước bỏ qua thẳng).
