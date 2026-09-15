@@ -299,10 +299,24 @@ class GlyphDecoder:
         return clean_extracted_text("".join(decoded))
 
     def extract_lines(
-        self, top_margin: float, bottom_margin: float
+        self,
+        top_margin: float,
+        bottom_margin: float,
+        footnote_start_pattern: str | None = None,
+        footnote_min_y: float = 0.0,
+        footnote_max_font_size: float | None = None,
     ) -> list[TextLine]:
-        """Extract margin-filtered, position-preserving decoded lines."""
+        """Extract decoded lines, optionally dropping footnotes at each page end.
+
+        A footnote starts at the first line matching ``footnote_start_pattern``
+        at or below ``footnote_min_y`` or rendered no larger than
+        ``footnote_max_font_size``; that line and every later line on that page
+        are excluded.  The guards prevent ordinary numbered body text from
+        becoming a false footnote marker, while still handling image-only pages
+        where a footnote begins above the usual bottom region.
+        """
         output: list[TextLine] = []
+        footnote_re = re.compile(footnote_start_pattern) if footnote_start_pattern else None
         for page_index, page in enumerate(self.document):
             page_number = page_index + 1
             fonts = self._page_fonts(page)
@@ -338,6 +352,23 @@ class GlyphDecoder:
                         font_size = max(float(span["size"]) for span in spans)
                         page_lines.append((y0, x0, y1, font_size, text))
             page_lines.sort(key=lambda item: (round(item[0], 2), item[1]))
+            if footnote_re is not None:
+                first_footnote = next(
+                    (
+                        index
+                        for index, (y0, _, _, font_size, text) in enumerate(page_lines)
+                        if footnote_re.search(text) and (
+                            y0 >= footnote_min_y
+                            or (
+                                footnote_max_font_size is not None
+                                and font_size <= footnote_max_font_size
+                            )
+                        )
+                    ),
+                    None,
+                )
+                if first_footnote is not None:
+                    page_lines = page_lines[:first_footnote]
             output.extend(
                 TextLine(
                     text=text,

@@ -79,6 +79,35 @@ def load_config(path: Path) -> ExtractConfig:
     if top_margin < 0 or bottom_margin < 0:
         raise ExtractionError("Page margins cannot be negative")
 
+    footnotes = raw.get("footnote_filter")
+    footnote_start_pattern: str | None = None
+    footnote_min_y = 0.0
+    footnote_max_font_size: float | None = None
+    if footnotes is not None:
+        if not isinstance(footnotes, dict):
+            raise ExtractionError("Config field 'footnote_filter' must be an object")
+        footnote_start_pattern = _require_string(
+            footnotes.get("start_pattern"), "footnote_filter.start_pattern"
+        )
+        try:
+            footnote_min_y = float(footnotes.get("min_y", 0))
+        except (TypeError, ValueError) as exc:
+            raise ExtractionError("footnote_filter.min_y must be a number") from exc
+        if footnote_min_y < 0:
+            raise ExtractionError("footnote_filter.min_y cannot be negative")
+        raw_max_font_size = footnotes.get("max_font_size")
+        if raw_max_font_size is not None:
+            try:
+                footnote_max_font_size = float(raw_max_font_size)
+            except (TypeError, ValueError) as exc:
+                raise ExtractionError("footnote_filter.max_font_size must be a number") from exc
+            if footnote_max_font_size <= 0:
+                raise ExtractionError("footnote_filter.max_font_size must be positive")
+        try:
+            re.compile(footnote_start_pattern)
+        except re.error as exc:
+            raise ExtractionError(f"Invalid footnote_filter.start_pattern: {exc}") from exc
+
     expected = raw.get("expected_record_count")
     if expected is not None and (not isinstance(expected, int) or expected < 1):
         raise ExtractionError("expected_record_count must be a positive integer")
@@ -99,6 +128,9 @@ def load_config(path: Path) -> ExtractConfig:
         encoded_fonts=string_tuple("encoded_fonts", DEFAULT_ENCODED_FONTS),
         top_margin=top_margin,
         bottom_margin=bottom_margin,
+        footnote_start_pattern=footnote_start_pattern,
+        footnote_min_y=footnote_min_y,
+        footnote_max_font_size=footnote_max_font_size,
         expected_record_count=expected,
         require_consecutive_numbers=consecutive,
     )
@@ -124,4 +156,3 @@ def load_glyph_profile(path: Path) -> dict[str, str]:
     if not all(isinstance(key, str) and isinstance(value, str) for key, value in profile.items()):
         raise ExtractionError("Glyph profile entries must map strings to strings")
     return profile
-

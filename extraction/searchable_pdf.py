@@ -107,7 +107,13 @@ def export_searchable_pdf(
     source = pymupdf.open(config.input_pdf)
     try:
         decoder = GlyphDecoder(source, profile, config.encoded_fonts)
-        lines = decoder.extract_lines(config.top_margin, config.bottom_margin)
+        lines = decoder.extract_lines(
+            config.top_margin,
+            config.bottom_margin,
+            config.footnote_start_pattern,
+            config.footnote_min_y,
+            config.footnote_max_font_size,
+        )
         with tempfile.TemporaryDirectory(prefix="searchable-pdf-") as directory:
             fonts = [_load_unicode_font(font, Path(directory)) for font in unicode_fonts]
             by_page: dict[int, list[TextLine]] = defaultdict(list)

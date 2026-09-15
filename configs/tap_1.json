@@ -21,6 +21,11 @@
     "top": 40,
     "bottom": 45
   },
+  "footnote_filter": {
+    "start_pattern": "^\\d+\\s+",
+    "min_y": 560,
+    "max_font_size": 10.0
+  },
   "expected_record_count": 100,
   "require_consecutive_numbers": true,
   "metadata": [

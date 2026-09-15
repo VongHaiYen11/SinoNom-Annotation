@@ -244,10 +244,8 @@ def _parse_record(
     return record
 
 
-def parse_records(
-    lines: list[TextLine], config: ExtractConfig
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """Split ordered PDF lines into validated records and structural warnings."""
+def _record_starts(lines: list[TextLine], config: ExtractConfig) -> list[tuple[int, int]]:
+    """Find record heading positions without deciding whether their sequence is valid."""
     title_re = re.compile(config.title_pattern)
     starts: list[tuple[int, int]] = []
     for index, line in enumerate(lines):
@@ -256,24 +254,89 @@ def parse_records(
             starts.append((index, int(match.group("number"))))
     if not starts:
         raise ExtractionError("No inscription titles matched title_pattern")
+    return starts
 
+
+def _sequence_errors(starts: list[tuple[int, int]], config: ExtractConfig) -> list[str]:
+    """Return global title/record-count violations while preserving recoverable records."""
     numbers = [number for _, number in starts]
+    errors: list[str] = []
     if len(numbers) != len(set(numbers)):
-        raise ExtractionError(f"Duplicate inscription numbers: {numbers}")
+        errors.append(f"Duplicate inscription numbers: {numbers}")
     if config.require_consecutive_numbers:
         expected = list(range(numbers[0], numbers[0] + len(numbers)))
         if numbers != expected:
-            raise ExtractionError(
+            errors.append(
                 f"Inscription numbers are not consecutive: got {numbers}, expected {expected}"
             )
     if config.expected_record_count is not None and len(starts) != config.expected_record_count:
-        raise ExtractionError(
-            f"Expected {config.expected_record_count} records, found {len(starts)}"
-        )
+        errors.append(f"Expected {config.expected_record_count} records, found {len(starts)}")
+    return errors
+
+
+def _issue(
+    number: int | None,
+    record_lines: list[TextLine],
+    errors: list[str] | None = None,
+    warnings: list[str] | None = None,
+    record: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a reviewable JSON item for one malformed or warned record."""
+    item: dict[str, Any] = {
+        "so_van_bia": number,
+        "trang": sorted({line.page_number for line in record_lines}),
+        "loi": errors or [],
+        "canh_bao": warnings or [],
+    }
+    if record is not None:
+        item["van_bia"] = record
+    else:
+        item["du_lieu_nguon"] = [line.text for line in record_lines]
+    return item
+
+
+def parse_records_with_issues(
+    lines: list[TextLine], config: ExtractConfig
+) -> tuple[list[dict[str, Any]], list[str], list[dict[str, Any]]]:
+    """Parse every possible record and collect malformed data for JSON review.
+
+    A bad metadata block no longer prevents later inscriptions from being
+    extracted.  Structural warnings remain in the normal warning list and are
+    also attached to the matching record in ``issues``.
+    """
+    try:
+        starts = _record_starts(lines, config)
+    except ExtractionError as exc:
+        return [], [], [_issue(None, lines, errors=[str(exc)])]
 
     warnings: list[str] = []
-    records = []
+    issues: list[dict[str, Any]] = []
+    sequence_errors = _sequence_errors(starts, config)
+    if sequence_errors:
+        issues.append(_issue(None, [], errors=sequence_errors))
+    records: list[dict[str, Any]] = []
     for position, (start, number) in enumerate(starts):
         end = starts[position + 1][0] if position + 1 < len(starts) else len(lines)
-        records.append(_parse_record(number, lines[start + 1 : end], config, warnings))
+        record_lines = lines[start : end]
+        local_warnings: list[str] = []
+        try:
+            record = _parse_record(number, lines[start + 1 : end], config, local_warnings)
+        except ExtractionError as exc:
+            issues.append(_issue(number, record_lines, errors=[str(exc)]))
+            continue
+        records.append(record)
+        warnings.extend(item for item in local_warnings if item not in warnings)
+        if local_warnings:
+            issues.append(_issue(number, record_lines, warnings=local_warnings, record=record))
+    return records, warnings, issues
+
+
+def parse_records(
+    lines: list[TextLine], config: ExtractConfig
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Split records strictly, retaining the original API for library callers."""
+    records, warnings, issues = parse_records_with_issues(lines, config)
+    errors = [error for issue in issues for error in issue["loi"]]
+    if errors:
+        raise ExtractionError(errors[0])
     return records, warnings

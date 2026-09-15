@@ -19,6 +19,7 @@ from extract_pdf import (
     serialize_jsonl,
     serialize_pretty_json,
 )
+from extraction.records import parse_records_with_issues
 
 
 def line(text: str, page: int = 1) -> TextLine:
@@ -175,6 +176,30 @@ class ParserTests(unittest.TestCase):
         source = [line("VĂN BIA SỐ 1"), line("VĂN BIA SỐ 3")]
         with self.assertRaisesRegex(ExtractionError, "not consecutive"):
             parse_records(source, config(expected_record_count=None))
+
+    def test_malformed_record_is_collected_while_later_record_is_kept(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1", 3),
+            line("Tên bia: Thiếu phần nội dung", 3),
+            line("VĂN BIA SỐ 2", 4),
+            line("Tên bia: Hợp lệ", 4),
+            line("Địa điểm: A", 4),
+            line("Niên đại: B", 4),
+            line("Kí hiệu VNCHN: <20>", 4),
+            line("Nguyên văn chữ Hán Nôm:", 4),
+            line("<20> Nội dung", 4),
+        ]
+
+        records, warnings, issues = parse_records_with_issues(
+            source, config(expected_record_count=None)
+        )
+
+        self.assertEqual([2], [record["so_van_bia"] for record in records])
+        self.assertEqual([], warnings)
+        self.assertEqual(1, issues[0]["so_van_bia"])
+        self.assertEqual([3], issues[0]["trang"])
+        self.assertIn("thiếu mốc", issues[0]["loi"][0])
+        self.assertIn("Tên bia: Thiếu phần nội dung", issues[0]["du_lieu_nguon"])
 
     def test_jsonl_is_deterministic_and_content_is_last(self) -> None:
         record = {

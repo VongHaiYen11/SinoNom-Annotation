@@ -95,8 +95,37 @@ trên PDF tương ứng; cùng một Unicode có thể có outline khác giữa 
 
 ## Cài đặt
 
+Từ thư mục `Vietnamica-Alignment`, kiểm tra `uv` đã có sẵn:
+
+```bash
+uv --version
+```
+
+Nếu lệnh không tồn tại, cài `uv` theo hướng dẫn chính thức tại
+[docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/),
+rồi mở lại terminal. Dự án yêu cầu Python 3.10 trở lên; `uv` sẽ tự tạo môi
+trường `.venv` và dùng đúng phiên bản phụ thuộc được khoá trong `uv.lock`.
+
+Đồng bộ môi trường lần đầu hoặc sau khi kéo thay đổi mới:
+
 ```bash
 uv sync --frozen
+```
+
+`--frozen` không sửa `uv.lock`, nhờ đó mọi người dùng cùng phiên bản thư viện.
+Sau đó luôn chạy Python thông qua `uv run`; không cần tự kích hoạt `.venv`:
+
+```bash
+uv run python --version
+uv run python -m unittest discover -s tests -v
+```
+
+Ví dụ chạy trích xuất đầy đủ:
+
+```bash
+uv run python extract_pdf.py \
+  --config configs/tap_1.json \
+  --pretty-output output/tap_1_review.json
 ```
 
 ## Cấu trúc mã nguồn
@@ -325,7 +354,50 @@ Các bước nội bộ:
 4. Tách các văn bia theo tiêu đề; đọc metadata; sau mốc `content_start`, gán
    từng dòng vào chuyên mục và marker mặt bia.
 5. Kiểm tra cấu trúc, kiểm tra Unicode lần cuối, rồi ghi JSONL UTF-8 theo kiểu
-   atomic write để không tạo file đầu ra dở dang.
+atomic write để không tạo file đầu ra dở dang.
+
+Mỗi lần chạy `extract_pdf.py` cũng ghi `output/<tên>_invalid.json` (hoặc đường
+dẫn `--issues-output`). File này chứa các bản ghi không parse được, phần nguồn
+liên quan, và các bản ghi có warning cấu trúc. Các bản ghi đó mặc định không có
+trong JSONL chính; dùng `--keep-flagged-records` nếu muốn giữ chúng ở cả hai
+nơi.
+
+Để bỏ chú thích cuối trang trước khi parser xem chúng là nội dung văn bia, cấu
+hình có thể khai báo mốc số chú thích và toạ độ tối thiểu. Với tập 1, chú thích
+bắt đầu bằng `1 ` / `2 ` ở vùng `y >= 560`, nên cấu hình là:
+
+```json
+"footnote_filter": {
+  "start_pattern": "^\\d+\\s+",
+  "min_y": 560,
+  "max_font_size": 10.0
+}
+```
+
+Từ dòng khớp đầu tiên đến cuối trang sẽ bị bỏ. Điều kiện `min_y` rất quan trọng
+để một số thứ tự trong thân văn bản không bị hiểu nhầm là chú thích.
+`max_font_size` xử lý trang chỉ có ảnh/thác bản: chú thích có thể bắt đầu cao
+hơn cuối trang, nhưng vẫn dùng cỡ chữ nhỏ hơn thân văn bản (tập 1: `10.0` so
+với `10.6`).
+
+### Lọc văn bia có ký tự font không hỗ trợ
+
+Dùng công cụ này sau khi đã có JSON/JSONL để tìm các văn bia chứa ký tự không
+có glyph trong bất kỳ font tham chiếu nào. Đầu vào có thể là JSON review (mảng
+JSON) hoặc JSONL. Đầu ra giữ nguyên bản ghi gốc và thêm trường
+`unsupported_character`, ghi ký tự, mã Unicode, số lần gặp và đường dẫn trường.
+
+```bash
+uv run python tools/filter_unsupported_characters.py \
+  --input output/tap_1_review.json \
+  --output output/tap_1_unsupported_characters.json \
+  --font fonts/reference/NomNaTong.ttf \
+  --font fonts/reference/PMingLiU-ExtB.ttf \
+  --font fonts/reference/Palatino-Regular.ttf
+```
+
+Nếu `--output` kết thúc bằng `.jsonl`, công cụ sẽ ghi JSONL; các đuôi khác ghi
+mảng JSON có indent. Khoảng trắng không được coi là ký tự cần glyph.
 
 ### 4. Logic extract dữ liệu và tách trang
 
