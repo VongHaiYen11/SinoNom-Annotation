@@ -81,6 +81,7 @@ def unicode_priority(codepoint: int):
 
 
 def cff_top(document: pymupdf.Document, xref: int):
+    # PyMuPDF, hãy lấy font data được gắn với PDF object số 29
     font_bytes = document.extract_font(xref)[3]
     cff = CFFFontSet()
     cff.decompile(io.BytesIO(font_bytes), None)
@@ -123,6 +124,7 @@ def match_subset(
 
     reference_pixels: dict[str, bytes] = {}
 
+    # Lấy toàn bộ glyph trong font
     for name in top.charset[1:]:
         glyph = top.CharStrings[name]
         commands = glyph_commands(glyph)
@@ -227,6 +229,7 @@ def match_nomna(
         {
             row[0]
             for page_number in range(document.page_count)
+            # Nó trả về danh sách các font được sử dụng trên một page.
             for row in document.get_page_fonts(
                 page_number,
                 full=True,
