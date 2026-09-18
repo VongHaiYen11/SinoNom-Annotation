@@ -172,6 +172,21 @@ class ParserTests(unittest.TestCase):
             ],
         )
 
+    def test_eth_variant_of_vietnamese_d_matches_metadata_label(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1"),
+            line("Tên bia: A"),
+            line("Ðịa điểm: B"),
+            line("Niên đại: C"),
+            line("Kí hiệu VNCHN: <10>"),
+            line("Nguyên văn chữ Hán Nôm:"),
+            line("<10> Nội dung"),
+        ]
+
+        records, _ = parse_records(source, config())
+
+        self.assertEqual("B", records[0]["dia_diem"])
+
     def test_non_consecutive_titles_fail(self) -> None:
         source = [line("VĂN BIA SỐ 1"), line("VĂN BIA SỐ 3")]
         with self.assertRaisesRegex(ExtractionError, "not consecutive"):

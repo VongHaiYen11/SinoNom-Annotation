@@ -191,25 +191,14 @@ Chạy:
 ```bash
 uv run python tools/build_glyph_profiles.py \
   --pdf input/Tap-1_Bia-Hau-the-ki-XVII_760-trang.pdf \
-  --nomna fonts/reference/NomNaTong.ttf \
-  --palatino fonts/reference/Palatino-Regular.ttf \
-  --palatino-bold fonts/reference/Palatino-Bold.ttf \
-  --palatino-italic fonts/reference/Palatino-Italic.ttf \
-  --palatino-bold-italic fonts/reference/Palatino-BoldItalic.ttf \
-  --pmingliu fonts/reference/PMingLiU-ExtB.ttf \
   --output data/glyph_profiles/tap_1.json
 ```
 
-Nếu PDF không sử dụng `PMingLiU-ExtB` thì có thể bỏ `--pmingliu`.
-
-Nếu chỉ có file `.ttc`, tách face cần dùng thành `.ttf`:
-
-```bash
-uv run python tools/extract_ttc_face.py \
-  --input fonts/reference/PMingLiU-ExtB.ttc \
-  --font-number 1 \
-  --output fonts/reference/PMingLiU-ExtB.ttf
-```
+The profile builder discovers reference fonts from `fonts/reference/`. It
+matches the PDF font family against internal `nameID=1` values rather than
+filenames, and supports standalone `.ttf`/`.otf` plus `.ttc`/`.otc`
+collections. A collection face is selected by matching its family and, when
+available, its style; no font-specific command-line flags are needed.
 
 ### Glyph profile hoạt động như thế nào?
 
@@ -260,6 +249,11 @@ Chạy extraction:
 ```bash
 uv run python extract_pdf.py --config configs/tap_1.json
 ```
+
+The config is the only PDF-specific input. It dynamically provides the PDF
+path, glyph profile, output paths, encoded-font rules, metadata fields,
+patterns, margins, and optional footnote filtering. To process another PDF,
+create another config rather than editing `extract_pdf.py`.
 
 Hoặc tạo thêm JSON có indent để review:
 

@@ -145,7 +145,7 @@ def load_config(path: Path) -> ExtractConfig:
     return config
 
 
-def load_glyph_profile(path: Path) -> dict[str, str]:
+def load_glyph_profile(path: Path) -> dict[str, dict[str, Any]]:
     """Read and validate the signature-to-Unicode glyph profile."""
     try:
         profile = json.loads(path.read_text(encoding="utf-8"))
@@ -153,6 +153,24 @@ def load_glyph_profile(path: Path) -> dict[str, str]:
         raise ExtractionError(f"Cannot read glyph profile {path}: {exc}") from exc
     if not isinstance(profile, dict) or not profile:
         raise ExtractionError("Glyph profile must be a non-empty JSON object")
-    if not all(isinstance(key, str) and isinstance(value, str) for key, value in profile.items()):
-        raise ExtractionError("Glyph profile entries must map strings to strings")
-    return profile
+    normalized: dict[str, dict[str, Any]] = {}
+    for key, value in profile.items():
+        if not isinstance(key, str):
+            raise ExtractionError("Glyph profile signatures must be strings")
+        # This is deliberately the exact on-disk schema emitted by
+        # tools/build_glyph_profiles.py.  Extraction must never infer Unicode
+        # from an older flat profile or from PyMuPDF's unreliable text value.
+        if not isinstance(value, dict):
+            raise ExtractionError("Glyph profile entries must be objects emitted by build_glyph_profiles.py")
+        char = value.get("char")
+        codepoint = value.get("codepoint")
+        unicode_name = value.get("unicode")
+        glyph = value.get("glyph")
+        if not isinstance(char, str) or not isinstance(codepoint, int) or not isinstance(unicode_name, str) or not isinstance(glyph, str):
+            raise ExtractionError(
+                "Glyph profile entries must include string glyph/unicode/char and integer codepoint"
+            )
+        if char != chr(codepoint) or unicode_name != f"U+{codepoint:04X}":
+            raise ExtractionError(f"Invalid Unicode fields for glyph profile signature {key}")
+        normalized[key] = value
+    return normalized

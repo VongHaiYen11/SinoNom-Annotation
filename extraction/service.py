@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import logging
 import pymupdf
 
 from extraction.config import load_glyph_profile
 from extraction.models import ExtractConfig, ExtractionError
 from extraction.decoder import GlyphDecoder
 from extraction.records import parse_records, parse_records_with_issues
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _log_decode_statistics(decoder: GlyphDecoder) -> None:
+    stats = decoder.statistics
+    LOGGER.info(
+        "Glyph extraction statistics: Total characters: %d; Profile matched: %d; "
+        "Fallback: %d; Unresolved: %d",
+        stats.total_characters, stats.profile_matched, stats.fallback, stats.unresolved,
+    )
+    decoder.log_profile_misses()
 
 
 def extract_document(config: ExtractConfig) -> tuple[list[dict], list[str]]:
@@ -28,6 +41,7 @@ def extract_document(config: ExtractConfig) -> tuple[list[dict], list[str]]:
             config.footnote_min_y,
             config.footnote_max_font_size,
         )
+        _log_decode_statistics(decoder)
     finally:
         document.close()
     return parse_records(lines, config)
@@ -53,6 +67,7 @@ def extract_document_with_issues(
             config.footnote_min_y,
             config.footnote_max_font_size,
         )
+        _log_decode_statistics(decoder)
     finally:
         document.close()
     return parse_records_with_issues(lines, config)

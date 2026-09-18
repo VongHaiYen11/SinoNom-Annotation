@@ -32,7 +32,13 @@ class _FaceAccumulator:
 
 def _label_key(text: str) -> str:
     """Create an accent-insensitive key for tolerant heading matching."""
-    decomposed = unicodedata.normalize("NFD", text.casefold()).replace("đ", "d")
+    # PDFs in this collection sometimes encode Vietnamese Đ/đ as Latin
+    # eth (Ð/ð).  Treat both as the same label letter before matching.
+    decomposed = (
+        unicodedata.normalize("NFD", text.casefold())
+        .replace("đ", "d")
+        .replace("ð", "d")
+    )
     key = " ".join(
         "".join(char for char in decomposed if not unicodedata.combining(char)).split()
     )

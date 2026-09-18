@@ -8,22 +8,30 @@ def normalize_font_name(font_name):
     """Remove the six-character subset prefix from a font name."""
     return re.sub(r"^[A-Z]{6}\+", "", font_name)
 
-
 def extract_font_info(pdf_path):
-    """Extract unique normalized font names and their types from a PDF."""
+    """Extract font names, types, xrefs, and page numbers."""
     doc = pymupdf.open(pdf_path)
     fonts = {}
 
-    for page in doc:
+    for page_number, page in enumerate(doc, start=1):
         for font in page.get_fonts(full=True):
+            xref = font[0]
             font_name = normalize_font_name(font[3])
             font_type = font[2]
 
-            fonts.setdefault(font_name, set()).add(font_type)
+            if font_name not in fonts:
+                fonts[font_name] = {
+                    "types": set(),
+                    "xrefs": set(),
+                    "pages": set(),
+                }
+
+            fonts[font_name]["types"].add(font_type)
+            fonts[font_name]["xrefs"].add(xref)
+            fonts[font_name]["pages"].add(page_number)
 
     doc.close()
     return fonts
-
 
 def process_input(input_folder, output_folder):
     """Process all PDF files in the input folder."""
@@ -69,10 +77,22 @@ def process_input(input_folder, output_folder):
         ) as f:
             for font_name in sorted(fonts):
                 font_types = ", ".join(
-                    sorted(fonts[font_name])
+                    sorted(fonts[font_name]["types"])
                 )
+
+                xrefs = ", ".join(
+                    map(str, sorted(fonts[font_name]["xrefs"]))
+                )
+
+                pages = ", ".join(
+                    map(str, sorted(fonts[font_name]["pages"]))
+                )
+
                 f.write(
-                    f"{font_name}\t{font_types}\n"
+                    f"{font_name}\t"
+                    f"{font_types}\t"
+                    f"xref: {xrefs}\t"
+                    f"pages: {pages}\n"
                 )
 
         print(f"[✓] Found {len(fonts)} unique fonts.")

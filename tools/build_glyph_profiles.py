@@ -1,32 +1,28 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
-import io
 import json
 from pathlib import Path
 import re
 
 import pymupdf
-from fontTools.cffLib import CFFFontSet
 from fontTools.pens.boundsPen import BoundsPen
-from fontTools.pens.svgPathPen import SVGPathPen
-from fontTools.pens.transformPen import TransformPen
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTCollection, TTFont
+
+from extraction.glyphs import embedded_glyphs, glyph_commands, signature
 
 RASTER_WIDTH = 72
 RASTER_HEIGHT = 101
 
-
-def glyph_commands(glyph, scale: float = 1, glyph_set=None) -> str:
-    path_pen = SVGPathPen(glyph_set)
-    pen = (
-        path_pen
-        if scale == 1
-        else TransformPen(path_pen, (scale, 0, 0, scale, 0, 0))
-    )
-    glyph.draw(pen)
-    return path_pen.getCommands()
+STYLE_SUFFIXES = (
+    "bolditalic",
+    "regular",
+    "oblique",
+    "italic",
+    "normal",
+    "bold",
+)
+DEFAULT_STYLE_NAMES = frozenset({"regular", "roman", "book", "normal"})
 
 
 def rasterize(commands: str) -> bytes:
@@ -47,10 +43,6 @@ def rasterize(commands: str) -> bytes:
     ).samples
 
 
-def signature(commands: str) -> str:
-    return hashlib.sha256(commands.encode("utf-8")).hexdigest()[:24]
-
-
 def glyph_bounds(glyph, glyph_set=None):
     pen = BoundsPen(glyph_set)
     glyph.draw(pen)
@@ -61,90 +53,156 @@ def glyph_bounds(glyph, glyph_set=None):
 
 def normalize_font_name(name: str) -> str:
     name = re.sub(r"^[A-Z]{6}\+", "", name)
+    return "".join(character for character in name.lower() if character.isalnum())
 
-    return (
-        name
-        .lower()
-        .replace(",", "")
-        .replace("-", "")
-        .replace(" ", "")
+
+def parse_pdf_font_name(font_name: str) -> tuple[str, str | None]:
+    normalized_name = normalize_font_name(font_name)
+
+    for style in STYLE_SUFFIXES:
+        if normalized_name.endswith(style) and normalized_name != style:
+            return normalized_name[:-len(style)], style
+
+    return normalized_name, None
+
+
+def font_style_priority(font: TTFont, requested_style: str | None) -> int:
+    styles = {
+        normalize_font_name(name.toUnicode())
+        for name in font["name"].names
+        if name.nameID == 2
+    }
+
+    if requested_style is not None:
+        return 0 if requested_style in styles else 1
+
+    return 0 if styles & DEFAULT_STYLE_NAMES else 1
+
+
+def load_reference_font(
+    reference_path: Path,
+    family: str,
+    style: str | None,
+) -> TTFont:
+    with reference_path.open("rb") as font_file:
+        is_collection = font_file.read(4) == b"ttcf"
+
+    fonts = TTCollection(reference_path).fonts if is_collection else (TTFont(reference_path),)
+    matches = []
+
+    for index, font in enumerate(fonts):
+        family_names = [
+            name.toUnicode()
+            for name in font["name"].names
+            if name.nameID == 1
+        ]
+
+        if any(normalize_font_name(name) == family for name in family_names):
+            matches.append((font_style_priority(font, style), index, font))
+
+    if matches:
+        return min(matches, key=lambda match: match[:2])[2]
+
+    raise LookupError(
+        f"Không tìm thấy family name khớp với {family!r} "
+        f"trong font collection {reference_path}"
     )
 
 
-def find_reference_font(font_name: str, reference_dir: Path) -> Path:
-    target = normalize_font_name(font_name)
-    for path in reference_dir.glob("*.ttf"):
-        print(target, normalize_font_name(path.stem) )
-        if normalize_font_name(path.stem) == target:
-            return path
+def find_reference_font(
+    font_name: str,
+    reference_dir: Path,
+) -> tuple[Path, TTFont]:
+    family, style = parse_pdf_font_name(font_name)
+    matches = []
+
+    for path in sorted(reference_dir.iterdir(), key=lambda candidate: candidate.name.casefold()):
+        if path.suffix.lower() not in {".ttf", ".otf", ".ttc", ".otc"}:
+            continue
+
+        try:
+            font = load_reference_font(path, family, style)
+        except LookupError:
+            continue
+
+        matches.append((font_style_priority(font, style), path.name.casefold(), path, font))
+
+    if matches:
+        _, _, path, font = min(matches, key=lambda match: match[:2])
+        return path, font
 
     raise FileNotFoundError(
         f"Không tìm thấy reference font cho {font_name!r} trong {reference_dir}"
     )
 
 
-def load_embedded_font(document: pymupdf.Document, xref: int):
-    basename, ext, font_type, content = document.extract_font(xref)
-    if not content:
-        raise RuntimeError(
-            f"Font không có embedded data: xref={xref}, type={font_type}, ext={ext}"
+def get_cached_reference_font(
+    font_name: str,
+    reference_dir: Path,
+    reference_font_cache: dict[str, tuple[Path, TTFont]],
+) -> tuple[Path, TTFont]:
+    """Cache selected reference fonts to support faster runs without changing matching logic."""
+    cache_key = normalize_font_name(font_name)
+
+    if cache_key not in reference_font_cache:
+        reference_font_cache[cache_key] = find_reference_font(
+            font_name, reference_dir
         )
 
-    ext = ext.lower()
+    return reference_font_cache[cache_key]
 
-    if ext in {"ttf", "otf"}:
-        font = TTFont(io.BytesIO(content))
-        units = font["head"].unitsPerEm
-        glyph_set = font.getGlyphSet()
-        return [
-            (name, glyph_set[name])
-            for name in glyph_set.keys()
-        ]
 
-    if ext in {"cff", "cid"}:
-        cff = CFFFontSet()
-        cff.decompile(io.BytesIO(content), None)
-        top = cff[cff.fontNames[0]]
-        return [
-            (name, top.CharStrings[name])
-            for name in top.charset[1:]
-        ]
+def unique_cmap_candidates(cmap: dict[int, str]) -> list[tuple[int, str]]:
+    """Remove duplicate glyph candidates to support faster runs without changing matching logic."""
+    codepoints_by_glyph: dict[str, int] = {}
 
-    if ext in {"pfa", "pfb"}:
-        raise RuntimeError(
-            f"Type1 PFA/PFB cần xử lý qua file tạm; xref={xref}, ext={ext}"
-        )
+    for codepoint, glyph_name in cmap.items():
+        previous_codepoint = codepoints_by_glyph.get(glyph_name)
+        if previous_codepoint is None or codepoint < previous_codepoint:
+            codepoints_by_glyph[glyph_name] = codepoint
 
-    raise RuntimeError(
-        f"Không hỗ trợ embedded font: xref={xref}, type={font_type}, ext={ext}"
-    )
+    return [
+        (codepoint, glyph_name)
+        for glyph_name, codepoint in codepoints_by_glyph.items()
+    ]
+
+
+def get_reference_pixel_cache(
+    font: TTFont,
+    reference_pixel_cache: dict[int, dict[str, bytes]],
+) -> dict[str, bytes]:
+    """Reuse reference rasters to support faster runs without changing matching logic."""
+    return reference_pixel_cache.setdefault(id(font), {})
 
 
 def match_font(
     document: pymupdf.Document,
     xref: int,
     reference_path: Path,
+    font: TTFont,
     profile: dict[str, dict],
+    reference_pixel_cache: dict[int, dict[str, bytes]],
 ) -> None:
-    embedded_glyphs = load_embedded_font(document, xref)
+    source_glyphs = embedded_glyphs(document, xref)
 
-    font = TTFont(reference_path)
     units = font["head"].unitsPerEm
     glyph_set = font.getGlyphSet()
     cmap = font.getBestCmap()
-    metrics = font["hmtx"].metrics
 
-    candidates = list(cmap.items())
-    reference_pixels: dict[str, bytes] = {}
+    candidates = unique_cmap_candidates(cmap)
+    reference_pixels = get_reference_pixel_cache(font, reference_pixel_cache)
 
-    for name, glyph in embedded_glyphs:
-        commands = glyph_commands(glyph)
+    for source_glyph in source_glyphs:
+        name = source_glyph.name
+        glyph = source_glyph.glyph
+        embedded_glyph_set = source_glyph.glyph_set
+        commands = glyph_commands(glyph, glyph_set=embedded_glyph_set)
         digest = signature(commands)
 
         if digest in profile:
             continue
 
-        if glyph_bounds(glyph) is None:
+        if glyph_bounds(glyph, embedded_glyph_set) is None:
             profile[digest] = {
                 "glyph": name,
                 "codepoint": 32,
@@ -201,6 +259,8 @@ def main() -> None:
 
     profile: dict[str, dict] = {}
     processed_xrefs = set()
+    reference_font_cache: dict[str, tuple[Path, TTFont]] = {}
+    reference_pixel_cache: dict[int, dict[str, bytes]] = {}
 
     for page_number in range(document.page_count):
         for row in document.get_page_fonts(page_number, full=True):
@@ -214,8 +274,19 @@ def main() -> None:
             processed_xrefs.add(xref)
             print(f"Processing font: {font_name} ({font_type})")
 
-            reference_font = find_reference_font(font_name, reference_dir)
-            match_font(document, xref, reference_font, profile)
+            reference_path, reference_font = get_cached_reference_font(
+                font_name,
+                reference_dir,
+                reference_font_cache,
+            )
+            match_font(
+                document,
+                xref,
+                reference_path,
+                reference_font,
+                profile,
+                reference_pixel_cache,
+            )
 
     args.output.write_text(
         json.dumps(profile, ensure_ascii=False, sort_keys=True, indent=2),
@@ -228,3 +299,7 @@ if __name__ == "__main__":
     main()
 
 # python script_name.py --pdf duong/dan/file.pdf --output ketqua.json
+
+# uv run python -m cProfile -s cumulative tools/build_glyph_profiles.py \
+#   --pdf "..." \
+#   --output "..."

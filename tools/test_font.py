@@ -1,3 +1,8 @@
+"""Sometimes the IDE/ File viewer itself does not support some character (SinoNom) so we cannot guarantee that if the data is taken out correctly or not. 
+
+This code is used to draw out the glyph on a canvas for manual check. 
+"""
+
 from pathlib import Path
 
 from fontTools.ttLib import TTFont

@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
 import pymupdf
-
-from extraction.models import ExtractionError, TextLine
+from extraction.glyphs import embedded_glyphs, glyph_commands, signature
+from extraction.models import DecodeStatistics, ExtractionError, TextCharacter, TextLine, TextSpan
 from extraction.text import clean_extracted_text, normalize_line
-from tools.build_glyph_profiles import cff_top, glyph_commands, signature
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class _PageFont:
     xref: int
-    is_cid_cff: bool
+    extension: str
+    font_type: str
     resource: str
+
+    @property
+    def is_cid_outline(self) -> bool:
+        """True only for Type0 fonts whose CID can address an embedded outline."""
+        return self.font_type == "Type0" and self.extension in {"cff", "cid", "ttf", "otf"}
 
 
 @dataclass(frozen=True)
@@ -40,13 +48,18 @@ class GlyphDecoder:
     def __init__(
         self,
         document: pymupdf.Document,
-        profile: dict[str, str],
+        profile: dict[str, dict[str, Any]],
         encoded_fonts: Iterable[str],
     ) -> None:
         self.document = document
         self.profile = profile
         self.encoded_fonts = tuple(encoded_fonts)
         self._font_maps: dict[int, dict[int, str]] = {}
+        self._font_signatures: dict[int, dict[int, str]] = {}
+        self._profile_misses: dict[tuple[int, str, int, int, str], int] = {}
+        self._unsupported_font_xrefs: set[int] = set()
+        self.statistics = DecodeStatistics()
+        self._last_characters: tuple[TextCharacter, ...] = ()
 
     def _is_encoded(self, font_name: str) -> bool:
         """Return whether this span needs CID outline decoding."""
@@ -60,9 +73,8 @@ class GlyphDecoder:
             result.setdefault(normalized, []).append(
                 _PageFont(
                     xref=xref,
-                    is_cid_cff=(
-                        extension.lower() in {"cff", "cid"} and font_type == "Type0"
-                    ),
+                    extension=extension.lower(),
+                    font_type=font_type,
                     resource=resource,
                 )
             )
@@ -121,7 +133,7 @@ class GlyphDecoder:
                 if resource_info is None:
                     continue
                 font_name, font = resource_info
-                if not font.is_cid_cff:
+                if not font.is_cid_outline:
                     continue
                 hexadecimal = b"".join(
                     re.findall(rb"<([0-9A-Fa-f\s]+)>", match.group("show"))
@@ -144,23 +156,104 @@ class GlyphDecoder:
         return result
 
     def _build_font_map(self, xref: int) -> dict[int, str]:
-        """Map every CID of one embedded CFF font through the glyph profile."""
-        top = cff_top(self.document, xref)
+        """Map one embedded Type0 font's CID outlines through the profile."""
         result: dict[int, str] = {}
-        for glyph_name in top.charset:
-            match = re.fullmatch(r"cid(\d+)", glyph_name)
-            if match is None:
-                continue
-            cid = int(match.group(1))
-            commands = glyph_commands(top.CharStrings[glyph_name])
-            digest = signature(commands)
-            if digest not in self.profile:
-                raise ExtractionError(
-                    f"Glyph profile is missing signature {digest} "
-                    f"for font xref={xref}, CID={cid}"
+        signatures: dict[int, str] = {}
+        _, extension, font_type, content = self.document.extract_font(xref)
+        extension = extension.lower()
+        source_glyphs = embedded_glyphs(self.document, xref)
+        if extension in {"cff", "cid"}:
+            candidates = (
+                (int(match.group(1)), source_glyph.glyph, source_glyph.glyph_set)
+                for source_glyph in source_glyphs
+                if (match := re.fullmatch(r"cid(\d+)", source_glyph.name)) is not None
+            )
+        elif extension in {"ttf", "otf"} and font_type == "Type0" and content:
+            # CIDFontType2 defaults to an identity CIDToGIDMap when that entry
+            # is absent.  That is the common Type0 TrueType representation in
+            # this corpus; non-identity maps remain explicit fallback cases.
+            # A non-identity CIDToGIDMap must be applied before a TrueType
+            # glyph order can be trusted.  Do not guess from rawdict Unicode.
+            if "CIDToGIDMap" in self.document.xref_object(xref, compressed=True):
+                self._unsupported_font_xrefs.add(xref)
+                LOGGER.warning(
+                    "xref=%d uses non-default CIDToGIDMap; retaining explicitly "
+                    "marked fallback characters until this map is implemented", xref,
                 )
-            result[cid] = self.profile[digest]
+                return result
+            candidates = (
+                (gid, source_glyph.glyph, source_glyph.glyph_set)
+                for gid, source_glyph in enumerate(source_glyphs)
+            )
+        else:
+            return result
+        for cid, glyph, glyph_set in candidates:
+            digest = signature(glyph_commands(glyph, glyph_set=glyph_set))
+            signatures[cid] = digest
+            if digest in self.profile:
+                result[cid] = self.profile[digest]["char"]
+        self._font_signatures[xref] = signatures
         return result
+
+    def _record_profile_miss(
+        self, page_number: int, font_name: str, xref: int, cid: int,
+    ) -> None:
+        """Aggregate encountered glyphs whose known signature is absent from profile."""
+        digest = self._font_signatures.get(xref, {}).get(cid)
+        if digest is None or digest in self.profile:
+            return
+        key = (page_number, font_name, xref, cid, digest)
+        self._profile_misses[key] = self._profile_misses.get(key, 0) + 1
+
+    def log_profile_misses(self) -> None:
+        """Emit a concise, reviewable report of all missing profile entries."""
+        for (page, font_name, xref, cid, digest), occurrences in sorted(
+            self._profile_misses.items()
+        ):
+            LOGGER.warning(
+                "Glyph profile miss: page=%d font=%r xref=%d CID=%d "
+                "signature=%s occurrences=%d",
+                page, font_name, xref, cid, digest, occurrences,
+            )
+
+    @staticmethod
+    def _fallback_character(
+        char: str,
+        bbox: tuple[float, float, float, float],
+        font_name: str,
+        font_size: float,
+        xref: int | None,
+    ) -> TextCharacter:
+        if clean_extracted_text(char):
+            return TextCharacter(char, bbox, font_name, font_size, xref, "fallback")
+        # Never silently delete a bad PDF character.  The visible placeholder
+        # keeps positional evidence while the status makes it reviewable.
+        return TextCharacter("□", bbox, font_name, font_size, xref, "unresolved")
+
+    def _record_characters(self, characters: list[TextCharacter]) -> str:
+        self._last_characters = tuple(characters)
+        stats = getattr(self, "statistics", None)
+        if stats is not None:
+            stats.total_characters += len(characters)
+            stats.profile_matched += sum(item.status == "matched" for item in characters)
+            stats.fallback += sum(item.status == "fallback" for item in characters)
+            stats.unresolved += sum(item.status == "unresolved" for item in characters)
+        return "".join(item.text for item in characters)
+
+    def _fallback_span(
+        self, text: str, font_name: str, chars: list[dict[str, Any]] | None,
+        font_size: float,
+    ) -> str:
+        if chars is None:
+            # Compatibility for direct library callers of the historical API.
+            return clean_extracted_text(text)
+        return self._record_characters([
+            self._fallback_character(
+                char, tuple(info.get("bbox", (0.0, 0.0, 0.0, 0.0))),
+                font_name, font_size, None,
+            )
+            for char, info in zip(text, chars)
+        ])
 
     def decode_span(
         self,
@@ -170,20 +263,15 @@ class GlyphDecoder:
         page_number: int,
         chars: list[dict[str, Any]] | None = None,
         font_runs: dict[tuple[str, float, float, int], list[_FontRun]] | None = None,
+        font_size: float = 0.0,
     ) -> str:
         """Decode one raw PDF span while resolving subset-font ambiguity."""
-        if not self._is_encoded(font_name):
-            # Fonts such as TimesNewRoman use PyMuPDF's normal decoding, but
-            # an unknown glyph may still arrive as U+0001 or another control.
-            return clean_extracted_text(text)
         font_candidates = self._font_info(font_name, page_fonts)
         if not font_candidates:
-            raise ExtractionError(
-                f"Cannot resolve embedded font {font_name!r} on page {page_number}"
-            )
-        cid_candidates = tuple(font for font in font_candidates if font.is_cid_cff)
+            return self._fallback_span(text, font_name, chars, font_size)
+        cid_candidates = tuple(font for font in font_candidates if font.is_cid_outline)
         if not cid_candidates:
-            return clean_extracted_text(text)
+            return self._fallback_span(text, font_name, chars, font_size)
 
         for font in cid_candidates:
             xref = font.xref
@@ -269,10 +357,14 @@ class GlyphDecoder:
                     ] * longest
 
         decoded: list[str] = []
+        character_records: list[TextCharacter] = []
         for index, char in enumerate(text):
             cid = ord(char)
+            char_info = chars[index] if chars is not None and index < len(chars) else {}
+            bbox = tuple(char_info.get("bbox", (0.0, 0.0, 0.0, 0.0)))
             if chars is not None and chars[index].get("synthetic"):
                 decoded.append(char)
+                character_records.append(self._fallback_character(char, bbox, font_name, font_size, None))
                 continue
             xref = assignments[index]
             if xref is None:
@@ -283,20 +375,23 @@ class GlyphDecoder:
                 ]
                 values = {self._font_maps[item][cid] for item in possible}
                 if len(values) == 1:
-                    decoded.append(next(iter(values)))
+                    value = next(iter(values))
+                    decoded.append(value)
+                    character_records.append(TextCharacter(value, bbox, font_name, font_size, possible[0], "matched"))
                     continue
-                raise ExtractionError(
-                    f"Cannot disambiguate CID mapping on page {page_number}, "
-                    f"font={font_name!r}, CID={cid}, xrefs={possible}"
-                )
+                character_records.append(self._fallback_character(char, bbox, font_name, font_size, None))
+                decoded.append(character_records[-1].text)
+                continue
             font_map = self._font_maps[xref]
             if cid not in font_map:
-                raise ExtractionError(
-                    f"Missing CID mapping on page {page_number}, "
-                    f"font={font_name!r}, xref={xref}, CID={cid}"
-                )
-            decoded.append(font_map[cid])
-        return clean_extracted_text("".join(decoded))
+                self._record_profile_miss(page_number, font_name, xref, cid)
+                character_records.append(self._fallback_character(char, bbox, font_name, font_size, xref))
+                decoded.append(character_records[-1].text)
+                continue
+            value = font_map[cid]
+            decoded.append(value)
+            character_records.append(TextCharacter(value, bbox, font_name, font_size, xref, "matched"))
+        return self._record_characters(character_records) if character_records else clean_extracted_text("".join(decoded))
 
     def extract_lines(
         self,
@@ -321,10 +416,10 @@ class GlyphDecoder:
             page_number = page_index + 1
             fonts = self._page_fonts(page)
             font_runs = self._page_font_runs(page, fonts)
-            page_lines: list[tuple[float, float, float, float, str]] = []
+            page_lines: list[tuple[float, float, float, float, str, int, int, tuple[TextSpan, ...]]] = []
             raw = page.get_text("rawdict", sort=True)
-            for block in raw["blocks"]:
-                for line in block.get("lines", []):
+            for block_number, block in enumerate(raw["blocks"]):
+                for line_number, line in enumerate(block.get("lines", [])):
                     spans = line.get("spans", [])
                     if not spans:
                         continue
@@ -333,6 +428,7 @@ class GlyphDecoder:
                     if y0 < top_margin or y1 > page.rect.height - bottom_margin:
                         continue
                     pieces: list[str] = []
+                    rebuilt_spans: list[TextSpan] = []
                     for span in spans:
                         chars = span.get("chars", [])
                         encoded = "".join(char["c"] for char in chars)
@@ -344,19 +440,28 @@ class GlyphDecoder:
                                 page_number,
                                 chars,
                                 font_runs,
+                                float(span["size"]),
+                            )
+                        )
+                        rebuilt_spans.append(
+                            TextSpan(
+                                text=pieces[-1], bbox=tuple(span["bbox"]),
+                                font_name=span["font"], font_size=float(span["size"]),
+                                font_xref=(self._last_characters[0].font_xref if self._last_characters else None),
+                                characters=self._last_characters,
                             )
                         )
                     text = normalize_line("".join(pieces))
                     if text:
                         x0 = min(span["bbox"][0] for span in spans)
                         font_size = max(float(span["size"]) for span in spans)
-                        page_lines.append((y0, x0, y1, font_size, text))
+                        page_lines.append((y0, x0, y1, font_size, text, block_number, line_number, tuple(rebuilt_spans)))
             page_lines.sort(key=lambda item: (round(item[0], 2), item[1]))
             if footnote_re is not None:
                 first_footnote = next(
                     (
                         index
-                        for index, (y0, _, _, font_size, text) in enumerate(page_lines)
+                        for index, (y0, _, _, font_size, text, *_rest) in enumerate(page_lines)
                         if footnote_re.search(text) and (
                             y0 >= footnote_min_y
                             or (
@@ -377,7 +482,10 @@ class GlyphDecoder:
                     x0=x0,
                     y1=y1,
                     font_size=font_size,
+                    block_number=block_number,
+                    line_number=line_number,
+                    spans=spans,
                 )
-                for y0, x0, y1, font_size, text in page_lines
+                for y0, x0, y1, font_size, text, block_number, line_number, spans in page_lines
             )
         return output

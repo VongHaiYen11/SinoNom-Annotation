@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
-"""CLI compatibility facade for deterministic Vietnamica PDF extraction."""
+"""Config-driven CLI for deterministic Vietnamica PDF extraction.
+
+The workflow is intentionally data-driven:
+1. Read the PDF, glyph profile, parsing rules, and output paths from one config.
+2. Decode encoded font runs and normalize the PDF text.
+3. Parse inscription records, separating recoverable structural issues.
+4. Validate and atomically write JSONL plus optional review artifacts.
+
+PDF-specific behavior belongs in the config file rather than this CLI, so the
+same command supports new documents without source-code changes.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -30,9 +41,14 @@ __all__ = [
 ]
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Build the config-driven CLI parser without hard-coded PDF settings."""
     parser = argparse.ArgumentParser(
-        description="Extract Vietnamese inscriptions from one configured PDF"
+        description="Extract inscriptions from a PDF described by a JSON config.",
+        epilog=(
+            "The config defines input_pdf, glyph_profile, output_jsonl, font "
+            "decoding rules, and record parsing rules."
+        ),
     )
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument(
@@ -54,20 +70,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--issues-output",
         type=Path,
-        help="JSON riêng cho văn bia/cảnh báo sai format; mặc định cạnh output_jsonl.",
+        help="Optional JSON for structural review; defaults beside output_jsonl.",
     )
     parser.add_argument(
         "--keep-flagged-records",
         action="store_true",
-        help="Giữ cả văn bia có warning cấu trúc trong JSONL chính.",
+        help="Keep records with structural issues in the primary JSONL output.",
     )
+    return parser
+
+
+def default_issues_path(output_jsonl: Path) -> Path:
+    """Return the review-file path derived dynamically from the configured output."""
+    return output_jsonl.with_name(f"{output_jsonl.stem}_invalid.json")
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the configured extraction workflow and write its requested artifacts."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    parser = build_parser()
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
         records, warnings, issues = extract_document_with_issues(config)
-        issue_path = args.issues_output or config.output_jsonl.with_name(
-            f"{config.output_jsonl.stem}_invalid.json"
-        )
+        issue_path = args.issues_output or default_issues_path(config.output_jsonl)
+        # Issue records are retained separately so the primary corpus remains
+        # strict by default while manual review still has complete context.
         flagged_numbers = {
             item["so_van_bia"] for item in issues if item["so_van_bia"] is not None
         }
@@ -97,3 +125,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

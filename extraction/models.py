@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_TITLE_PATTERN = r"^VĂN BIA SỐ\s+(?P<number>\d+)\s*$"
@@ -53,6 +53,30 @@ class ExtractConfig:
 
 
 @dataclass(frozen=True)
+class TextCharacter:
+    """One reconstructed PDF character and the evidence used to decode it."""
+
+    text: str
+    bbox: tuple[float, float, float, float]
+    font_name: str
+    font_size: float
+    font_xref: int | None
+    status: str  # matched, fallback, or unresolved
+
+
+@dataclass(frozen=True)
+class TextSpan:
+    """A reconstructed rawdict span; retained for review and later filters."""
+
+    text: str
+    bbox: tuple[float, float, float, float]
+    font_name: str
+    font_size: float
+    font_xref: int | None
+    characters: tuple[TextCharacter, ...] = ()
+
+
+@dataclass(frozen=True)
 class TextLine:
     text: str
     page_number: int
@@ -60,3 +84,16 @@ class TextLine:
     x0: float = 0.0
     y1: float = 0.0
     font_size: float = 0.0
+    block_number: int | None = None
+    line_number: int | None = None
+    spans: tuple[TextSpan, ...] = field(default_factory=tuple)
+
+
+@dataclass
+class DecodeStatistics:
+    """Counts reported after each document extraction."""
+
+    total_characters: int = 0
+    profile_matched: int = 0
+    fallback: int = 0
+    unresolved: int = 0
