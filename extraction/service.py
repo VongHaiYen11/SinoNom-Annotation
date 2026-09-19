@@ -39,7 +39,6 @@ def extract_document(config: ExtractConfig) -> tuple[list[dict], list[str]]:
             config.top_margin,
             config.bottom_margin,
             config.footnote_start_pattern,
-            config.footnote_min_y,
             config.footnote_max_font_size,
         )
         _log_decode_statistics(decoder)
@@ -65,7 +64,6 @@ def extract_document_with_issues(
             config.top_margin,
             config.bottom_margin,
             config.footnote_start_pattern,
-            config.footnote_min_y,
             config.footnote_max_font_size,
         )
         _log_decode_statistics(decoder)

@@ -433,17 +433,14 @@ class GlyphDecoder:
         top_margin: float,
         bottom_margin: float,
         footnote_start_pattern: str | None = None,
-        footnote_min_y: float = 0.0,
         footnote_max_font_size: float | None = None,
     ) -> list[TextLine]:
         """Extract decoded lines, optionally dropping footnotes at each page end.
 
         A footnote starts at the first line matching ``footnote_start_pattern``
-        at or below ``footnote_min_y`` or rendered no larger than
-        ``footnote_max_font_size``; that line and every later line on that page
-        are excluded.  The guards prevent ordinary numbered body text from
-        becoming a false footnote marker, while still handling image-only pages
-        where a footnote begins above the usual bottom region.
+        and, when configured, rendered no larger than
+        ``footnote_max_font_size``. That line and every later line on the page
+        are excluded; no coordinate-based footnote rule is applied.
         """
         output: list[TextLine] = []
         footnote_re = re.compile(footnote_start_pattern) if footnote_start_pattern else None
@@ -498,11 +495,8 @@ class GlyphDecoder:
                         index
                         for index, (y0, _, _, font_size, text, *_rest) in enumerate(page_lines)
                         if footnote_re.search(text) and (
-                            y0 >= footnote_min_y
-                            or (
-                                footnote_max_font_size is not None
-                                and font_size <= footnote_max_font_size
-                            )
+                            footnote_max_font_size is None
+                            or font_size <= footnote_max_font_size
                         )
                     ),
                     None,

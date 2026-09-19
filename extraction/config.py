@@ -81,7 +81,6 @@ def load_config(path: Path) -> ExtractConfig:
 
     footnotes = raw.get("footnote_filter")
     footnote_start_pattern: str | None = None
-    footnote_min_y = 0.0
     footnote_max_font_size: float | None = None
     if footnotes is not None:
         if not isinstance(footnotes, dict):
@@ -89,12 +88,6 @@ def load_config(path: Path) -> ExtractConfig:
         footnote_start_pattern = _require_string(
             footnotes.get("start_pattern"), "footnote_filter.start_pattern"
         )
-        try:
-            footnote_min_y = float(footnotes.get("min_y", 0))
-        except (TypeError, ValueError) as exc:
-            raise ExtractionError("footnote_filter.min_y must be a number") from exc
-        if footnote_min_y < 0:
-            raise ExtractionError("footnote_filter.min_y cannot be negative")
         raw_max_font_size = footnotes.get("max_font_size")
         if raw_max_font_size is not None:
             try:
@@ -129,7 +122,6 @@ def load_config(path: Path) -> ExtractConfig:
         top_margin=top_margin,
         bottom_margin=bottom_margin,
         footnote_start_pattern=footnote_start_pattern,
-        footnote_min_y=footnote_min_y,
         footnote_max_font_size=footnote_max_font_size,
         expected_record_count=expected,
         require_consecutive_numbers=consecutive,

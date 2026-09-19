@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from extraction.glyphs import embedded_glyphs, glyph_commands, signature
+from extraction.config import load_config
 
 RASTER_WIDTH = 72
 RASTER_HEIGHT = 101
@@ -37,7 +38,15 @@ _FONT_RUN = re.compile(
 )
 
 
-def used_type0_cids(document: pymupdf.Document) -> dict[int, set[int]]:
+def _font_matches_encoded(font_name: str, encoded_fonts: tuple[str, ...]) -> bool:
+    normalized = normalize_font_name(font_name)
+    return any(normalize_font_name(token) in normalized for token in encoded_fonts)
+
+
+def used_type0_cids(
+    document: pymupdf.Document,
+    encoded_fonts: tuple[str, ...] | None = None,
+) -> dict[int, set[int]]:
     """Return only the CIDs actually shown by supported Type0 font resources.
 
     The byte strings come from PDF content streams, not from PyMuPDF's Unicode
@@ -51,6 +60,7 @@ def used_type0_cids(document: pymupdf.Document) -> dict[int, set[int]]:
             if row[2] == "Type0"
             and row[1].lower() in {"cff", "cid", "ttf", "otf"}
             and row[5] in {"Identity-H", "Identity-V"}
+            and (encoded_fonts is None or _font_matches_encoded(row[3], encoded_fonts))
         }
         for content_xref in page.get_contents():
             content = document.xref_stream(content_xref)
@@ -322,13 +332,34 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pdf", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--config",
+        action="append",
+        type=Path,
+        default=[],
+        help=(
+            "Config JSON whose encoded_fonts selects PDF fonts to profile. "
+            "May be repeated; omit to process every supported Type0 font."
+        ),
+    )
     args = parser.parse_args()
 
     reference_dir = Path("fonts/reference")
     document = pymupdf.open(args.pdf)
 
     profile: dict[str, dict] = {}
-    used_cids_by_xref = used_type0_cids(document)
+    encoded_fonts = tuple(
+        dict.fromkeys(
+            token
+            for config_path in args.config
+            for token in load_config(config_path).encoded_fonts
+        )
+    )
+    if encoded_fonts:
+        print(f"Using encoded_fonts from config: {', '.join(encoded_fonts)}")
+    used_cids_by_xref = used_type0_cids(
+        document, encoded_fonts or None,
+    )
     reference_font_cache: dict[str, tuple[Path, TTFont]] = {}
     reference_pixel_cache: dict[int, dict[str, bytes]] = {}
 

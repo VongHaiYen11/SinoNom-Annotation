@@ -46,7 +46,6 @@ class ExtractConfig:
     top_margin: float = DEFAULT_TOP_MARGIN
     bottom_margin: float = DEFAULT_BOTTOM_MARGIN
     footnote_start_pattern: str | None = None
-    footnote_min_y: float = 0.0
     footnote_max_font_size: float | None = None
     expected_record_count: int | None = None
     require_consecutive_numbers: bool = True

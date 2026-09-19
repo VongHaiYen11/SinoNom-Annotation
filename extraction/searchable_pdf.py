@@ -111,7 +111,6 @@ def export_searchable_pdf(
             config.top_margin,
             config.bottom_margin,
             config.footnote_start_pattern,
-            config.footnote_min_y,
             config.footnote_max_font_size,
         )
         with tempfile.TemporaryDirectory(prefix="searchable-pdf-") as directory:
