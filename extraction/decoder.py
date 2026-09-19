@@ -57,6 +57,7 @@ class GlyphDecoder:
         self._font_maps: dict[int, dict[int, str]] = {}
         self._font_signatures: dict[int, dict[int, str]] = {}
         self._profile_misses: dict[tuple[int, str, int, int, str], int] = {}
+        self._fallbacks: dict[tuple[int, str, int | None, str, str, str, str], int] = {}
         self._unsupported_font_xrefs: set[int] = set()
         self.statistics = DecodeStatistics()
         self._last_characters: tuple[TextCharacter, ...] = ()
@@ -216,6 +217,30 @@ class GlyphDecoder:
                 page, font_name, xref, cid, digest, occurrences,
             )
 
+    def _record_fallback(
+        self,
+        page_number: int,
+        font_name: str,
+        xref: int | None,
+        source: str,
+        replacement: str,
+        status: str,
+        reason: str,
+    ) -> None:
+        key = (page_number, font_name, xref, source, replacement, status, reason)
+        self._fallbacks[key] = self._fallbacks.get(key, 0) + 1
+
+    def log_fallbacks(self) -> None:
+        """Emit all fallback/unresolved characters with source evidence."""
+        for (page, font, xref, source, replacement, status, reason), count in sorted(
+            self._fallbacks.items()
+        ):
+            LOGGER.warning(
+                "Character %s: page=%d font=%r xref=%s source=%r output=%r "
+                "reason=%s occurrences=%d",
+                status, page, font, xref, source, replacement, reason, count,
+            )
+
     @staticmethod
     def _fallback_character(
         char: str,
@@ -242,18 +267,24 @@ class GlyphDecoder:
 
     def _fallback_span(
         self, text: str, font_name: str, chars: list[dict[str, Any]] | None,
-        font_size: float,
+        font_size: float, page_number: int,
+        reason: str,
     ) -> str:
         if chars is None:
             # Compatibility for direct library callers of the historical API.
             return clean_extracted_text(text)
-        return self._record_characters([
+        records = [
             self._fallback_character(
                 char, tuple(info.get("bbox", (0.0, 0.0, 0.0, 0.0))),
                 font_name, font_size, None,
             )
             for char, info in zip(text, chars)
-        ])
+        ]
+        for source, record in zip(text, records):
+            self._record_fallback(
+                page_number, font_name, None, source, record.text, record.status, reason,
+            )
+        return self._record_characters(records)
 
     def decode_span(
         self,
@@ -268,10 +299,10 @@ class GlyphDecoder:
         """Decode one raw PDF span while resolving subset-font ambiguity."""
         font_candidates = self._font_info(font_name, page_fonts)
         if not font_candidates:
-            return self._fallback_span(text, font_name, chars, font_size)
+            return self._fallback_span(text, font_name, chars, font_size, page_number, "font resource not resolved")
         cid_candidates = tuple(font for font in font_candidates if font.is_cid_outline)
         if not cid_candidates:
-            return self._fallback_span(text, font_name, chars, font_size)
+            return self._fallback_span(text, font_name, chars, font_size, page_number, "font has no supported CID outline")
 
         for font in cid_candidates:
             xref = font.xref
@@ -364,7 +395,9 @@ class GlyphDecoder:
             bbox = tuple(char_info.get("bbox", (0.0, 0.0, 0.0, 0.0)))
             if chars is not None and chars[index].get("synthetic"):
                 decoded.append(char)
-                character_records.append(self._fallback_character(char, bbox, font_name, font_size, None))
+                record = self._fallback_character(char, bbox, font_name, font_size, None)
+                character_records.append(record)
+                self._record_fallback(page_number, font_name, None, char, record.text, record.status, "synthetic rawdict character")
                 continue
             xref = assignments[index]
             if xref is None:
@@ -381,12 +414,14 @@ class GlyphDecoder:
                     continue
                 character_records.append(self._fallback_character(char, bbox, font_name, font_size, None))
                 decoded.append(character_records[-1].text)
+                self._record_fallback(page_number, font_name, None, char, character_records[-1].text, character_records[-1].status, "ambiguous font resource")
                 continue
             font_map = self._font_maps[xref]
             if cid not in font_map:
                 self._record_profile_miss(page_number, font_name, xref, cid)
                 character_records.append(self._fallback_character(char, bbox, font_name, font_size, xref))
                 decoded.append(character_records[-1].text)
+                self._record_fallback(page_number, font_name, xref, char, character_records[-1].text, character_records[-1].status, "glyph signature missing from profile")
                 continue
             value = font_map[cid]
             decoded.append(value)

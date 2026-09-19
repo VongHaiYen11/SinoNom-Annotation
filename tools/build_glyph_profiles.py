@@ -4,10 +4,16 @@ import argparse
 import json
 from pathlib import Path
 import re
+import sys
 
 import pymupdf
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTCollection, TTFont
+
+# Allow the documented ``python tools/build_glyph_profiles.py`` invocation.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from extraction.glyphs import embedded_glyphs, glyph_commands, signature
 
@@ -23,6 +29,47 @@ STYLE_SUFFIXES = (
     "bold",
 )
 DEFAULT_STYLE_NAMES = frozenset({"regular", "roman", "book", "normal"})
+_NUMBER = rb"[+-]?(?:\d+(?:\.\d*)?|\.\d+)"
+_FONT_RUN = re.compile(
+    rb"/(?P<resource>[^\s/]+)\s+" + _NUMBER + rb"\s+Tf"
+    rb"(?P<body>.*?)(?=/(?:[^\s/]+)\s+" + _NUMBER + rb"\s+Tf|\Z)",
+    re.DOTALL,
+)
+
+
+def used_type0_cids(document: pymupdf.Document) -> dict[int, set[int]]:
+    """Return only the CIDs actually shown by supported Type0 font resources.
+
+    The byte strings come from PDF content streams, not from PyMuPDF's Unicode
+    text.  We deliberately accept only Identity-H/Identity-V two-byte CIDs:
+    that is the mapping this builder and the extractor can verify safely.
+    """
+    result: dict[int, set[int]] = {}
+    for page in document:
+        resources = {
+            row[4]: row for row in page.get_fonts(full=True)
+            if row[2] == "Type0"
+            and row[1].lower() in {"cff", "cid", "ttf", "otf"}
+            and row[5] in {"Identity-H", "Identity-V"}
+        }
+        for content_xref in page.get_contents():
+            content = document.xref_stream(content_xref)
+            for run in _FONT_RUN.finditer(content):
+                row = resources.get(run.group("resource").decode("latin-1"))
+                if row is None:
+                    continue
+                hexadecimal = b"".join(
+                    re.findall(rb"<([0-9A-Fa-f\s]+)>", run.group("body"))
+                )
+                hexadecimal = re.sub(rb"\s+", b"", hexadecimal)
+                if not hexadecimal or len(hexadecimal) % 4:
+                    continue
+                raw = bytes.fromhex(hexadecimal.decode("ascii"))
+                result.setdefault(row[0], set()).update(
+                    int.from_bytes(raw[index:index + 2], "big")
+                    for index in range(0, len(raw), 2)
+                )
+    return result
 
 
 def rasterize(commands: str) -> bytes:
@@ -182,8 +229,31 @@ def match_font(
     font: TTFont,
     profile: dict[str, dict],
     reference_pixel_cache: dict[int, dict[str, bytes]],
+    used_cids: set[int],
 ) -> None:
     source_glyphs = embedded_glyphs(document, xref)
+    _, extension, font_type, _ = document.extract_font(xref)
+    extension = extension.lower()
+    if extension in {"cff", "cid"}:
+        source_glyphs = tuple(
+            source_glyph for source_glyph in source_glyphs
+            if (match := re.fullmatch(r"cid(\d+)", source_glyph.name))
+            and int(match.group(1)) in used_cids
+        )
+    elif extension in {"ttf", "otf"} and font_type == "Type0":
+        if "CIDToGIDMap" in document.xref_object(xref, compressed=True):
+            raise RuntimeError(
+                f"Cannot safely build used-glyph profile for xref={xref}: "
+                "CIDToGIDMap is not identity"
+            )
+        source_glyphs = tuple(
+            source_glyph for glyph_id, source_glyph in enumerate(source_glyphs)
+            if glyph_id in used_cids
+        )
+    else:
+        raise RuntimeError(
+            f"Cannot resolve PDF character codes for xref={xref}, type={font_type}, ext={extension}"
+        )
 
     units = font["head"].unitsPerEm
     glyph_set = font.getGlyphSet()
@@ -258,35 +328,36 @@ def main() -> None:
     document = pymupdf.open(args.pdf)
 
     profile: dict[str, dict] = {}
-    processed_xrefs = set()
+    used_cids_by_xref = used_type0_cids(document)
     reference_font_cache: dict[str, tuple[Path, TTFont]] = {}
     reference_pixel_cache: dict[int, dict[str, bytes]] = {}
 
-    for page_number in range(document.page_count):
-        for row in document.get_page_fonts(page_number, full=True):
-            xref = row[0]
-            font_type = row[2]
-            font_name = row[3]
+    fonts_by_xref = {
+        row[0]: row
+        for page_number in range(document.page_count)
+        for row in document.get_page_fonts(page_number, full=True)
+        if row[0] in used_cids_by_xref
+    }
+    for xref, used_cids in sorted(used_cids_by_xref.items()):
+        row = fonts_by_xref[xref]
+        font_type = row[2]
+        font_name = row[3]
+        print(f"Processing {len(used_cids)} used CIDs: {font_name} ({font_type})")
 
-            if xref in processed_xrefs:
-                continue
-
-            processed_xrefs.add(xref)
-            print(f"Processing font: {font_name} ({font_type})")
-
-            reference_path, reference_font = get_cached_reference_font(
-                font_name,
-                reference_dir,
-                reference_font_cache,
-            )
-            match_font(
-                document,
-                xref,
-                reference_path,
-                reference_font,
-                profile,
-                reference_pixel_cache,
-            )
+        reference_path, reference_font = get_cached_reference_font(
+            font_name,
+            reference_dir,
+            reference_font_cache,
+        )
+        match_font(
+            document,
+            xref,
+            reference_path,
+            reference_font,
+            profile,
+            reference_pixel_cache,
+            used_cids,
+        )
 
     args.output.write_text(
         json.dumps(profile, ensure_ascii=False, sort_keys=True, indent=2),

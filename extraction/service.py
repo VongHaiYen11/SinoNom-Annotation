@@ -21,6 +21,7 @@ def _log_decode_statistics(decoder: GlyphDecoder) -> None:
         stats.total_characters, stats.profile_matched, stats.fallback, stats.unresolved,
     )
     decoder.log_profile_misses()
+    decoder.log_fallbacks()
 
 
 def extract_document(config: ExtractConfig) -> tuple[list[dict], list[str]]:

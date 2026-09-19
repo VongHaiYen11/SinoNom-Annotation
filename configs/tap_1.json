@@ -1,7 +1,7 @@
 {
-  "input_pdf": "../input/Tap-1_Bia-Hau-the-ki-XVII_760-trang.pdf",
+  "input_pdf": "../input/tap1-short-21-page.pdf",
   "output_jsonl": "../output/tap_1.jsonl",
-  "glyph_profile": "../data/glyph_profiles/tap1-short.json",
+  "glyph_profile": "../data/glyph_profiles/tap1-short_1.json",
   "title_pattern": "^VĂN BIA SỐ\\s+(?P<number>\\d+)\\s*$",
   "content_start": "Nguyên văn chữ Hán Nôm",
   "content_sections": [
