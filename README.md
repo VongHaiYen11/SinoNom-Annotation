@@ -1,251 +1,270 @@
 # Vietnamica Alignment
 
-[English](#english) · [Tiếng Việt](#tieng-viet)
+Deterministic extraction of structured Vietnamese inscription records from PDFs with unreliable embedded-font mappings.
 
-> Extract structured Vietnamese inscription data from PDFs whose embedded-font Unicode mapping is unreliable.
+[🇻🇳 Tiếng Việt](README.vi.md)
 
-<a id="english"></a>
+## Overview
 
-## English
+Vietnamica Alignment converts a configured inscription PDF into UTF-8 JSONL. It targets PDFs where library-extracted text is unreliable for embedded subset fonts: a page’s character code can be a CID, not the intended Unicode character.
 
-### Overview
+The project builds a glyph profile from embedded outlines and local Unicode reference fonts. Extraction recreates an outline signature for a CID and uses that profile to recover a Unicode character; it then filters lines and parses them into inscription records. The main inputs are a PDF, JSON config, and glyph profile. The main output is JSONL grouped by inscription face and section. OCR is not used.
 
-Vietnamica Alignment converts a PDF collection into UTF-8 JSONL records. It does not use OCR. For supported embedded fonts, it verifies rendered text by glyph outline:
+## Motivation and problem statement
 
-```text
-PDF code / CID
-  → embedded-font glyph outline
-  → stable glyph signature
-  → glyph profile
-  → verified Unicode
-  → reconstructed lines
-  → config-driven inscription parser
-  → JSONL
+PDF text is not necessarily Unicode text. In a composite Type0 font with `Identity-H` or `Identity-V`, a two-byte code is a CID (Character Identifier): it addresses a glyph in that font, rather than automatically identifying a Unicode code point. `/ToUnicode` or a PDF library’s extracted character can therefore be missing or unreliable for a subset font.
+
+For its supported font forms, this repository:
+
+1. Reads Type0 resources and CIDs shown in PDF content streams.
+2. Obtains the embedded CFF/CID or TrueType/OpenType glyph outline.
+3. Converts the outline to deterministic SVG path commands and hashes them with SHA-256, truncated to 24 hexadecimal characters (the glyph signature).
+4. While building a profile, rasterizes embedded and matching-reference-font outlines; it assigns the lowest sum-of-absolute grayscale-pixel-difference candidate’s code point.
+5. During extraction, performs exact signature lookup rather than repeating raster matching or trusting raw extracted Unicode.
+
+Reference font selection normalizes PDF family/style names and matches name-table family records in `fonts/reference/`. This is an implementation rule, not proof of semantic uniqueness: identical-looking glyphs or a poor reference font can yield an ambiguous or incorrect mapping. Review generated profiles for research or corpus-quality use.
+
+## Goals
+
+- Extract ordered PDF text without changing the source PDF.
+- Recover Unicode for supported embedded CID glyphs from a stored outline-signature profile.
+- Keep document-specific parsing rules in JSON.
+- Write deterministic, validated UTF-8 JSONL and review artifacts.
+- Retain recoverable structural problems for manual review while continuing with later valid records.
+- Supply font/glyph inspection helpers.
+
+## Non-goals and current limitations
+
+> [!WARNING]
+> This is not a general PDF-to-Unicode system.
+
+- OCR, image-only PDFs, handwriting recognition, and language-model correction are not implemented.
+- The profile builder accepts only Type0 `cff`, `cid`, `ttf`, or `otf` resources with `Identity-H`/`Identity-V` and two-byte CIDs. Type1, simple fonts, and other CMaps are excluded.
+- A present Type0 TrueType/OpenType `CIDToGIDMap` is unsupported; only the identity/default case is mapped.
+- Content-stream parsing recognizes particular `Tf`/`Tj`/`TJ` patterns. Other valid operator layouts are implementation-dependent.
+- There is no raster-match score threshold, confidence score, or automatic ambiguity resolution beyond the lowest score.
+- Profiles depend on exact outlines and must be rebuilt when relevant embedded outlines change.
+- `encoded_fonts` filters the profile builder. It is passed to `GlyphDecoder`, but the current decode path does not call `_is_encoded()` and attempts supported Type0 outlines it encounters.
+- Metadata/section parsing is heading- and regex-driven, not general layout understanding.
+- `export_searchable_pdf()` is only a library function; no CLI is supplied. It references missing `tools/extract_ttc_face.py` in an error message.
+- `tests/test_filter_unsupported_characters.py` references a missing `tools/filter_unsupported_characters.py`; that utility is not available in this checkout.
+
+## Features
+
+### Core
+
+- JSON config/profile validation and config-relative paths.
+- Used-CID-only profile building for eligible Type0 resources.
+- CFF/CID and identity-mapped Type0 TrueType/OpenType outline handling.
+- Signature-based CID-to-Unicode recovery.
+- NFC, unsafe-character, and whitespace cleanup.
+- Parsing of numbered records, metadata, face markers, and configured sections.
+
+### Performance implementation
+
+- Used CID selection and reference-cmap candidate de-duplication.
+- Cached selected reference fonts and rasterized reference glyphs.
+- Cached decoder maps/signatures per embedded-font xref.
+- Atomic JSONL writes: fsynced temporary file, then replacement.
+
+### Validation and debugging
+
+- Aggregate statistics plus profile-miss, fallback, and unresolved-character logs.
+- JSON issue items for malformed records, count/sequence violations, and parser warnings.
+- Deterministic JSONL requiring `noi_dung` as the final field and rejecting unsafe Unicode.
+- PDF-font inventory, reference-font inspection, and hard-coded manual glyph rendering tools.
+
+### Commands
+
+| Command | Purpose |
+| --- | --- |
+| `python extract_pdf.py --config CONFIG` | Extract JSONL and issue JSON. |
+| `python tools/build_glyph_profiles.py --pdf PDF --output OUTPUT [--config CONFIG ...]` | Build a glyph profile. |
+| `python tools/get_fonts.py` | Inventory all PDFs in repository `input/`. |
+| `python tools/get_ref_font.py` | Inspect reference fonts at its hard-coded repository path. |
+| `python tools/test_font.py` | Render hard-coded review code points to `unsupported_fonts/`. |
+
+Run from the repository root. The last three tools have no CLI arguments in the current codebase.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    PDF[Input PDF] --> Scan[Type0 resource and used-CID scan]
+    Config[Document JSON config] --> Scan
+    Scan --> Outline[Embedded glyph outlines]
+    Ref[Local reference fonts] --> Match[Raster glyph matching]
+    Outline --> Match --> Profile[Glyph profile JSON]
+    PDF --> Raw[PyMuPDF raw lines and content streams]
+    Profile --> Decode[CID signature lookup]
+    Raw --> Decode --> Filter[Margins and footnote filter]
+    Config --> Filter --> Parse[Record / metadata / section parser]
+    Parse --> JSONL[Atomic JSONL]
+    Parse --> Issues[Review issue JSON]
 ```
 
-The glyph profile is built once from glyphs used in the PDF and local Unicode reference fonts. Extraction only performs cached profile lookup; it does not match reference fonts again.
+| Component | Responsibility |
+| --- | --- |
+| `extract_pdf.py` | CLI orchestration and artifact writing. |
+| `extraction/config.py` | Config and profile loading/validation. |
+| `extraction/glyphs.py` | Outline extraction, SVG commands, signatures. |
+| `tools/build_glyph_profiles.py` | Used-CID scan, reference selection, raster matching, profile output. |
+| `extraction/decoder.py` | Font-resource disambiguation, CID decoding, line filtering. |
+| `extraction/records.py` | Record, metadata, section, marker, and issue parsing. |
+| `extraction/jsonl.py` | Layout cleanup, validation, serialization, atomic writes. |
+| `extraction/service.py` | Library workflow orchestration. |
+| `extraction/searchable_pdf.py` | Optional searchable-PDF library export. |
 
-### Requirements
+## Requirements and installation
 
-- Python 3.10+
-- [uv](https://docs.astral.sh/uv/)
-- Local reference fonts in `fonts/reference/`
+`pyproject.toml` requires Python 3.10+, `fonttools==4.65.0`, `pillow>=12.3.0`, and `pymupdf==1.28.2`; `.python-version` is 3.10 and `uv.lock` is present.
 
 ```bash
 uv sync --frozen
-uv run python -m unittest discover -s tests -v
 ```
 
-### Quick start
+Profile building also requires appropriate local files in `fonts/reference/`. Configured PDFs and profiles must exist before extraction. `input/`, `output/`, and `data/` are ignored local-artifact directories, not tracked inputs.
 
-1. Create or update one document config in `configs/`.
-2. Build its glyph profile.
-3. Extract records.
+## Quick start
+
+From the repository root:
+
+1. Add a document config in `configs/`.
+2. Ensure suitable reference fonts are under `fonts/reference/`.
+3. Build the document profile.
+4. Extract and review issue/log output.
 
 ```bash
 uv run python tools/build_glyph_profiles.py \
-  --pdf input/tap1-short-21-page.pdf \
-  --output data/glyph_profiles/tap1-short.json \
-  --config configs/tap_1.json
+  --pdf input/your-document.pdf \
+  --output data/glyph_profiles/your-document.json \
+  --config configs/your-document.json
 
 uv run python extract_pdf.py \
-  --config configs/tap_1.json
+  --config configs/your-document.json \
+  --pretty-output output/your-document.pretty.json
 ```
 
-`extract_pdf.py` needs only `--config`. The PDF path, profile, output path, parsing rules, and filtering rules come from that file.
+The builder does not create the parent directory of `--output`; create it first. The extraction CLI does create output parents.
 
-### Key workflow
+## Configuration
 
-1. **Collect used glyphs** — the builder reads PDF text-show operations and profiles only used Type0 CIDs, not every glyph in an embedded font.
-2. **Build profile** — embedded and reference glyph outlines use the same `glyph_commands()` and `signature()` helpers. The profile schema is:
+`input_pdf`, `output_jsonl`, and `glyph_profile` resolve relative to the config file. Builder `--pdf`/`--output` and `fonts/reference/` resolve from the process working directory.
 
-   ```json
-   {
-     "signature": {
-       "glyph": "cid123",
-       "codepoint": 26481,
-       "unicode": "U+6741",
-       "char": "条"
-     }
-   }
-   ```
+```json
+{
+  "input_pdf": "../input/document.pdf",
+  "output_jsonl": "../output/document.jsonl",
+  "glyph_profile": "../data/glyph_profiles/document.json",
+  "title_pattern": "^VĂN BIA SỐ\\s+(?P<number>\\d+)\\s*$",
+  "content_start": "Nguyên văn chữ Hán Nôm",
+  "content_sections": ["Nguyên văn chữ Hán Nôm", "Phiên âm Hán Việt"],
+  "marker_pattern": "^\\s*<\\s*(?P<id>\\d+)\\s*>?\\s*(?P<rest>.*)$",
+  "encoded_fonts": ["NomNaTong"],
+  "page_margins": {"top": 40, "bottom": 45},
+  "metadata": [{"label":"Tên bia","field":"ten_bia","type":"string","required":true}]
+}
+```
 
-3. **Decode and reconstruct** — extraction retains page, block, line, span, character bbox, font, font size, and xref while rebuilding text. Profiles and embedded-font maps are cached.
-4. **Filter** — configured top/bottom margins remove page furniture. Footnotes use a text pattern and optional maximum font size; no y-coordinate footnote rule is used.
-5. **Parse** — `title_pattern` defines record ranges. Metadata labels, `content_start`, section labels, and face markers from config create structured records.
-6. **Review** — profile misses, fallback/unresolved characters, malformed records, and marker ambiguity are logged or written to the issues JSON.
+| Field | Required | Behavior |
+| --- | --- | --- |
+| `input_pdf`, `output_jsonl`, `glyph_profile` | Yes | Non-blank config-relative paths. |
+| `metadata` | Yes | Non-empty; fields unique and not `so_van_bia`/`noi_dung`. |
+| `metadata[].label`, `field` | Yes | Non-blank strings; labels tolerate implemented accent/`Kí`/`Ký`/`Ð` variants. |
+| `metadata[].type` / `required` | No | `string` (default) or `identifiers`; boolean default `true`. Identifiers come from `<digits>`. |
+| `title_pattern` | No | Regex with named `number`. |
+| `content_start`, `content_sections` | No | Content-start heading and allowed section headings. |
+| `marker_pattern` | No | Regex with named `id`; optional named `rest` is inline content. |
+| `encoded_fonts` | No | Builder font-selection tokens; see limitation above. |
+| `page_margins` | No | Non-negative `top`/`bottom`, default 40/45 points; lines crossing either region are dropped. |
+| `footnote_filter` | No | Requires `start_pattern`; optional positive `max_font_size`. First matching line and every following line on that page are dropped. |
+| `expected_record_count` | No | Positive integer; mismatch is a global issue. |
+| `require_consecutive_numbers` | No | Boolean default `true`; violation is a global issue. |
 
-### Configuration
+`title_pattern` and `marker_pattern` are compiled at load time and must define `(?P<number>...)` and `(?P<id>...)`, respectively.
 
-Use [`configs/tap_1.json`](configs/tap_1.json) as a starting point.
+## Glyph profile
 
-| Field | Purpose |
-| --- | --- |
-| `input_pdf` | PDF path, relative to the config. |
-| `glyph_profile` | Profile generated by the builder. |
-| `output_jsonl` | Primary output. |
-| `encoded_fonts` | Font-family tokens used by the builder to select relevant embedded Type0 fonts. |
-| `page_margins` | Top/bottom regions removed before parsing. |
-| `footnote_filter` | `start_pattern` and optional `max_font_size`. |
-| `title_pattern` | Title regex with named `number` group. |
-| `metadata` | Metadata labels and output fields. |
-| `content_start` | Heading that starts content. |
-| `content_sections` | Allowed section headings. |
-| `marker_pattern` | Face-marker regex with named `id` group. |
-| `expected_record_count` | Optional corpus-level validation. |
+The loader accepts a non-empty signature-keyed JSON object. It requires typed fields below and verifies `char == chr(codepoint)` and `unicode == U+<codepoint>`.
 
-To adapt the project to another collection:
+```json
+{
+  "0123456789abcdef01234567": {
+    "glyph": "cid00168",
+    "codepoint": 26481,
+    "unicode": "U+6771",
+    "char": "東"
+  }
+}
+```
 
-1. Copy the sample config.
-2. Set input, output, and profile paths.
-3. Configure titles, metadata labels, sections, markers, margin, footnote, and font-family tokens for that document.
-4. Build a profile with `--config <your-config>`.
-5. Run `extract_pdf.py --config <your-config>`.
+The builder scans eligible `Identity-H`/`Identity-V` content for used two-byte CIDs, finds a reference font, and profiles only those glyphs. Empty outlines map to U+0020; other outlines receive the lowest-scoring reference cmap code point. Extraction rebuilds the signature and retrieves `char`; a missing signature becomes a logged fallback/unresolved case.
 
-Keep document-specific rules in config rather than Python whenever a config field exists.
+Treat profiles as generated evidence, not a universal character map. Preserve the PDF, config, reference-font set, profile, command, and review outputs together for reproducibility.
 
-### Extraction options
+## Running extraction
 
 ```bash
-uv run python extract_pdf.py --config configs/tap_1.json
+uv run python extract_pdf.py --config configs/your-document.json
 ```
 
-Optional arguments:
-
-```text
---pretty-output output/review.json
---issues-output output/issues.json
---keep-flagged-records
---content-layout preserve|space|no-space
---strip-literal-backslashes
-```
-
-`preserve` keeps parsed line breaks, `space` replaces them with spaces, and `no-space` removes them. Newlines are added when parser section lines are joined; they are not glyph-profile mappings.
-
-### Outputs
-
-| Output | Description |
+| Option | Effect |
 | --- | --- |
-| `output/*.jsonl` | Valid records, one compact JSON object per line. |
-| `output/*_invalid.json` | Recoverable parsing errors and warnings. |
-| Optional pretty JSON | Indented review representation. |
-| CLI stderr | Glyph-profile misses and fallback/unresolved summaries. |
+| `--config PATH` | Required config. |
+| `--pretty-output PATH` | Also write indented review JSON. |
+| `--issues-output PATH` | Override issue location; default `<stem>_invalid.json` beside JSONL. |
+| `--keep-flagged-records` | Keep parser-warned records in JSONL. Malformed records are never emitted. |
+| `--content-layout preserve\|space\|no-space` | Keep, space-join, or remove `van_ban` line breaks. |
+| `--strip-literal-backslashes` | Remove literal backslashes only from `van_ban`, not JSON escaping. |
 
-### Project layout
+The CLI always writes issue JSON. By default it excludes records whose number appears in a parser-warning issue; it prints parser warnings to stderr and decode statistics/events through logging.
+
+## Output and review
+
+Each primary-output line is compact JSON; configured metadata is followed by required-final `noi_dung`.
+
+```json
+{"so_van_bia":1,"ten_bia":"[Vô đề]","ky_hieu_vnchn":["12305"],"noi_dung":[{"ky_hieu":"12305","chuyen_muc":[{"tieu_de":"Nguyên văn chữ Hán Nôm","van_ban":"…"}]}]}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `so_van_bia` | Number captured by `title_pattern`. |
+| Configured metadata | Strings, or identifier arrays for `identifiers`. |
+| `noi_dung` | Encounter/insertion-order faces; `ky_hieu` may be `null` for unmarked content. |
+| `chuyen_muc` | Objects containing section `tieu_de` and newline-joined `van_ban`. |
+
+Issue items include `so_van_bia`, `trang`, `loi`, and `canh_bao`; they contain `van_bia` for parsed-but-warned records or `du_lieu_nguon` for malformed records. Warnings cover pre-metadata lines, unknown/unmarked markers, and declared markers without assigned content. Missing content-start heading or required metadata makes only that record malformed, so later ranges still parse.
+
+## Reproducibility and verification
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
+
+This checkout’s full suite is currently not green:
+
+- The missing `tools/filter_unsupported_characters.py` prevents its test module from importing.
+- `configs/tap_1.json` expects 100 records, but configured `input/tap1-short-21-page.pdf` yields one title range; the integration test fails with `Expected 100 records, found 1`.
+
+Generated/local PDFs, profiles, and outputs in ignored directories are inspectable here but not version-controlled guarantees. Record exact inputs and compare `serialize_jsonl()` output or JSONL bytes after reviewing profile and issue artifacts.
+
+## Project layout
 
 | Path | Role |
 | --- | --- |
-| `extract_pdf.py` | Extraction CLI. |
-| `configs/` | Per-document parsing/filtering rules. |
-| `extraction/decoder.py` | Glyph decode, reconstruction, and page filtering. |
-| `extraction/glyphs.py` | Shared embedded-glyph, outline, and signature helpers. |
-| `extraction/records.py` | Title, metadata, section, and marker parser. |
-| `extraction/config.py` | Config/profile validation. |
-| `extraction/jsonl.py` | JSONL serialization and layout options. |
-| `extraction/service.py` | Workflow orchestration. |
-| `tools/build_glyph_profiles.py` | Builds profiles for glyphs used in a PDF. |
-| `tools/get_fonts.py` | PDF font inspection. |
-| `tools/get_ref_font.py` | Reference-font cmap inspection. |
-| `tools/test_font.py` | Manual glyph rendering. |
-| `fonts/reference/` | Local Unicode reference fonts. |
-| `data/glyph_profiles/` | Generated profiles. |
-| `input/` / `output/` | Source PDFs / generated artifacts. |
-| `tests/` | Parser and integration tests. |
+| `configs/tap_1.json` | Example per-document config. |
+| `extract_pdf.py` | Main extraction CLI and public re-exports. |
+| `extraction/` | Config, glyph, decoding, parsing, output, searchable-PDF modules. |
+| `tools/build_glyph_profiles.py` | Profile builder. |
+| `tools/get_fonts.py`, `tools/get_ref_font.py`, `tools/test_font.py` | Inspection/review helpers. |
+| `fonts/reference/` | Builder reference fonts. |
+| `tests/` | Unit and sample integration tests. |
+| `input/`, `data/`, `output/` | Ignored local inputs, profiles, and results. |
+| `unsupported_fonts/` | Committed manual-review PNGs. |
 
-### Supported cases and principles
+## Extending
 
-The builder safely handles used glyphs from supported Type0 `cff`, `cid`, `ttf`, and `otf` resources with identity CIDs. Type1, simple-font encodings, non-identity `CIDToGIDMap`, and unsupported CMaps are not guessed; extraction records explicit fallback or unresolved status.
+For a new document, first add a config, appropriate headings/patterns, and a separate profile; then inspect logs and issues. Do not reuse a profile solely because font names look alike—the lookup uses exact outline signatures.
 
-- The source PDF is never modified.
-- CID is never assumed to be Unicode.
-- Profile matching uses glyph signatures, not raw PyMuPDF Unicode.
-- Missing profiles and structural ambiguity remain reviewable instead of being silently accepted.
-
----
-
-<a id="tieng-viet"></a>
-
-## Tiếng Việt
-
-### Tổng quan
-
-Vietnamica Alignment trích xuất PDF văn bia thành JSONL UTF-8 có cấu trúc, không dùng OCR. Với font nhúng có Unicode/ToUnicode không tin cậy, hệ thống xác thực text qua glyph outline:
-
-```text
-Mã/CID trong PDF
-  → glyph font nhúng
-  → glyph signature
-  → glyph profile
-  → Unicode đã xác thực
-  → text đã reconstruct
-  → parser theo config
-  → JSONL
-```
-
-### Cài đặt và chạy nhanh
-
-```bash
-uv sync --frozen
-
-uv run python tools/build_glyph_profiles.py \
-  --pdf input/tap1-short-21-page.pdf \
-  --output data/glyph_profiles/tap1-short.json \
-  --config configs/tap_1.json
-
-uv run python extract_pdf.py \
-  --config configs/tap_1.json
-```
-
-Lệnh extract chỉ cần `--config`; input PDF, glyph profile, output, format parsing và filtering đều lấy từ config.
-
-### Logic chính
-
-1. Builder đọc content stream để lấy CID thực được render, chỉ build profile cho glyph xuất hiện trong PDF.
-2. Builder so sánh outline glyph font nhúng với reference font và tạo `signature → { glyph, codepoint, unicode, char }`.
-3. Extractor đọc `rawdict`, giữ metadata page/block/line/span/character/bbox/font/font size/xref và dùng signature tra profile để reconstruct Unicode.
-4. Filter bỏ line ngoài `page_margins`; footnote chỉ dựa vào `start_pattern` và `max_font_size`, không dùng tọa độ y.
-5. Parser dùng `title_pattern` xác định phạm vi từng văn bia, sau đó dùng metadata labels, `content_start`, `content_sections`, `marker_pattern` để tạo dữ liệu có cấu trúc.
-6. Profile miss, fallback, unresolved, marker mơ hồ và record lỗi được log hoặc ghi trong issues JSON để review.
-
-### Dùng với tài liệu khác
-
-1. Copy `configs/tap_1.json` thành config mới.
-2. Đổi `input_pdf`, `glyph_profile`, `output_jsonl`.
-3. Cập nhật `encoded_fonts`, title, metadata, section, marker, margin và footnote rule theo tài liệu mới.
-4. Build profile bằng config mới.
-5. Chạy `extract_pdf.py --config <config-mới>`.
-
-Không hard-code title, marker hay section đặc thù tài liệu trong Python nếu config đã có field tương ứng.
-
-### Option extract
-
-```bash
-uv run python extract_pdf.py --config configs/tap_1.json
-```
-
-`--content-layout preserve|space|no-space` lần lượt là giữ newline, đổi newline thành space, hoặc xoá newline. Newline trong `van_ban` được thêm khi parser ghép line cùng section, không phải do glyph profile map sang `\n`.
-
-### Thư mục/file chính
-
-- `configs/`: config cho từng PDF.
-- `input/`: PDF nguồn; `output/`: JSONL, issues và file review.
-- `fonts/reference/`: font Unicode chuẩn để build profile.
-- `data/glyph_profiles/`: glyph profile đã build.
-- `extraction/decoder.py`: decode glyph, reconstruct text và filter trang.
-- `extraction/records.py`: parse văn bia, metadata, section và marker.
-- `tools/build_glyph_profiles.py`: build profile từ glyph thực xuất hiện.
-- `tests/`: parser và integration tests.
-
-### Nguyên tắc
-
-- Không sửa PDF gốc.
-- Không coi CID là Unicode.
-- Không dùng Unicode raw từ PyMuPDF để xác thực glyph encoded.
-- Không đoán khi thiếu profile hoặc không resolve được font/CMap; giữ fallback/unresolved có log.
-- Không tự gán nội dung mơ hồ vào marker bất kỳ.
-
-### Kiểm thử
-
-```bash
-uv run python -m unittest discover -s tests -v
-```
+Code changes are needed for new PDF font/CMap cases, alternate text-show syntax, non-identity `CIDToGIDMap`, different matching/validation policy, or a different output model. Keep shared outline behavior in `extraction/glyphs.py` so builder and decoder remain compatible, and add tests for both profile interpretation and extraction fallback behavior.
