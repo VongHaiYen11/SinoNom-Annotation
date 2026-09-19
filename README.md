@@ -1,533 +1,251 @@
-# Vietnamica-Alignment
+# Vietnamica Alignment
 
-Trích xuất văn bia từ PDF Vietnamica thành **JSONL UTF-8 có cấu trúc**, đồng thời giữ liên kết giữa metadata, mặt bia và các chuyên mục văn bản.
+[English](#english) · [Tiếng Việt](#tieng-viet)
 
-## 1. Tổng quan
+> Extract structured Vietnamese inscription data from PDFs whose embedded-font Unicode mapping is unreliable.
 
-Một số PDF Vietnamica sử dụng **font CID subset** nhưng không có hoặc có bảng `ToUnicode` không chính xác. Khi đó PDF vẫn hiển thị chữ đúng trên màn hình, nhưng khi copy hoặc extract text có thể nhận được ký tự lạ như `U+0001`, `�` hoặc ký tự không đúng.
+<a id="english"></a>
 
-Dự án không sử dụng OCR. Thay vào đó, hệ thống dựa trên **hình dạng glyph trong font nhúng** để xác định Unicode một cách xác định (deterministic).
+## English
 
-Ý tưởng chính:
+### Overview
 
-```text
-PDF
- │
- ├─ Font thường
- │    └─► dùng Unicode do PyMuPDF cung cấp
- │
- └─ Font mã hóa
-      └─► CID
-           └─► glyph trong font nhúng
-                └─► glyph signature
-                     └─► glyph_profile
-                          └─► Unicode
-                               │
-                               ▼
-                         Văn bản đã decode
-                               │
-                               ▼
-                    Metadata / mặt bia / chuyên mục
-                               │
-                               ▼
-                             JSONL
-```
-
-PDF vẫn được xem là nguồn dữ liệu có thể chứa lỗi đánh máy, marker thiếu, chú thích bị ngắt dòng hoặc glyph chưa thể giải mã. Chương trình **không tự đoán** trong những trường hợp không an toàn:
-
-* Bất thường có thể bảo toàn dữ liệu → ghi `warning`.
-* Không thể xác định dữ liệu một cách đáng tin cậy → `error` và dừng.
-
----
-
-## 2. Vì sao cần font tham chiếu?
-
-Font được nhúng trong PDF có thể chứa đầy đủ **glyph outline** để vẽ chữ, nhưng mã CID bên trong font không nhất thiết tương ứng trực tiếp với Unicode.
-
-Ví dụ:
+Vietnamica Alignment converts a PDF collection into UTF-8 JSONL records. It does not use OCR. For supported embedded fonts, it verifies rendered text by glyph outline:
 
 ```text
-PDF:
-CID 123
-  ↓
-glyph outline của chữ "東"
+PDF code / CID
+  → embedded-font glyph outline
+  → stable glyph signature
+  → glyph profile
+  → verified Unicode
+  → reconstructed lines
+  → config-driven inscription parser
+  → JSONL
 ```
 
-Nhưng PDF không nhất thiết cho biết:
+The glyph profile is built once from glyphs used in the PDF and local Unicode reference fonts. Extraction only performs cached profile lookup; it does not match reference fonts again.
 
-```text
-CID 123 → U+6771
-```
+### Requirements
 
-Do đó cần một font tham chiếu có Unicode chuẩn, ví dụ `NomNaTong.ttf`.
-
-Từ font tham chiếu:
-
-```text
-Unicode
-   ↓
-glyph
-   ↓
-outline
-   ↓
-signature
-```
-
-Hệ thống tạo bảng:
-
-```text
-glyph signature → Unicode
-```
-
-Bảng này được lưu thành `glyph_profile`.
-
-Khi extract PDF:
-
-```text
-CID
- ↓
-glyph outline trong PDF
- ↓
-signature
- ↓
-glyph_profile
- ↓
-Unicode
-```
-
-**Font tham chiếu chỉ được dùng để xác định Unicode và tạo text layer khi xuất searchable PDF; không thay đổi hình ảnh hoặc nội dung PDF gốc.**
-
----
-
-## 3. Font tham chiếu
-
-Các font tham chiếu được đặt trong `fonts/reference/`:
-
-| Font                      | Vai trò                                        |
-| ------------------------- | ---------------------------------------------- |
-| `NomNaTong.ttf`           | Nguồn chính cho chữ Nôm, Hán Nôm và tiếng Việt |
-| `Palatino-Regular.ttf`    | Latin và dấu câu                               |
-| `Palatino-Bold.ttf`       | Glyph Palatino bold                            |
-| `Palatino-Italic.ttf`     | Glyph Palatino italic                          |
-| `Palatino-BoldItalic.ttf` | Glyph Palatino bold-italic                     |
-| `PMingLiU-ExtB.ttf`       | Bổ sung Hán tự mở rộng                         |
-
-Thứ tự `--font` khi export searchable PDF có ý nghĩa: hệ thống chọn **font đầu tiên có glyph phù hợp**.
-
-Với corpus này, thứ tự khuyến nghị là:
-
-```text
-NomNaTong → PMingLiU-ExtB → Palatino
-```
-
-Các font reference có thể có giới hạn giấy phép nên được giữ local và không commit vào Git.
-
-Nếu thay đổi font reference, cần **tạo lại glyph profile và chạy lại test**.
-
----
-
-## 4. Cài đặt
-
-Từ thư mục `Vietnamica-Alignment`, kiểm tra `uv`:
-
-```bash
-uv --version
-```
-
-Nếu chưa có `uv`, cài theo hướng dẫn chính thức tại [docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/).
-
-Dự án yêu cầu Python 3.10 trở lên.
-
-Đồng bộ môi trường:
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/)
+- Local reference fonts in `fonts/reference/`
 
 ```bash
 uv sync --frozen
-```
-
-Sau đó sử dụng `uv run` để chạy Python:
-
-```bash
-uv run python --version
-
 uv run python -m unittest discover -s tests -v
 ```
 
----
+### Quick start
 
-# 5. Quy trình xử lý
-
-Toàn bộ pipeline gồm 4 bước chính:
-
-```text
-Font reference
-      │
-      ▼
-1. Build glyph profile
-      │
-      ▼
-2. Extract PDF
-      │
-      ▼
-3. Parse metadata / sections / markers
-      │
-      ▼
-4. Validate → JSONL
-      │
-      └────► Review / Searchable PDF (tuỳ chọn)
-```
-
-## Bước 1 — Tạo glyph profile
-
-`glyph_profile` là bảng:
-
-```text
-glyph signature → Unicode
-```
-
-Profile được tạo từ font tham chiếu và glyph trong PDF.
-
-Chạy:
+1. Create or update one document config in `configs/`.
+2. Build its glyph profile.
+3. Extract records.
 
 ```bash
 uv run python tools/build_glyph_profiles.py \
-  --pdf input/Tap-1_Bia-Hau-the-ki-XVII_760-trang.pdf \
-  --output data/glyph_profiles/tap_1.json
+  --pdf input/tap1-short-21-page.pdf \
+  --output data/glyph_profiles/tap1-short.json \
+  --config configs/tap_1.json
+
+uv run python extract_pdf.py \
+  --config configs/tap_1.json
 ```
 
-The profile builder discovers reference fonts from `fonts/reference/`. It
-matches the PDF font family against internal `nameID=1` values rather than
-filenames, and supports standalone `.ttf`/`.otf` plus `.ttc`/`.otc`
-collections. A collection face is selected by matching its family and, when
-available, its style; no font-specific command-line flags are needed.
+`extract_pdf.py` needs only `--config`. The PDF path, profile, output path, parsing rules, and filtering rules come from that file.
 
-### Glyph profile hoạt động như thế nào?
+### Key workflow
 
-Với font lỗi trong PDF:
+1. **Collect used glyphs** — the builder reads PDF text-show operations and profiles only used Type0 CIDs, not every glyph in an embedded font.
+2. **Build profile** — embedded and reference glyph outlines use the same `glyph_commands()` and `signature()` helpers. The profile schema is:
 
-```text
-CID → glyph outline → signature
-```
+   ```json
+   {
+     "signature": {
+       "glyph": "cid123",
+       "codepoint": 26481,
+       "unicode": "U+6741",
+       "char": "条"
+     }
+   }
+   ```
 
-Với font tham chiếu:
+3. **Decode and reconstruct** — extraction retains page, block, line, span, character bbox, font, font size, and xref while rebuilding text. Profiles and embedded-font maps are cached.
+4. **Filter** — configured top/bottom margins remove page furniture. Footnotes use a text pattern and optional maximum font size; no y-coordinate footnote rule is used.
+5. **Parse** — `title_pattern` defines record ranges. Metadata labels, `content_start`, section labels, and face markers from config create structured records.
+6. **Review** — profile misses, fallback/unresolved characters, malformed records, and marker ambiguity are logged or written to the issues JSON.
 
-```text
-Unicode → glyph outline → signature
-```
+### Configuration
 
-Hai phía được đối chiếu bằng signature để tạo:
+Use [`configs/tap_1.json`](configs/tap_1.json) as a starting point.
 
-```text
-signature → Unicode
-```
+| Field | Purpose |
+| --- | --- |
+| `input_pdf` | PDF path, relative to the config. |
+| `glyph_profile` | Profile generated by the builder. |
+| `output_jsonl` | Primary output. |
+| `encoded_fonts` | Font-family tokens used by the builder to select relevant embedded Type0 fonts. |
+| `page_margins` | Top/bottom regions removed before parsing. |
+| `footnote_filter` | `start_pattern` and optional `max_font_size`. |
+| `title_pattern` | Title regex with named `number` group. |
+| `metadata` | Metadata labels and output fields. |
+| `content_start` | Heading that starts content. |
+| `content_sections` | Allowed section headings. |
+| `marker_pattern` | Face-marker regex with named `id` group. |
+| `expected_record_count` | Optional corpus-level validation. |
 
-Trong quá trình này, hệ thống có thể sử dụng kích thước glyph, bounding box và rasterized outline để giảm và đánh giá các ứng viên.
+To adapt the project to another collection:
 
-Nếu một glyph không có signature tương ứng hoặc có nhiều ứng viên không thể phân biệt an toàn, chương trình không tự đoán mà báo lỗi.
+1. Copy the sample config.
+2. Set input, output, and profile paths.
+3. Configure titles, metadata labels, sections, markers, margin, footnote, and font-family tokens for that document.
+4. Build a profile with `--config <your-config>`.
+5. Run `extract_pdf.py --config <your-config>`.
 
----
+Keep document-specific rules in config rather than Python whenever a config field exists.
 
-## Bước 2 — Extract PDF
-
-Mỗi PDF có một file config riêng trong `configs/`.
-
-Các trường quan trọng:
-
-* `input_pdf`: PDF đầu vào.
-* `glyph_profile`: profile dùng để decode glyph.
-* `output_jsonl`: JSONL đầu ra.
-* `metadata`: các trường metadata cần đọc.
-* `title_pattern`: nhận diện đầu mỗi văn bia.
-* `content_start`: mốc bắt đầu nội dung.
-* `content_sections`: các chuyên mục văn bản.
-* `marker_pattern`: nhận diện marker mặt bia.
-* `encoded_fonts`: các font cần giải mã bằng glyph profile.
-* `page_margins`: loại header/footer hoặc vùng ngoài nội dung.
-* `expected_record_count`: số lượng bản ghi kỳ vọng.
-
-Chạy extraction:
+### Extraction options
 
 ```bash
 uv run python extract_pdf.py --config configs/tap_1.json
 ```
 
-The config is the only PDF-specific input. It dynamically provides the PDF
-path, glyph profile, output paths, encoded-font rules, metadata fields,
-patterns, margins, and optional footnote filtering. To process another PDF,
-create another config rather than editing `extract_pdf.py`.
+Optional arguments:
 
-Hoặc tạo thêm JSON có indent để review:
+```text
+--pretty-output output/review.json
+--issues-output output/issues.json
+--keep-flagged-records
+--content-layout preserve|space|no-space
+--strip-literal-backslashes
+```
+
+`preserve` keeps parsed line breaks, `space` replaces them with spaces, and `no-space` removes them. Newlines are added when parser section lines are joined; they are not glyph-profile mappings.
+
+### Outputs
+
+| Output | Description |
+| --- | --- |
+| `output/*.jsonl` | Valid records, one compact JSON object per line. |
+| `output/*_invalid.json` | Recoverable parsing errors and warnings. |
+| Optional pretty JSON | Indented review representation. |
+| CLI stderr | Glyph-profile misses and fallback/unresolved summaries. |
+
+### Project layout
+
+| Path | Role |
+| --- | --- |
+| `extract_pdf.py` | Extraction CLI. |
+| `configs/` | Per-document parsing/filtering rules. |
+| `extraction/decoder.py` | Glyph decode, reconstruction, and page filtering. |
+| `extraction/glyphs.py` | Shared embedded-glyph, outline, and signature helpers. |
+| `extraction/records.py` | Title, metadata, section, and marker parser. |
+| `extraction/config.py` | Config/profile validation. |
+| `extraction/jsonl.py` | JSONL serialization and layout options. |
+| `extraction/service.py` | Workflow orchestration. |
+| `tools/build_glyph_profiles.py` | Builds profiles for glyphs used in a PDF. |
+| `tools/get_fonts.py` | PDF font inspection. |
+| `tools/get_ref_font.py` | Reference-font cmap inspection. |
+| `tools/test_font.py` | Manual glyph rendering. |
+| `fonts/reference/` | Local Unicode reference fonts. |
+| `data/glyph_profiles/` | Generated profiles. |
+| `input/` / `output/` | Source PDFs / generated artifacts. |
+| `tests/` | Parser and integration tests. |
+
+### Supported cases and principles
+
+The builder safely handles used glyphs from supported Type0 `cff`, `cid`, `ttf`, and `otf` resources with identity CIDs. Type1, simple-font encodings, non-identity `CIDToGIDMap`, and unsupported CMaps are not guessed; extraction records explicit fallback or unresolved status.
+
+- The source PDF is never modified.
+- CID is never assumed to be Unicode.
+- Profile matching uses glyph signatures, not raw PyMuPDF Unicode.
+- Missing profiles and structural ambiguity remain reviewable instead of being silently accepted.
+
+---
+
+<a id="tieng-viet"></a>
+
+## Tiếng Việt
+
+### Tổng quan
+
+Vietnamica Alignment trích xuất PDF văn bia thành JSONL UTF-8 có cấu trúc, không dùng OCR. Với font nhúng có Unicode/ToUnicode không tin cậy, hệ thống xác thực text qua glyph outline:
+
+```text
+Mã/CID trong PDF
+  → glyph font nhúng
+  → glyph signature
+  → glyph profile
+  → Unicode đã xác thực
+  → text đã reconstruct
+  → parser theo config
+  → JSONL
+```
+
+### Cài đặt và chạy nhanh
 
 ```bash
+uv sync --frozen
+
+uv run python tools/build_glyph_profiles.py \
+  --pdf input/tap1-short-21-page.pdf \
+  --output data/glyph_profiles/tap1-short.json \
+  --config configs/tap_1.json
+
 uv run python extract_pdf.py \
-  --config configs/tap_1.json \
-  --pretty-output output/tap_1_review.json
-```
-Flow extract
-
-PDF → PyMuPDF → Kiểm tra font → Giải mã text → Chuẩn hóa → Ghép dòng → Tách văn bia → Validate → JSONL / Issues
-
-Quy trình bắt đầu bằng việc đọc nội dung PDF bằng PyMuPDF và duyệt văn bản theo từng trang. Với mỗi đoạn text, hệ thống kiểm tra font: font thông thường sử dụng trực tiếp Unicode do PyMuPDF cung cấp; với encoded font, hệ thống giải mã theo chuỗi CID → glyph → signature → glyph profile → Unicode.
-
-Sau khi giải mã, text được chuẩn hóa và ghép thành các dòng hoàn chỉnh. Hệ thống tiếp tục nhận diện cấu trúc văn bia, bao gồm metadata, chuyên mục và marker mặt bia, sau đó thực hiện các bước kiểm tra và validate. Kết quả cuối cùng được xuất thành JSONL, đồng thời ghi nhận các bản ghi hoặc vấn đề cần review vào issues.
-
-Sau khi PyMuPDF đọc text từ PDF, hệ thống kiểm tra font của từng đoạn text:
-- Font thường → sử dụng trực tiếp Unicode mà PyMuPDF trích xuất được.
-- Encoded font → không sử dụng trực tiếp Unicode của PyMuPDF mà thực hiện giải mã thông qua glyph trong font PDF và `glyph_profile`.
-
-### Xử lý từng trang
-
-Trang PDF chỉ là **đơn vị đọc**, không phải đơn vị bản ghi.
-
-Một văn bia có thể bắt đầu ở trang này và tiếp tục sang trang kế tiếp.
-
-Sau khi đọc text:
-
-1. Lọc vùng ngoài margin.
-2. Decode glyph.
-3. Chuẩn hóa Unicode và khoảng trắng.
-4. Sắp xếp line theo vị trí `(y, x)`.
-5. Nối các line giữa các trang.
-6. Dùng `title_pattern` để xác định văn bia.
-7. Đọc metadata.
-8. Từ `content_start`, phân chia chuyên mục.
-9. Dùng marker để xác định mặt bia.
-10. Validate và tạo JSONL.
-
-Nếu marker bị thiếu, hệ thống không tự gán nội dung sang một mặt bia khác nếu không đủ cơ sở. Trường hợp này được đưa vào warning/review.
-
----
-
-## Bước 3 — Review dữ liệu
-
-JSONL chính chứa các bản ghi hợp lệ.
-
-Các vấn đề cần con người kiểm tra được ghi riêng vào:
-
-```text
-output/<tên>_invalid.json
+  --config configs/tap_1.json
 ```
 
-Hoặc chỉ định file:
+Lệnh extract chỉ cần `--config`; input PDF, glyph profile, output, format parsing và filtering đều lấy từ config.
+
+### Logic chính
+
+1. Builder đọc content stream để lấy CID thực được render, chỉ build profile cho glyph xuất hiện trong PDF.
+2. Builder so sánh outline glyph font nhúng với reference font và tạo `signature → { glyph, codepoint, unicode, char }`.
+3. Extractor đọc `rawdict`, giữ metadata page/block/line/span/character/bbox/font/font size/xref và dùng signature tra profile để reconstruct Unicode.
+4. Filter bỏ line ngoài `page_margins`; footnote chỉ dựa vào `start_pattern` và `max_font_size`, không dùng tọa độ y.
+5. Parser dùng `title_pattern` xác định phạm vi từng văn bia, sau đó dùng metadata labels, `content_start`, `content_sections`, `marker_pattern` để tạo dữ liệu có cấu trúc.
+6. Profile miss, fallback, unresolved, marker mơ hồ và record lỗi được log hoặc ghi trong issues JSON để review.
+
+### Dùng với tài liệu khác
+
+1. Copy `configs/tap_1.json` thành config mới.
+2. Đổi `input_pdf`, `glyph_profile`, `output_jsonl`.
+3. Cập nhật `encoded_fonts`, title, metadata, section, marker, margin và footnote rule theo tài liệu mới.
+4. Build profile bằng config mới.
+5. Chạy `extract_pdf.py --config <config-mới>`.
+
+Không hard-code title, marker hay section đặc thù tài liệu trong Python nếu config đã có field tương ứng.
+
+### Option extract
 
 ```bash
---issues-output
+uv run python extract_pdf.py --config configs/tap_1.json
 ```
 
-Các bất thường thường gặp:
+`--content-layout preserve|space|no-space` lần lượt là giữ newline, đổi newline thành space, hoặc xoá newline. Newline trong `van_ban` được thêm khi parser ghép line cùng section, không phải do glyph profile map sang `\n`.
 
-| Warning                            | Ý nghĩa                                   |
-| ---------------------------------- | ----------------------------------------- |
-| Marker không có trong metadata     | Marker có thể sai hoặc thừa               |
-| Không tìm thấy nội dung cho marker | Marker có nhưng không có text được gán    |
-| Có nội dung không thuộc marker     | Thiếu marker hoặc cấu trúc PDF bất thường |
-| Bỏ qua dòng trước metadata         | Có text bất thường trước phần metadata    |
+### Thư mục/file chính
 
-Các trường hợp không thể đảm bảo kết quả:
+- `configs/`: config cho từng PDF.
+- `input/`: PDF nguồn; `output/`: JSONL, issues và file review.
+- `fonts/reference/`: font Unicode chuẩn để build profile.
+- `data/glyph_profiles/`: glyph profile đã build.
+- `extraction/decoder.py`: decode glyph, reconstruct text và filter trang.
+- `extraction/records.py`: parse văn bia, metadata, section và marker.
+- `tools/build_glyph_profiles.py`: build profile từ glyph thực xuất hiện.
+- `tests/`: parser và integration tests.
 
-* Không mở được PDF.
-* Không đọc được glyph profile.
-* Không resolve được font nhúng.
-* Không decode được CID.
-* Không thể phân biệt nhiều font subset.
-* Unicode không hợp lệ.
-* Cấu trúc văn bia không đáp ứng các điều kiện bắt buộc.
+### Nguyên tắc
 
-→ chương trình dừng và báo `error`.
+- Không sửa PDF gốc.
+- Không coi CID là Unicode.
+- Không dùng Unicode raw từ PyMuPDF để xác thực glyph encoded.
+- Không đoán khi thiếu profile hoặc không resolve được font/CMap; giữ fallback/unresolved có log.
+- Không tự gán nội dung mơ hồ vào marker bất kỳ.
 
----
-
-# 6. Xử lý ký tự Unicode lỗi
-
-Một số PDF có thể trả về:
-
-* `U+0001`, `U+0002`, ...
-* `U+FFFD` (`�`)
-* control characters
-* surrogate
-
-Đây thường là dấu hiệu mapping Unicode của font không đáng tin cậy.
-
-Hệ thống **không tự thay thế bằng ký tự phỏng đoán**.
-
-Các ký tự không hợp lệ được loại khỏi text trước khi ghi JSONL. Nếu ký tự đó có ý nghĩa thực tế, cần bổ sung font reference/glyph profile hoặc xử lý lại nguồn PDF.
-
----
-
-# 7. Xuất PDF searchable
-
-JSONL là output chính. Nếu cần một PDF có thể search/copy Unicode, có thể tạo một PDF mới với:
-
-```text
-PDF gốc
-   ↓
-render thành nền
-   +
-Unicode text layer vô hình
-   ↓
-searchable PDF
-```
-
-PDF gốc không bị sửa.
-
-Chạy:
-
-```bash
-uv run python export_searchable_pdf.py \
-  --config configs/tap_1.json \
-  --output output/tap_1_searchable.pdf \
-  --font fonts/reference/NomNaTong.ttf \
-  --font fonts/reference/PMingLiU-ExtB.ttf \
-  --font fonts/reference/Palatino-Regular.ttf \
-  --dpi 150
-```
-
-`--font` có thể lặp lại. Font được chọn theo thứ tự xuất hiện trong command.
-
-Có thể kiểm tra một số trang trước:
-
-```bash
-uv run python export_searchable_pdf.py \
-  --config configs/tap_1.json \
-  --output /private/tmp/tap_1_qa.pdf \
-  --font fonts/reference/NomNaTong.ttf \
-  --font fonts/reference/PMingLiU-ExtB.ttf \
-  --font fonts/reference/Palatino-Regular.ttf \
-  --dpi 100 \
-  --pages 5,121-122
-```
-
-`--dpi` quyết định chất lượng ảnh nền và dung lượng PDF:
-
-* `150`: phù hợp để đọc.
-* `300`: phù hợp hơn để in nhưng file lớn hơn.
-
-Exporter sẽ dừng nếu có ký tự không được hỗ trợ bởi các font được cung cấp, thay vì tạo một text layer bị mất chữ.
-
----
-
-# 8. Kiểm tra ký tự không được hỗ trợ
-
-Sau khi extract, có thể kiểm tra các ký tự không có trong các font reference:
-
-```bash
-uv run python tools/filter_unsupported_characters.py \
-  --input output/tap_1_review.json \
-  --output output/tap_1_unsupported_characters.json \
-  --font fonts/reference/NomNaTong.ttf \
-  --font fonts/reference/PMingLiU-ExtB.ttf \
-  --font fonts/reference/Palatino-Regular.ttf
-```
-
-Tool giữ nguyên record gốc và bổ sung thông tin:
-
-```text
-unsupported_character
-```
-
-bao gồm ký tự, Unicode, số lần xuất hiện và vị trí trong dữ liệu.
-
----
-
-# 9. Output
-
-Pipeline tạo các file chính:
-
-| File                         | Mục đích                                   |
-| ---------------------------- | ------------------------------------------ |
-| `data/glyph_profiles/*.json` | Bảng `glyph signature → Unicode`           |
-| `output/*.jsonl`             | Dữ liệu chính, mỗi văn bia một JSON object |
-| `output/*_review.json`       | JSON có indent để review                   |
-| `output/*_invalid.json`      | Record/warning cần kiểm tra                |
-| `output/*_searchable.pdf`    | PDF mới có Unicode text layer              |
-
-PDF nguồn luôn được giữ nguyên.
-
----
-
-# 10. Cấu trúc mã nguồn
-
-| File                                     | Vai trò                            |
-| ---------------------------------------- | ---------------------------------- |
-| `extract_pdf.py`                         | CLI chính cho extraction           |
-| `export_searchable_pdf.py`               | Tạo searchable PDF                 |
-| `extraction/models.py`                   | Dataclass, config và exception     |
-| `extraction/config.py`                   | Đọc và validate config             |
-| `extraction/text.py`                     | Làm sạch và chuẩn hóa text         |
-| `extraction/decoder.py`                  | Đọc PDF, CID, font và decode glyph |
-| `extraction/records.py`                  | Parse metadata, section và marker  |
-| `extraction/jsonl.py`                    | Validate và ghi JSONL/JSON         |
-| `extraction/service.py`                  | Điều phối extraction               |
-| `extraction/searchable_pdf.py`           | Tạo Unicode text layer             |
-| `tools/build_glyph_profiles.py`          | Tạo glyph profile                  |
-| `tools/extract_ttc_face.py`              | Tách face từ TTC                   |
-| `tools/filter_unsupported_characters.py` | Tìm ký tự không có glyph           |
-
----
-
-# 11. Các nguyên tắc quan trọng
-
-### Không dùng OCR
-
-Giải mã dựa trên cấu trúc font và glyph outline, nên kết quả deterministic và có thể tái lập giữa các lần chạy.
-
-### Không đoán Unicode
-
-Nếu không thể xác định glyph một cách an toàn, chương trình báo lỗi thay vì tự chọn ký tự gần nhất.
-
-### Không sửa PDF nguồn
-
-Mọi output đều được ghi thành file mới.
-
-### Font reference không phải font của PDF
-
-Font reference cung cấp **Unicode chuẩn để xây dựng profile**.
-
-Font nhúng trong PDF cung cấp **glyph thực tế cần giải mã**.
-
-### CID không phải Unicode
-
-```text
-CID → glyph
-```
-
-không đồng nghĩa với:
-
-```text
-CID → Unicode
-```
-
-Do đó pipeline sử dụng:
-
-```text
-CID → glyph → signature → Unicode
-```
-
-### Một PDF có thể chứa nhiều subset của cùng một font
-
-Ví dụ:
-
-```text
-AAAAAT+NomNaTong
-AAAABA+NomNaTong
-AAAABG+NomNaTong
-...
-```
-
-Các subset có thể dùng CID table khác nhau. Decoder vì vậy không chỉ dựa vào tên font mà còn kiểm tra resource và `xref` để xác định đúng font nhúng.
-
----
-
-# 12. Kiểm thử
-
-Chạy toàn bộ test:
+### Kiểm thử
 
 ```bash
 uv run python -m unittest discover -s tests -v
 ```
-
-Integration test sẽ chạy khi PDF mẫu và glyph profile tương ứng đã có. Nếu thiếu dữ liệu test bên ngoài, test đó có thể được bỏ qua.
-
-# To-do
-* [ ] Phân loại font theo PDF font resource: font TrueType dùng trực tiếp Unicode từ PyMuPDF, font CID/Type0 giải mã thông qua `glyph_profile`.
-* [ ] Rà soát toàn bộ font resource trong PDF và đảm bảo các font CID có `glyph_profile` tương ứng.
-* [ ] Xem lại các trường hợp kí tự có mã unicode đặc biệt có thể gây lỗi (lúc trước bỏ qua thẳng).
