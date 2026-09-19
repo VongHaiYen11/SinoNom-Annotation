@@ -247,6 +247,8 @@ class ParserTests(unittest.TestCase):
 
         cleaned = prepare_records_for_output(records, "space", True)
         self.assertEqual("Dòng một Dòng haithừa", cleaned[0]["noi_dung"][0]["chuyen_muc"][0]["van_ban"])
+        compact = prepare_records_for_output(records, "no-space", True)
+        self.assertEqual("Dòng mộtDòng haithừa", compact[0]["noi_dung"][0]["chuyen_muc"][0]["van_ban"])
         self.assertEqual("Tên\\bia", cleaned[0]["ten_bia"])
         self.assertEqual("Dòng một\\\nDòng hai\\thừa", records[0]["noi_dung"][0]["chuyen_muc"][0]["van_ban"])
 

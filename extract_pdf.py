@@ -58,9 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--content-layout",
-        choices=("preserve", "space"),
+        choices=("preserve", "space", "no-space"),
         default="preserve",
-        help="Keep PDF line breaks or replace them with spaces in van_ban.",
+        help="Keep PDF line breaks, replace them with spaces, or remove them in van_ban.",
     )
     parser.add_argument(
         "--strip-literal-backslashes",
@@ -125,4 +125,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

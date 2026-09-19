@@ -47,11 +47,14 @@ def prepare_records_for_output(
     """Return a copy with optional display-oriented cleanup of ``van_ban``.
 
     ``preserve`` keeps source line breaks. ``space`` joins PDF line breaks into
-    spaces. A literal backslash is distinct from JSON's escaped representation
-    of a newline and is removed only when explicitly requested.
+    spaces; ``no-space`` removes them. A literal backslash is distinct from
+    JSON's escaped representation of a newline and is removed only when
+    explicitly requested.
     """
-    if content_layout not in {"preserve", "space"}:
-        raise ExtractionError("content_layout must be 'preserve' or 'space'")
+    if content_layout not in {"preserve", "space", "no-space"}:
+        raise ExtractionError(
+            "content_layout must be 'preserve', 'space', or 'no-space'"
+        )
     prepared = deepcopy(records)
     for record in prepared:
         for face in record.get("noi_dung", []):
@@ -62,6 +65,8 @@ def prepare_records_for_output(
                 if content_layout == "space":
                     text = re.sub(r"\s*\n\s*", " ", text)
                     text = re.sub(r" {2,}", " ", text).strip()
+                elif content_layout == "no-space":
+                    text = re.sub(r"\s*\n\s*", "", text)
                 if strip_literal_backslashes:
                     text = text.replace("\\", "")
                 section["van_ban"] = text
