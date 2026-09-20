@@ -1,4 +1,4 @@
-"""Tests for the JSON/JSONL unsupported-glyph review utility."""
+"""Tests for the JSON unsupported-glyph review utility."""
 
 from __future__ import annotations
 
@@ -32,20 +32,20 @@ class FilterUnsupportedCharactersTests(unittest.TestCase):
         }])
         self.assertNotIn("ky_tu_khong_ho_tro", records[1])
 
-    def test_loads_jsonl_and_writes_jsonl(self) -> None:
+    def test_loads_json_and_writes_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
-            source = folder / "input.jsonl"
-            output = folder / "output.jsonl"
-            source.write_text('{"so_van_bia":1,"ten_bia":"A"}\n{"so_van_bia":2,"ten_bia":"B"}\n', encoding="utf-8")
+            source = folder / "input.json"
+            output = folder / "output.json"
+            source.write_text('[{"so_van_bia":1,"ten_bia":"A"},{"so_van_bia":2,"ten_bia":"B"}]\n', encoding="utf-8")
             records = FILTER.load_records(source)
             FILTER.write_records(output, FILTER.filter_records(records, {ord("A")}))
 
-            self.assertEqual(json.loads(output.read_text(encoding="utf-8")), {
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8")), [{
                 "so_van_bia": 2,
                 "ten_bia": "B",
                 "ky_tu_khong_ho_tro": [{
                     "ky_tu": "B", "ma_unicode": "U+0042", "so_lan": 1,
                     "vi_tri": ["$.ten_bia"],
                 }],
-            })
+            }])

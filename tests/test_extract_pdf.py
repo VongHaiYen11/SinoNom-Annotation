@@ -16,7 +16,7 @@ from extract_pdf import (
     normalize_line,
     parse_records,
     prepare_records_for_output,
-    serialize_jsonl,
+    serialize_json,
     serialize_pretty_json,
 )
 from extraction.records import parse_records_with_issues
@@ -29,7 +29,7 @@ def line(text: str, page: int = 1) -> TextLine:
 def config(**overrides) -> ExtractConfig:
     values = {
         "input_pdf": Path("input.pdf"),
-        "output_jsonl": Path("output.jsonl"),
+        "output_json": Path("output.json"),
         "glyph_profile": Path("profile.json"),
         "metadata": (
             MetadataSpec("Tên bia", "ten_bia"),
@@ -57,8 +57,8 @@ class ParserTests(unittest.TestCase):
         self.assertEqual("AB", clean_extracted_text("A\x01B\ufffd"))
         self.assertEqual("AB", normalize_line("A\x01B\ufffd"))
         self.assertEqual(
-            '{"noi_dung":"TimesNewRoman"}\n',
-            serialize_jsonl([{"noi_dung": fallback}]),
+            '[{"noi_dung":"TimesNewRoman"}]\n',
+            serialize_json([{"noi_dung": fallback}]),
         )
 
     def test_metadata_faces_sections_and_missing_closing_bracket(self) -> None:
@@ -216,24 +216,24 @@ class ParserTests(unittest.TestCase):
         self.assertIn("thiếu mốc", issues[0]["loi"][0])
         self.assertIn("Tên bia: Thiếu phần nội dung", issues[0]["du_lieu_nguon"])
 
-    def test_jsonl_is_deterministic_and_content_is_last(self) -> None:
+    def test_json_is_deterministic_and_content_is_last(self) -> None:
         record = {
             "so_van_bia": 1,
             "ten_bia": "Bia thử",
             "noi_dung": [{"ky_hieu": "1", "chuyen_muc": []}],
         }
-        first = serialize_jsonl([record])
-        second = serialize_jsonl([record])
+        first = serialize_json([record])
+        second = serialize_json([record])
         self.assertEqual(first, second)
         self.assertEqual(
             ["so_van_bia", "ten_bia", "noi_dung"],
-            list(json.loads(first).keys()),
+            list(json.loads(first)[0].keys()),
         )
         pretty = serialize_pretty_json([record])
         self.assertEqual([record], json.loads(pretty))
         self.assertIn('\n    "so_van_bia": 1,', pretty)
         with self.assertRaisesRegex(ExtractionError, "U\+FFFD"):
-            serialize_jsonl([{"noi_dung": "bad\ufffdtext"}])
+            serialize_json([{"noi_dung": "bad\ufffdtext"}])
 
     def test_output_cleanup_is_explicit_and_only_changes_content(self) -> None:
         records = [{
@@ -254,7 +254,7 @@ class ParserTests(unittest.TestCase):
 
     def test_atomic_write_replaces_complete_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "nested" / "result.jsonl"
+            target = Path(directory) / "nested" / "result.json"
             atomic_write(target, "first\n")
             atomic_write(target, "second\n")
             self.assertEqual("second\n", target.read_text(encoding="utf-8"))

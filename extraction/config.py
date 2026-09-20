@@ -111,7 +111,7 @@ def load_config(path: Path) -> ExtractConfig:
     config_dir = path.resolve().parent
     config = ExtractConfig(
         input_pdf=_resolve_path(config_dir, raw.get("input_pdf"), "input_pdf"),
-        output_jsonl=_resolve_path(config_dir, raw.get("output_jsonl"), "output_jsonl"),
+        output_json=_resolve_path(config_dir, raw.get("output_json"), "output_json"),
         glyph_profile=_resolve_path(config_dir, raw.get("glyph_profile"), "glyph_profile"),
         metadata=tuple(metadata),
         title_pattern=_require_string(raw.get("title_pattern", DEFAULT_TITLE_PATTERN), "title_pattern"),

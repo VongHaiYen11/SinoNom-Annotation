@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from extract_pdf import extract_document, load_config, serialize_jsonl
+from extract_pdf import extract_document, load_config, serialize_json
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +22,7 @@ class SamplePdfIntegrationTests(unittest.TestCase):
         self.assertEqual(list(range(1, 101)), [x["so_van_bia"] for x in records])
         self.assertEqual(["12305", "12306"], records[0]["ky_hieu_vnchn"])
         self.assertTrue(records[0]["noi_dung"])
-        self.assertEqual(serialize_jsonl(records), serialize_jsonl(records))
+        self.assertEqual(serialize_json(records), serialize_json(records))
 
 
 if __name__ == "__main__":

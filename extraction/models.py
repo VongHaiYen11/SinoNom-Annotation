@@ -35,7 +35,7 @@ class MetadataSpec:
 @dataclass(frozen=True)
 class ExtractConfig:
     input_pdf: Path
-    output_jsonl: Path
+    output_json: Path
     glyph_profile: Path
     metadata: tuple[MetadataSpec, ...]
     title_pattern: str = DEFAULT_TITLE_PATTERN

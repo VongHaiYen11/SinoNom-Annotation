@@ -1,4 +1,4 @@
-"""Validation and atomic UTF-8 JSONL output."""
+"""Validation and atomic UTF-8 JSON-array output."""
 
 from __future__ import annotations
 
@@ -27,14 +27,14 @@ def validate_json_value(value: Any, location: str = "record") -> None:
             validate_json_value(item, f"{location}.{key}")
 
 
-def serialize_jsonl(records: list[dict[str, Any]]) -> str:
-    """Serialize validated records as one compact JSON object per line."""
+def serialize_json(records: list[dict[str, Any]]) -> str:
+    """Serialize validated records as one compact UTF-8 JSON array."""
     _validate_records(records)
-    return "".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records)
+    return json.dumps(records, ensure_ascii=False, separators=(",", ":")) + "\n"
 
 
 def serialize_pretty_json(records: list[dict[str, Any]]) -> str:
-    """Serialize records as indented JSON for human review, not JSONL."""
+    """Serialize records as indented JSON for human review."""
     _validate_records(records)
     return json.dumps(records, ensure_ascii=False, indent=2) + "\n"
 
