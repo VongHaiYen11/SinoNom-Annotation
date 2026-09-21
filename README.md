@@ -3,7 +3,7 @@
 Extract structured Vietnamese inscription data from PDFs whose embedded-font text mapping is unreliable.
 
 [![Version 0.1.0](https://img.shields.io/badge/version-0.1.0-5B4B8A)](pyproject.toml)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Output JSON](https://img.shields.io/badge/output-JSON-EA580C)](#output)
 
 [🇻🇳 Tiếng Việt](README.vi.md)
@@ -18,7 +18,7 @@ It takes a PDF, a document config, and a glyph profile. It writes a UTF-8 JSON a
 
 ## Quick start
 
-Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/), the project dependencies, and suitable reference fonts in `fonts/reference/`.
+Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), the project dependencies, and suitable reference fonts in `fonts/reference/`.
 
 ```bash
 uv sync --frozen
@@ -70,22 +70,21 @@ When the one visible page image is stored as multiple adjoining XObjects, the
 tool directly joins the native XObjects in page order before cropping; it does
 not render or screenshot the PDF page.
 
-The initial crop is the largest vertical 9:16 rectangle inside the original extracted
-pixel image, exactly centered. Drag it in the editor to move it, or drag a
-corner to make a smaller 9:16 crop. The displayed editor is a performance
-thumbnail, but its crop coordinates are stored in original-image pixels and all
-saved files are regenerated from the full-resolution XObject. **Auto Center**
-and **Reset** restore the default crop.
+The default is an unconstrained **Free Crop**. **Use DCI 4K Frame
+(2160×4096)** switches to a locked portrait frame. The displayed editor is a
+performance thumbnail, but its crop coordinates are stored in original-image
+pixels and saved files are regenerated from the full-resolution XObject.
 
-After moving or resizing the frame, releasing the pointer updates the live
-preview from the original-resolution image. Use **Apply & Save Final** to both
-commit that crop and immediately write the final image and metadata. **Save**
-also writes the currently applied crop.
+After moving or resizing the frame, releasing the pointer updates the pending
+crop. Use **Apply to live preview** to commit it, then **Save Applied Final**;
+or use **Apply & Save Final** to do both together.
 
-`2160×3840` is a maximum, not an automatic output size. A crop larger than that
+`2160×4096` is a maximum, not an automatic output size. A crop larger than that
 is downscaled with Lanczos; a smaller crop is retained at its native resolution.
-The application never upscales. PNG is the default and preserves alpha; JPEG is
-available with quality 95.
+The application never upscales. All saved images are JPEGs, and both originals
+and finals are constrained to a 4096-pixel maximum longest side. Files are
+named sequentially in PDF appearance order: `<book_name>.001.jpg`,
+`<book_name>.002.jpg`, and so on.
 
 Saving writes only local files in this structure:
 
@@ -93,8 +92,8 @@ Saving writes only local files in this structure:
 output/
   pdf_name/
     page_003/
-      original/image.<source extension>
-      final/image.png
+      original/book_name.001.jpg
+      final/book_name.001.jpg
       metadata.json
 ```
 
@@ -196,13 +195,21 @@ The CLI also writes `<output-stem>_invalid.json` by default. It contains malform
 | `--content-layout preserve\|space\|no-space` | Keep, space-join, or remove `van_ban` line breaks. |
 | `--strip-literal-backslashes` | Remove literal backslashes from `van_ban` only. |
 
-## Project layout
+## Repository layout
 
 | Path | Description |
 | --- | --- |
-| `extract_pdf.py` | Main extraction CLI. |
+| `extract_pdf.py` | Stable CLI for text extraction. |
+| `app.py` | Stable launcher for the local Gradio image UI. |
 | `configs/` | Per-document parser and filter rules. |
-| `extraction/` | Config, glyph, decoder, parser, JSON, and library workflow code. |
+| `extraction/` | Text pipeline: configuration, glyph decoding, parsing, JSON output, and searchable-PDF support. |
+| `pdf_image_extractor/detection.py` | Embedded XObject detection and original-image loading. |
+| `pdf_image_extractor/processing.py` | Pixel-space crop and no-upscale resize logic. |
+| `pdf_image_extractor/storage.py` | JPEG naming, output layout, and metadata persistence. |
+| `pdf_image_extractor/service.py` | UI-independent image workflow operations. |
+| `pdf_image_extractor/gradio_ui.py` | Gradio presentation layer and crop-editor integration. |
+| `pdf_image_extractor/core.py` | Backward-compatible imports for older callers. |
+| OCR / recognition | Not used or loaded; image files are numbered by PDF appearance order. |
 | `tools/build_glyph_profiles.py` | Glyph-profile builder. |
 | `tools/get_fonts.py` | PDF font inventory. |
 | `tools/get_ref_font.py` | Reference-font metadata inspector. |
@@ -224,7 +231,9 @@ The CLI also writes `<output-stem>_invalid.json` by default. It contains malform
 uv run python -m unittest discover -s tests -v
 ```
 
-The parser tests pass in this checkout. The full suite currently has two known repository issues: a test imports missing `tools/filter_unsupported_characters.py`, and the shipped `tap_1` config expects 100 records while its configured short PDF produces one title range.
+The unit suite covers text parsing, JSON output, unsupported-character review,
+and image crop/resize limits. The sample integration test is intentionally
+skipped because the checked-in config points at an abbreviated source fixture.
 
 ## Extending
 

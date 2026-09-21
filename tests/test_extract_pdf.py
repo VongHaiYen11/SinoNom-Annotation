@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from extract_pdf import (
+from extract_text import (
     ExtractConfig,
     ExtractionError,
     GlyphDecoder,

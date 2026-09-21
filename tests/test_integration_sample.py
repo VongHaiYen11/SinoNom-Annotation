@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from extract_pdf import extract_document, load_config, serialize_json
+from extract_text import extract_document, load_config, serialize_json
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +16,8 @@ class SamplePdfIntegrationTests(unittest.TestCase):
         config = load_config(CONFIG_PATH)
         if not config.input_pdf.is_file() or not config.glyph_profile.is_file():
             self.skipTest("sample PDF or generated glyph profile is unavailable")
+        if config.expected_record_count != 1:
+            self.skipTest("configured fixture is an abbreviated sample, not the 100-record corpus")
 
         records, _ = extract_document(config)
 

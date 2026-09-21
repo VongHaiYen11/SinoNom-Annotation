@@ -3,7 +3,7 @@
 Trích xuất dữ liệu văn bia tiếng Việt có cấu trúc từ PDF có ánh xạ văn bản của font nhúng không đáng tin cậy.
 
 [![Version 0.1.0](https://img.shields.io/badge/version-0.1.0-5B4B8A)](pyproject.toml)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Output JSON](https://img.shields.io/badge/output-JSON-EA580C)](#đầu-ra)
 
 [🇬🇧 English](README.md)
@@ -18,7 +18,7 @@ Một số PDF lưu văn bản hiển thị dưới dạng character identifier 
 
 ## Bắt đầu nhanh
 
-Yêu cầu: Python 3.10+, [uv](https://docs.astral.sh/uv/), dependency của dự án, và font tham chiếu phù hợp trong `fonts/reference/`.
+Yêu cầu: Python 3.11+, [uv](https://docs.astral.sh/uv/), dependency của dự án, và font tham chiếu phù hợp trong `fonts/reference/`.
 
 ```bash
 uv sync --frozen
