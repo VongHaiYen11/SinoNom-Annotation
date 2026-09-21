@@ -1,0 +1,7 @@
+# Optional runtime dependencies for AutoHDR character detection.
+# Python 3.12 is recommended for the most predictable Torch installation.
+torch>=2.6
+torchvision>=0.21
+numpy>=2.0
+opencv-python-headless>=4.10
+shapely>=2.0

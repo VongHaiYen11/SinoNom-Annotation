@@ -221,3 +221,4 @@ __marimo__/
 input/
 output/
 data/
+character_detection/models

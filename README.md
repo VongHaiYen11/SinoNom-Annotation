@@ -109,6 +109,50 @@ uv run python app.py input/your-document.pdf
 
 The regular upload control remains available if no argument is provided.
 
+## Optional character detection
+
+`character_detection/` is an inference-only extraction of the AutoHDR paper's
+character detector. It detects character boxes and orders them spatially; it
+does **not** recognize character identities. Its algorithm is kept isolated
+from the normal image pipeline.
+
+The integration adapter is
+[`pdf_image_extractor/character_annotations.py`](pdf_image_extractor/character_annotations.py).
+It writes a `<image>.characters.json` sidecar beside a selected saved image;
+the source image and its extraction/crop metadata are not changed.
+
+The ML runtime is optional. Use Python 3.12 for the most predictable local
+Torch ecosystem, install the extra, place a platform-compatible released
+AutoHDR executable at `character_detection/models/det_model`, then run:
+
+```bash
+uv sync --extra character-detection
+uv run python tools/detect_characters.py \
+  output/book/page_003/final/book.001.jpg
+```
+
+The detector executable is intentionally ignored by Git. For CUDA or other
+accelerators, install the appropriate Torch build from the official PyTorch
+selector, then pass `--device cuda` (or another supported device) to the tool.
+
+### Kaggle (Linux x86_64)
+
+The released executable currently included in `character_detection/models/` is
+for Linux x86_64, which matches a standard Kaggle notebook. After cloning the
+repository (and copying the ignored model file into that path), enable Internet
+in the notebook if dependencies are not cached, then run:
+
+```bash
+!python tools/run_kaggle_character_detection.py \
+  --image output/tap1-short-21-page/page_003/final/tap1-short-21-page.001.jpg \
+  --output output/tap1-short-21-page/page_003/final/tap1-short-21-page.001.characters.json
+```
+
+Omit `--image` to process the first saved final image automatically. Add
+`--device cuda` when the Kaggle accelerator is enabled and its Torch build
+supports CUDA; use `--skip-install` when the optional dependencies were
+already installed in the notebook.
+
 ## How it works
 
 ```mermaid
@@ -209,6 +253,8 @@ The CLI also writes `<output-stem>_invalid.json` by default. It contains malform
 | `pdf_image_extractor/service.py` | UI-independent image workflow operations. |
 | `pdf_image_extractor/gradio_ui.py` | Gradio presentation layer and crop-editor integration. |
 | `pdf_image_extractor/core.py` | Backward-compatible imports for older callers. |
+| `character_detection/` | Optional AutoHDR-derived character-box detector; algorithm remains isolated. |
+| `tools/detect_characters.py` | Optional local detector CLI and JSON-sidecar writer. |
 | OCR / recognition | Not used or loaded; image files are numbered by PDF appearance order. |
 | `tools/build_glyph_profiles.py` | Glyph-profile builder. |
 | `tools/get_fonts.py` | PDF font inventory. |

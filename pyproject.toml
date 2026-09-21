@@ -10,3 +10,12 @@ dependencies = [
     "pymupdf==1.28.2",
     "gradio>=5.0,<7",
 ]
+
+[project.optional-dependencies]
+# Kept optional: the rest of the repository does not require a heavy ML stack.
+character-detection = [
+    "torch>=2.6",
+    "torchvision>=0.21",
+    "opencv-python-headless>=4.10",
+    "shapely>=2.0",
+]
