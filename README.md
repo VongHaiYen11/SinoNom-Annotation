@@ -39,6 +39,77 @@ uv run python extract_pdf.py \
 
 Run commands from the repository root. The profile builder does not create the parent directory of `--output`; create it first. The extraction command creates parents for its output files.
 
+## PDF image extractor UI
+
+This repository also includes a completely local tool for extracting standalone
+embedded images from mixed text/image PDFs. It uses PyMuPDF XObjects directly:
+it does **not** screenshot a PDF page where an embedded image is available.
+
+Install the updated local dependencies, then run:
+
+```bash
+uv sync
+uv run python app.py
+```
+
+Or, with an existing Python 3.11+ environment:
+
+```bash
+pip install -e .
+python app.py
+```
+
+Open the localhost address printed by Gradio and upload one PDF. The detector
+examines every page's image XObjects, text blocks, drawings, image display
+rectangles, and coverage. Pages without a meaningful dominant image (such as
+text-only pages, logos, icons, or small decorative images) are omitted from the
+main selector. Its confidence and the raw page analysis are available in the
+**PDF Analysis** panel.
+
+When the one visible page image is stored as multiple adjoining XObjects, the
+tool directly joins the native XObjects in page order before cropping; it does
+not render or screenshot the PDF page.
+
+The initial crop is the largest vertical 9:16 rectangle inside the original extracted
+pixel image, exactly centered. Drag it in the editor to move it, or drag a
+corner to make a smaller 9:16 crop. The displayed editor is a performance
+thumbnail, but its crop coordinates are stored in original-image pixels and all
+saved files are regenerated from the full-resolution XObject. **Auto Center**
+and **Reset** restore the default crop.
+
+After moving or resizing the frame, releasing the pointer updates the live
+preview from the original-resolution image. Use **Apply & Save Final** to both
+commit that crop and immediately write the final image and metadata. **Save**
+also writes the currently applied crop.
+
+`2160×3840` is a maximum, not an automatic output size. A crop larger than that
+is downscaled with Lanczos; a smaller crop is retained at its native resolution.
+The application never upscales. PNG is the default and preserves alpha; JPEG is
+available with quality 95.
+
+Saving writes only local files in this structure:
+
+```text
+output/
+  pdf_name/
+    page_003/
+      original/image.<source extension>
+      final/image.png
+      metadata.json
+```
+
+**Save All Detected Images** uses each page's manual crop if one was applied,
+otherwise its automatic centered crop.
+
+To open and automatically scan one PDF from the repository's `input/` folder,
+pass its path as the positional argument:
+
+```bash
+uv run python app.py input/your-document.pdf
+```
+
+The regular upload control remains available if no argument is provided.
+
 ## How it works
 
 ```mermaid
