@@ -15,6 +15,17 @@ from PIL import Image
 from .detection import load_embedded_image
 from .processing import get_center_dci_portrait_crop
 from .service import create_session, preview as build_preview, save_entry
+from .ui_styles import WORKSPACE_CSS
+from .workspace_paths import local_pdf_choices
+
+
+def _local_pdf_choices() -> list[tuple[str, str]]:
+    """Compatibility wrapper for the local-PDF selector."""
+    return local_pdf_choices()
+
+
+def refresh_local_pdfs():
+    return gr.update(choices=_local_pdf_choices(), value=None)
 
 
 def _label(entry: dict[str, Any]) -> str:
@@ -254,29 +265,63 @@ HELP_TEXT = """
 - **Previous / Next:** chuyển trang; nút xám nghĩa là không còn trang theo hướng đó.
 """
 
+CSS = WORKSPACE_CSS + """
+.cropper-host { min-width: 0; }
+.cropper-host canvas { display:block; max-width:100%; border:1px solid #4b5563; border-radius:var(--radius); cursor:move; background:var(--canvas-bg); }
+.cropper-host p { margin:8px 0 0; font-size:12px; line-height:1.5; color:var(--muted); }
+.crop-mode-button button, #previous-page button, #next-page button, #apply-button button, #help-button button { height:36px; min-height:36px !important; }
+.crop-mode-button button { background:#fff; color:var(--text); border:1px solid var(--border-strong); }
+.crop-mode-button button:hover { background:#f1f5f9; }
+#apply-button button { background:var(--accent); color:#fff; border-color:var(--accent); }
+#help-button button { color:var(--muted); }
+#help-popup { position:fixed; z-index:1000; top:14%; left:50%; transform:translateX(-50%); width:min(560px,88vw); max-height:65vh; overflow:auto; padding:20px; background:#fff !important; color:var(--text) !important; border:1px solid var(--border-strong); border-radius:var(--radius); box-shadow:0 12px 32px rgb(24 33 47 / 18%); }
+#help-popup *,#help-popup p,#help-popup li,#help-popup h3 { color:var(--text) !important; }
+#close-help { position:fixed; z-index:1001; top:calc(14% + 8px); left:calc(50% + min(280px,44vw) - 40px); }
+#close-help button { width:30px; height:30px; min-height:30px !important; padding:0; background:#fff; color:var(--text); border:1px solid var(--border-strong); border-radius:50% !important; font-size:20px; line-height:20px; }
+"""
+
 def build_app(initial_pdf: str | None = None) -> gr.Blocks:
     with gr.Blocks(title="PDF Image Extractor") as demo:
-        gr.Markdown("# PDF embedded-image extractor\nDirect XObject extraction · centered DCI 4K portrait crop · maximum frame 2160×4096 · upscaling disabled")
+        gr.HTML("""<header class="workspace-header"><div><div class="workspace-title">PDF Image Extractor</div><div class="workspace-subtitle">Embedded image review and original-pixel crop workspace.</div></div><div class="workspace-badge">JPEG output</div></header>""")
         state = gr.State({})
-        with gr.Row():
-            with gr.Column(scale=1):
+        with gr.Row(elem_classes="workspace-grid"):
+            with gr.Column(scale=2, min_width=260, elem_classes="workspace-sidebar"):
+                gr.HTML('<div class="section-kicker">Source</div>')
+                with gr.Row(equal_height=True):
+                    local_pdf = gr.Dropdown(
+                        label="PDF from local input/",
+                        choices=_local_pdf_choices(),
+                        value=None,
+                        scale=5,
+                    )
+                    refresh_pdfs = gr.Button("Refresh", scale=1)
                 pdf = gr.File(label="PDF", file_types=[".pdf"], type="filepath")
                 detect_button = gr.Button("Auto Detect", variant="primary")
+                gr.HTML('<div class="section-kicker">Navigation</div>')
                 page = gr.Dropdown(label="Detected image page", choices=[])
                 with gr.Row(equal_height=True):
                     previous = gr.Button("← Previous page", interactive=False, elem_id="previous-page")
                     next_ = gr.Button("Next page →", interactive=False, elem_id="next-page")
+                gr.HTML('<div class="section-kicker">Crop tools</div>')
                 with gr.Row():
                     dci_frame = gr.Button("Use DCI 4K Frame (2160×4096)", elem_classes="crop-mode-button")
                     free_crop = gr.Button("Free Crop", elem_classes="crop-mode-button")
                     apply = gr.Button("Apply", elem_id="apply-button")
-                help_button = gr.Button("? Hướng dẫn", elem_id="help-button")
-                gr.Markdown("Output: **JPEG only** · name: `<book_name>.001.jpg`, `<book_name>.002.jpg`, …")
+                gr.HTML('<div class="section-kicker">Save</div>')
                 save = gr.Button("Save Applied Final")
                 save_adjusted = gr.Button("Apply & Save Final", variant="primary")
                 save_all_button = gr.Button("Save All Detected Images", variant="primary")
-                result = gr.Markdown()
-                detection = gr.Markdown()
+            with gr.Column(scale=6, min_width=480, elem_classes="workspace-canvas"):
+                gr.HTML('<div class="section-kicker">Crop canvas</div>')
+                editor = gr.HTML("Upload a PDF and select Auto Detect.")
+                gr.HTML('<div class="section-kicker" style="margin-top:14px">Live final preview</div>')
+                preview = gr.Image(label="Live final preview", type="pil", interactive=False)
+                processing = gr.Markdown(elem_classes="status-panel")
+            with gr.Column(scale=2, min_width=250, elem_classes="workspace-inspector"):
+                gr.HTML('<div class="section-kicker">Session status</div>')
+                detection = gr.Markdown(elem_classes="status-panel workspace-section")
+                result = gr.Markdown(elem_classes="status-panel workspace-section")
+                help_button = gr.Button("? Hướng dẫn", elem_id="help-button")
                 with gr.Accordion("Current crop coordinates (original pixels)", open=False):
                     crop_box = gr.Textbox(
                         label="Crop box JSON",
@@ -286,12 +331,10 @@ def build_app(initial_pdf: str | None = None) -> gr.Blocks:
                     )
                 help_popup = gr.Markdown(HELP_TEXT, visible=False, elem_id="help-popup")
                 close_help = gr.Button("×", visible=False, elem_id="close-help")
-            with gr.Column(scale=2):
-                editor = gr.HTML("Upload a PDF and select Auto Detect.")
-                preview = gr.Image(label="Live final preview", type="pil", interactive=False)
-                processing = gr.Markdown()
                 with gr.Accordion("PDF Analysis", open=False):
                     analysis = gr.Markdown()
+        local_pdf.change(lambda selected: selected, [local_pdf], [pdf])
+        refresh_pdfs.click(refresh_local_pdfs, outputs=[local_pdf])
         detect_button.click(detect, [pdf], [state, page, detection, editor, preview, processing, analysis, crop_box, previous, next_])
         page.change(show_page, [state, page], [editor, preview, processing, analysis, crop_box, previous, next_])
         dci_frame.click(use_dci_frame, [state, page], [state, editor, preview, processing, crop_box])
@@ -335,18 +378,7 @@ def main(argv: list[str] | None = None) -> int:
     build_app(initial_pdf).launch(
         server_name="127.0.0.1",
         head=HEAD,
-        css="""
-        .cropper-host canvas{max-width:100%;border-radius:10px;cursor:move;box-shadow:0 2px 12px #0002}
-        .cropper-host p{font-size:.85em;color:#667085}
-        .crop-mode-button button,#previous-page button,#next-page button,#apply-button button,#help-button button{height:42px;min-height:42px}
-        .crop-mode-button button{background:#f1f5f9;color:#1e293b;border:1px solid #cbd5e1}
-        .crop-mode-button button:hover{background:#e2e8f0}
-        #help-button button{color:#475569}
-        #help-popup{position:fixed;z-index:1000;top:14%;left:50%;transform:translateX(-50%);width:min(560px,88vw);max-height:65vh;overflow:auto;padding:24px;background:#ffffff!important;color:#172033!important;border:1px solid #cbd5e1;border-radius:14px;box-shadow:0 20px 55px #0005}
-        #help-popup *,#help-popup p,#help-popup li,#help-popup h3{color:#172033!important}
-        #close-help{position:fixed;z-index:1001;top:calc(14% + 8px);left:calc(50% + min(280px,44vw) - 40px)}
-        #close-help button{width:32px;height:32px;min-height:32px;padding:0;background:#ffffff;color:#172033;border:1px solid #94a3b8;border-radius:50%;font-size:24px;line-height:24px;box-shadow:0 2px 8px #0003}
-        """,
+        css=CSS,
     )
     return 0
 

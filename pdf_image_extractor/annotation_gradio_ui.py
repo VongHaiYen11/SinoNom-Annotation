@@ -13,6 +13,8 @@ import gradio as gr
 from PIL import Image
 
 from .annotation_editor import apply_pending, current_record, load_annotation, move_to_image, save_annotation, save_current_annotation
+from .ui_styles import WORKSPACE_CSS
+from .workspace_paths import annotation_collection_path, local_pdf_choices
 
 
 def _image_data(path: str) -> str:
@@ -94,6 +96,30 @@ def load_session(annotation_path: str, image_override: str | None):
     return session, _editor(session), _summary(session), _boxes(session), previous, next_
 
 
+def load_session_for_pdf(pdf_path: str | None):
+    """Load the established PDF-level collection, if character boxes exist."""
+    if not pdf_path:
+        return (
+            gr.update(value=""), {}, "Load an annotation JSON or choose a local PDF to begin.",
+            "Load an annotation JSON to show its source image and character boxes.", "",
+            gr.update(interactive=False), gr.update(interactive=False),
+        )
+    annotation_path = annotation_collection_path(pdf_path)
+    if not annotation_path.is_file():
+        return (
+            gr.update(value=str(annotation_path)), {},
+            f"### Annotation unavailable\n\nNo character annotation JSON exists yet for `{Path(pdf_path).name}`.  \nExpected: `{annotation_path.relative_to(annotation_path.parents[2])}`",
+            "No character annotation JSON was found for this PDF.", "",
+            gr.update(interactive=False), gr.update(interactive=False),
+        )
+    session, editor, status, boxes, previous, next_ = load_session(str(annotation_path), None)
+    return gr.update(value=str(annotation_path)), session, status, editor, boxes, previous, next_
+
+
+def refresh_local_pdfs():
+    return gr.update(choices=local_pdf_choices(), value=None)
+
+
 def _edited_detections(value: str) -> list[dict[str, Any]]:
     try:
         data = json.loads(value)
@@ -168,27 +194,49 @@ READ_BOXES_JS = """
 }
 """
 
-CSS = """
-.annotation-host canvas{display:block;max-width:100%;border:1px solid #d1d5db;border-radius:8px;background:#111}
-.annotation-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.annotation-toolbar button{border:1px solid #cbd5e1;border-radius:6px;padding:7px 10px;background:#fff;color:#1f2937;cursor:pointer}.annotation-toolbar button.active{background:#2563eb;color:#fff;border-color:#2563eb}.annotation-help,.annotation-status{font-size:.9rem;color:#4b5563;margin:8px 0}
+CSS = WORKSPACE_CSS + """
+.annotation-host { min-width: 0; }
+.annotation-host canvas { display:block; max-width:100%; border:1px solid #4b5563; border-radius:var(--radius); background:var(--canvas-bg); }
+.annotation-toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--border); }
+.annotation-toolbar button { min-height:34px; border:1px solid var(--border-strong); border-radius:var(--radius); padding:6px 10px; background:#fff; color:var(--text); cursor:pointer; font:600 12px/1.2 Inter,ui-sans-serif,system-ui,sans-serif; }
+.annotation-toolbar button:hover { background:#f1f5f9; }
+.annotation-toolbar button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.annotation-help,.annotation-status { font-size:12px; color:var(--muted); margin:8px 0; line-height:1.5; }
+.annotation-status { color:var(--success); font-weight:600; }
 """
 
 
 def build_app(initial_annotation: str | None = None) -> gr.Blocks:
     with gr.Blocks(title="Character Annotation Editor") as demo:
-        gr.Markdown("# Character Annotation Editor\nOpen an existing `*.characters.json`, correct its character bounding boxes, then explicitly save to overwrite that same JSON file.")
+        gr.HTML("""<header class="workspace-header"><div><div class="workspace-title">Character Annotation Editor</div><div class="workspace-subtitle">Review and correct character bounding boxes without changing the source workflow.</div></div><div class="workspace-badge">Annotation workspace</div></header>""")
         state = gr.State({})
-        with gr.Row():
-            with gr.Column(scale=1):
+        with gr.Row(elem_classes="workspace-grid"):
+            with gr.Column(scale=2, min_width=260, elem_classes="workspace-sidebar"):
+                gr.HTML('<div class="section-kicker">Dataset</div>')
+                with gr.Row(equal_height=True):
+                    local_pdf = gr.Dropdown(
+                        label="PDF from local input/",
+                        choices=local_pdf_choices(),
+                        value=None,
+                        scale=5,
+                    )
+                    refresh_pdfs = gr.Button("Refresh", scale=1)
                 annotation_path = gr.Textbox(label="Annotation JSON path", value=initial_annotation or "", placeholder="output/book/page_003/final/book.001.characters.json")
                 image_override = gr.Textbox(label="Image path override (optional)", placeholder="Use only if source_image in JSON is unavailable")
                 load = gr.Button("Load annotation", variant="primary")
+                gr.HTML('<div class="section-kicker">Navigation</div>')
                 with gr.Row(equal_height=True):
                     previous = gr.Button("← Previous image", interactive=False)
                     next_ = gr.Button("Next image →", interactive=False)
+                gr.HTML('<div class="section-kicker">Save</div>')
                 save_current = gr.Button("Save current image")
                 save_all = gr.Button("Save all annotations", variant="primary")
-                status = gr.Markdown("Load an annotation JSON to begin.")
+            with gr.Column(scale=6, min_width=480, elem_classes="workspace-canvas"):
+                gr.HTML('<div class="section-kicker">Annotation canvas</div>')
+                editor = gr.HTML("Load an annotation JSON to show its source image and character boxes.")
+            with gr.Column(scale=2, min_width=250, elem_classes="workspace-inspector"):
+                gr.HTML('<div class="section-kicker">Current item</div>')
+                status = gr.Markdown("Load an annotation JSON to begin.", elem_classes="status-panel workspace-section")
                 with gr.Accordion("How to annotate", open=False):
                     gr.Markdown("- **Select / move:** click a box, drag inside it to move, or drag a corner to resize.\n- **Add box:** select it, then click the image.\n- **Delete selected:** removes the active box.\n- **Save current image:** writes only the image currently shown.\n- **Save all annotations:** writes every pending edit in the current collection. Until either Save button is pressed, the original file is unchanged.")
                 with gr.Accordion("Pending box data", open=False):
@@ -198,8 +246,12 @@ def build_app(initial_annotation: str | None = None) -> gr.Blocks:
                         interactive=False,
                         elem_id="annotation_boxes_json",
                     )
-            with gr.Column(scale=2):
-                editor = gr.HTML("Load an annotation JSON to show its source image and character boxes.")
+        local_pdf.change(
+            load_session_for_pdf,
+            [local_pdf],
+            [annotation_path, state, status, editor, boxes, previous, next_],
+        )
+        refresh_pdfs.click(refresh_local_pdfs, outputs=[local_pdf])
         load.click(load_session, [annotation_path, image_override], [state, editor, status, boxes, previous, next_])
         save_current.click(
             lambda session, pending: save_session(session, pending, True),

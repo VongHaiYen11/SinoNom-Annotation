@@ -66,10 +66,6 @@ text-only pages, logos, icons, or small decorative images) are omitted from the
 main selector. Its confidence and the raw page analysis are available in the
 **PDF Analysis** panel.
 
-When the one visible page image is stored as multiple adjoining XObjects, the
-tool directly joins the native XObjects in page order before cropping; it does
-not render or screenshot the PDF page.
-
 The default is an unconstrained **Free Crop**. **Use DCI 4K Frame
 (2160×4096)** switches to a locked portrait frame. The displayed editor is a
 performance thumbnail, but its crop coordinates are stored in original-image
