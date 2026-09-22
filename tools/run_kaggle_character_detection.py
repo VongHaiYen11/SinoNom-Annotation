@@ -17,7 +17,11 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MODEL = PROJECT_ROOT / "character_detection" / "models" / "det_model"
+def default_model() -> Path:
+    """Support both released model layouts: file or ``det_model/det_model``."""
+    model_path = PROJECT_ROOT / "character_detection" / "models" / "det_model"
+    nested_executable = model_path / "det_model"
+    return nested_executable if nested_executable.is_file() else model_path
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
 
@@ -65,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--output-dir", type=Path, help="PDF output folder, e.g. output/tap1-short-21-page. Defaults to the first eligible folder.")
     parser.add_argument("--image", type=Path, action="append", help="Optional final image to process. Repeat to select specific images only.")
-    parser.add_argument("--model", type=Path, default=DEFAULT_MODEL, help="AutoHDR Linux x86_64 detector executable.")
+    parser.add_argument("--model", type=Path, default=default_model(), help="AutoHDR Linux x86_64 detector executable.")
     parser.add_argument("--output", type=Path, help="Collection JSON path (default: <output-dir>/character_annotations.json).")
     parser.add_argument("--device", default="cpu", help="Torch device, e.g. cpu or cuda (default: cpu).")
     parser.add_argument("--skip-install", action="store_true", help="Do not run pip install before detection.")

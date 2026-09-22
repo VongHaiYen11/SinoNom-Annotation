@@ -62,8 +62,8 @@ class CharacterDetector:
         if original is None: raise FileNotFoundError(f'Could not read image: {image}')
         if original.ndim!=3 or original.shape[2]!=3: raise ValueError('Expected BGR image with shape (H, W, 3)')
         source=255-original if self.invert else original; stride=int(self.client(self.device,mode=1)); size=_inference_shape(original.shape[:2],self.image_size,stride); prepared=_letterbox(source,size,stride)
-        # The model's first layer expects standard YOLO input: N x C x H x W.
-        # Without this batch dimension it sees H (often 64) as the channel axis.
+        # det_model follows the standard YOLO interface: N×C×H×W.  Keep the
+        # image at three RGB channels and add the single-image batch dimension.
         tensor=torch.from_numpy(np.ascontiguousarray(prepared[:,:,::-1].transpose(2,0,1))).unsqueeze(0).to(self.device); tensor=tensor.half() if self.device.type!='cpu' else tensor.float(); tensor/=255
         with torch.no_grad(): detections=_nms(self.client(tensor,mode=2),self.confidence_threshold,self.iou_threshold)[0]
         _scale(detections[:,:4],tensor.shape[-2:],original.shape[:2]); pairs=[(tuple(round(float(v)) for v in row[:4]),float(row[4])) for row in detections.cpu().numpy().tolist()]
