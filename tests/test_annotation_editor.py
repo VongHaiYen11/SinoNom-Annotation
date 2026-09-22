@@ -6,6 +6,7 @@ from pathlib import Path
 from PIL import Image
 
 from pdf_image_extractor.annotation_editor import apply_pending, current_record, load_annotation, move_to_image, save_annotation, save_current_annotation
+from pdf_image_extractor.annotation_gradio_ui import HEAD, _reading_order
 
 
 class AnnotationEditorTests(unittest.TestCase):
@@ -68,3 +69,32 @@ class AnnotationEditorTests(unittest.TestCase):
             saved = json.loads(annotation_path.read_text(encoding="utf-8"))
             self.assertEqual([1, 1, 10, 10], saved["images"][0]["detections"][0]["bbox_xyxy"])
             self.assertEqual([4, 4, 40, 40], saved["images"][1]["detections"][0]["bbox_xyxy"])
+
+    def test_rotation_and_reading_order_are_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image_path = root / "page.jpg"
+            Image.new("RGB", (100, 100), "white").save(image_path)
+            annotation_path = root / "page.characters.json"
+            annotation_path.write_text(json.dumps({
+                "source_image": str(image_path),
+                "detections": [{"bbox_xyxy": [10, 20, 50, 60], "text": "A"}],
+            }), encoding="utf-8")
+            session = load_annotation(annotation_path)
+            session = apply_pending(session, [
+                {"bbox_xyxy": [10, 20, 50, 60], "rotation_degrees": 90, "text": "B"},
+                {"bbox_xyxy": [60, 20, 80, 60], "rotation_degrees": 0, "text": "A"},
+            ])
+            first = current_record(session)["detections"][0]
+            self.assertEqual(90.0, first["rotation_degrees"])
+            self.assertEqual([[50.0, 20.0], [50.0, 60.0], [10.0, 60.0], [10.0, 20.0]], first["corners"])
+            self.assertIn("<code>B A</code>", _reading_order(session))
+            save_annotation(session)
+            saved = json.loads(annotation_path.read_text(encoding="utf-8"))
+            self.assertEqual(["B", "A"], [item["text"] for item in saved["detections"]])
+            self.assertEqual(90.0, saved["detections"][0]["rotation_degrees"])
+
+    def test_editor_offers_direct_reading_order_swap(self):
+        self.assertIn('data-action="target-order"', HEAD)
+        self.assertIn('data-action="swap-to-order"', HEAD)
+        self.assertIn("const swapOrder=", HEAD)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from typing import Any
 
 MAX_DCI_WIDTH = 2160
 MAX_DCI_HEIGHT = 4096
@@ -31,6 +32,8 @@ class ImagePage:
     confidence: float
     extraction_method: str
     reason: str
+    parts: list[dict[str, Any]] | None = None
+    composition: str | None = None
     sequence: int = 0
 
     def to_dict(self) -> dict[str, Any]:

@@ -15,7 +15,7 @@ from PIL import Image
 from .detection import load_embedded_image
 from .processing import get_center_dci_portrait_crop
 from .service import create_session, preview as build_preview, save_entry
-from .ui_styles import WORKSPACE_CSS
+from .ui_styles import WORKSPACE_CSS, WORKSPACE_THEME
 from .workspace_paths import local_pdf_choices
 
 
@@ -270,14 +270,14 @@ CSS = WORKSPACE_CSS + """
 .cropper-host canvas { display:block; max-width:100%; border:1px solid #4b5563; border-radius:var(--radius); cursor:move; background:var(--canvas-bg); }
 .cropper-host p { margin:8px 0 0; font-size:12px; line-height:1.5; color:var(--muted); }
 .crop-mode-button button, #previous-page button, #next-page button, #apply-button button, #help-button button { height:36px; min-height:36px !important; }
-.crop-mode-button button { background:#fff; color:var(--text); border:1px solid var(--border-strong); }
-.crop-mode-button button:hover { background:#f1f5f9; }
-#apply-button button { background:var(--accent); color:#fff; border-color:var(--accent); }
+.crop-mode-button button { background:var(--control-bg); color:var(--text); border:1px solid var(--border-strong); }
+.crop-mode-button button:hover { background:var(--control-hover); }
+#apply-button button { background:var(--accent); color:var(--accent-text); border-color:var(--accent); }
 #help-button button { color:var(--muted); }
-#help-popup { position:fixed; z-index:1000; top:14%; left:50%; transform:translateX(-50%); width:min(560px,88vw); max-height:65vh; overflow:auto; padding:20px; background:#fff !important; color:var(--text) !important; border:1px solid var(--border-strong); border-radius:var(--radius); box-shadow:0 12px 32px rgb(24 33 47 / 18%); }
+#help-popup { position:fixed; z-index:1000; top:14%; left:50%; transform:translateX(-50%); width:min(560px,88vw); max-height:65vh; overflow:auto; padding:20px; background:var(--panel-bg) !important; color:var(--text) !important; border:1px solid var(--border-strong); border-radius:var(--radius); box-shadow:0 12px 32px rgb(0 0 0 / 42%); }
 #help-popup *,#help-popup p,#help-popup li,#help-popup h3 { color:var(--text) !important; }
 #close-help { position:fixed; z-index:1001; top:calc(14% + 8px); left:calc(50% + min(280px,44vw) - 40px); }
-#close-help button { width:30px; height:30px; min-height:30px !important; padding:0; background:#fff; color:var(--text); border:1px solid var(--border-strong); border-radius:50% !important; font-size:20px; line-height:20px; }
+#close-help button { width:30px; height:30px; min-height:30px !important; padding:0; background:var(--control-bg); color:var(--text); border:1px solid var(--border-strong); border-radius:50% !important; font-size:20px; line-height:20px; }
 """
 
 def build_app(initial_pdf: str | None = None) -> gr.Blocks:
@@ -377,6 +377,7 @@ def main(argv: list[str] | None = None) -> int:
         initial_pdf = str(candidate)
     build_app(initial_pdf).launch(
         server_name="127.0.0.1",
+        theme=WORKSPACE_THEME,
         head=HEAD,
         css=CSS,
     )

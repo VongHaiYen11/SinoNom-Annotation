@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -38,9 +39,35 @@ def _valid_box(value: Any, width: int, height: int) -> tuple[int, int, int, int]
     return left, top, right, bottom
 
 
-def corners_from_box(box: tuple[int, int, int, int]) -> list[list[int]]:
+def _rotation_degrees(value: Any) -> float:
+    """Return a finite clockwise canvas angle in the compact [-180, 180) range."""
+    try:
+        angle = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(angle):
+        return 0.0
+    return round((angle + 180) % 360 - 180, 3)
+
+
+def corners_from_box(
+    box: tuple[int, int, int, int], rotation_degrees: float = 0.0,
+) -> list[list[float]]:
+    """Return the four oriented rectangle corners for an editable character box."""
     left, top, right, bottom = box
-    return [[left, top], [right, top], [right, bottom], [left, bottom]]
+    cx, cy = (left + right) / 2, (top + bottom) / 2
+    radians = math.radians(_rotation_degrees(rotation_degrees))
+    cosine, sine = math.cos(radians), math.sin(radians)
+
+    def rotate(x: float, y: float) -> list[float]:
+        return [round(cx + x * cosine - y * sine, 3), round(cy + x * sine + y * cosine, 3)]
+
+    return [
+        rotate(left - cx, top - cy),
+        rotate(right - cx, top - cy),
+        rotate(right - cx, bottom - cy),
+        rotate(left - cx, bottom - cy),
+    ]
 
 
 def _normalise_record(annotation_path: Path, record: dict[str, Any], image_override: str | None = None) -> None:
@@ -56,8 +83,10 @@ def _normalise_record(annotation_path: Path, record: dict[str, Any], image_overr
             raise ValueError("Every detection must be a JSON object.")
         box = _valid_box(detection.get("bbox_xyxy"), width, height)
         item = deepcopy(detection)
+        rotation = _rotation_degrees(item.get("rotation_degrees", item.get("angle_degrees", 0)))
         item["bbox_xyxy"] = list(box)
-        item["corners"] = corners_from_box(box)
+        item["rotation_degrees"] = rotation
+        item["corners"] = corners_from_box(box, rotation)
         normalised.append(item)
     record["image_width"] = width
     record["image_height"] = height
@@ -110,8 +139,10 @@ def apply_pending(session: dict[str, Any], edited_detections: list[dict[str, Any
         box = _valid_box(incoming.get("bbox_xyxy"), width, height)
         item = deepcopy(incoming)
         item.pop("editor_id", None)
+        rotation = _rotation_degrees(item.get("rotation_degrees", item.get("angle_degrees", 0)))
         item["bbox_xyxy"] = list(box)
-        item["corners"] = corners_from_box(box)
+        item["rotation_degrees"] = rotation
+        item["corners"] = corners_from_box(box, rotation)
         item.setdefault("confidence", None)
         detections.append(item)
     record["detections"] = detections
