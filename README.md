@@ -118,8 +118,10 @@ from the normal image pipeline.
 
 The integration adapter is
 [`pdf_image_extractor/character_annotations.py`](pdf_image_extractor/character_annotations.py).
-It writes a `<image>.characters.json` sidecar beside a selected saved image;
-the source image and its extraction/crop metadata are not changed.
+The batch runner writes one `character_annotations.json` collection in each
+PDF output folder. It contains image names, collection-relative image paths,
+dimensions, and the character boxes for every saved final image; source images
+and their extraction/crop metadata are not changed.
 
 The ML runtime is optional. Use Python 3.12 for the most predictable local
 Torch ecosystem, install the extra, place a platform-compatible released
@@ -144,14 +146,32 @@ in the notebook if dependencies are not cached, then run:
 
 ```bash
 !python tools/run_kaggle_character_detection.py \
-  --image output/tap1-short-21-page/page_003/final/tap1-short-21-page.001.jpg \
-  --output output/tap1-short-21-page/page_003/final/tap1-short-21-page.001.characters.json
+  --output-dir output/tap1-short-21-page
 ```
 
-Omit `--image` to process the first saved final image automatically. Add
-`--device cuda` when the Kaggle accelerator is enabled and its Torch build
-supports CUDA; use `--skip-install` when the optional dependencies were
-already installed in the notebook.
+This writes `output/tap1-short-21-page/character_annotations.json`. Use
+`--image` one or more times only when a partial run is wanted. Add `--device
+cuda` when the Kaggle accelerator is enabled and its Torch build supports CUDA;
+use `--skip-install` when the optional dependencies were already installed in
+the notebook.
+
+## Character annotation editor
+
+After the detector writes a PDF-level `character_annotations.json`, use the
+separate local editor to correct its character-level boxes. It works without
+the ML model or its optional dependencies:
+
+```bash
+uv run python tools/annotate_characters.py \
+  output/tap1-short-21-page/character_annotations.json
+```
+
+The editor displays one final image at a time and has **Previous image** and
+**Next image** controls. Select and drag a box to move it, drag a corner to
+resize, or use **Add box** and **Delete selected**. Changes remain in memory
+while navigating. **Save current image** writes only the image currently shown;
+**Save all annotations** writes every pending edit in the collection. Both
+preserve other metadata and regenerate `corners` from every saved `bbox_xyxy`.
 
 ## How it works
 

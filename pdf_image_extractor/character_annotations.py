@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 def default_detector_executable(project_root: Path | None = None) -> Path:
@@ -42,6 +42,31 @@ def detection_payload(image_path: str | Path, result: Any) -> dict[str, Any]:
     }
 
 
+def collection_payload(image_paths: list[str | Path], results: list[dict[str, Any]], output_directory: str | Path) -> dict[str, Any]:
+    """Package per-image detector results into one portable PDF-level JSON file."""
+    if len(image_paths) != len(results):
+        raise ValueError("Each source image must have exactly one detection result.")
+    root = Path(output_directory).resolve()
+    images = []
+    for image_path, result in zip(image_paths, results, strict=True):
+        image = Path(image_path).resolve()
+        try:
+            relative_path = image.relative_to(root)
+        except ValueError:
+            relative_path = image
+        images.append({
+            "image_name": image.name,
+            "image_path": str(relative_path),
+            **result,
+        })
+    return {
+        "schema_version": 1,
+        "annotation_type": "character_detection_collection",
+        "reading_order": "autohdr_coordinate_heuristic",
+        "images": images,
+    }
+
+
 def detect_characters(image_path: str | Path, executable_path: str | Path, *, device: str | None = None, reading_order: bool = True) -> dict[str, Any]:
     """Run the optional local model and return a serializable annotation payload."""
     try:
@@ -54,6 +79,33 @@ def detect_characters(image_path: str | Path, executable_path: str | Path, *, de
         ) from exc
     with CharacterDetector(executable_path, device=device) as detector:
         return detection_payload(image_path, detector.detect(image_path, reading_order=reading_order))
+
+
+def detect_character_collection(
+    image_paths: list[str | Path],
+    executable_path: str | Path,
+    output_directory: str | Path,
+    *,
+    device: str | None = None,
+    reading_order: bool = True,
+    progress: Callable[[int, Path], None] | None = None,
+) -> dict[str, Any]:
+    """Run one detector process across all final images and return one collection."""
+    try:
+        from character_detection import CharacterDetector
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Character detection dependencies are not installed. Install the "
+            "character-detection optional dependency before running this command."
+        ) from exc
+    paths = [Path(path) for path in image_paths]
+    results = []
+    with CharacterDetector(executable_path, device=device) as detector:
+        for index, image_path in enumerate(paths, start=1):
+            if progress:
+                progress(index, image_path)
+            results.append(detection_payload(image_path, detector.detect(image_path, reading_order=reading_order)))
+    return collection_payload(paths, results, output_directory)
 
 
 def write_annotations(path: str | Path, payload: dict[str, Any]) -> Path:

@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from pdf_image_extractor.character_annotations import default_detector_executable, detection_payload
+from pdf_image_extractor.character_annotations import collection_payload, default_detector_executable, detection_payload
 
 
 class _Detection:
@@ -23,3 +23,10 @@ class CharacterAnnotationAdapterTests(unittest.TestCase):
 
     def test_default_model_location_is_repository_local(self):
         self.assertEqual(Path("character_detection/models/det_model"), default_detector_executable().relative_to(Path(__file__).parents[1]))
+
+    def test_collection_uses_paths_relative_to_pdf_output_folder(self):
+        output = Path("/tmp/example-output")
+        image = output / "page_003" / "final" / "book.001.jpg"
+        payload = collection_payload([image], [detection_payload(image, _Result())], output)
+        self.assertEqual("book.001.jpg", payload["images"][0]["image_name"])
+        self.assertEqual("page_003/final/book.001.jpg", payload["images"][0]["image_path"])
