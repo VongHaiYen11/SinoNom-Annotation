@@ -1,0 +1,22 @@
+{
+  "page": 3,
+  "source": "embedded_pdf_image",
+  "xref": 27,
+  "asset_id": "3:27",
+  "sequence": 1,
+  "filename": "tap1-short-21-page.001.jpg",
+  "extraction_method": "Composed direct XObjects",
+  "original_width": 1016,
+  "original_height": 1619,
+  "crop_x": 35,
+  "crop_y": 99,
+  "crop_width": 776,
+  "crop_height": 1495,
+  "final_width": 776,
+  "final_height": 1495,
+  "upscaled": false,
+  "downscaled": false,
+  "crop_mode": "free",
+  "original_file": "output/tap1-short-21-page/page_003/original/tap1-short-21-page.001.jpg",
+  "final_file": "output/tap1-short-21-page/page_003/final/tap1-short-21-page.001.jpg"
+}

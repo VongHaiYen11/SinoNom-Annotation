@@ -1,0 +1,11 @@
+Calibri	Type0	xref: 12	pages: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21
+Cambria-Bold	TrueType, Type0	xref: 8, 9, 54	pages: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21
+DengXian	Type0	xref: 80	pages: 15
+NomNaTong	Type0	xref: 16, 56	pages: 1, 2, 3, 5, 6, 7, 8, 10, 14, 15
+PMingLiU	Type0	xref: 37	pages: 6, 14
+PalatinoLinotype	Type0	xref: 15	pages: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19
+PalatinoLinotype,Bold	Type0	xref: 13	pages: 1, 2, 6, 9, 10, 11, 14, 15, 16, 17, 18, 20
+PalatinoLinotype,BoldItalic	Type0	xref: 55	pages: 10, 14
+PalatinoLinotype,Italic	Type0	xref: 14	pages: 1, 2, 3, 4, 5, 6, 7, 8, 9
+PalatinoLinotype-Bold	TrueType	xref: 11, 52	pages: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21
+TimesNewRoman	Type0	xref: 17	pages: 1, 3, 4, 14, 18
