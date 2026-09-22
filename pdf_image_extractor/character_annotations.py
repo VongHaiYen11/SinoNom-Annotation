@@ -67,7 +67,14 @@ def collection_payload(image_paths: list[str | Path], results: list[dict[str, An
     }
 
 
-def detect_characters(image_path: str | Path, executable_path: str | Path, *, device: str | None = None, reading_order: bool = True) -> dict[str, Any]:
+def detect_characters(
+    image_path: str | Path,
+    executable_path: str | Path,
+    *,
+    device: str | None = None,
+    reading_order: bool = True,
+    confidence_threshold: float = .45,
+) -> dict[str, Any]:
     """Run the optional local model and return a serializable annotation payload."""
     try:
         from character_detection import CharacterDetector
@@ -77,7 +84,7 @@ def detect_characters(image_path: str | Path, executable_path: str | Path, *, de
             "`uv sync --extra character-detection` with Python 3.12, then install "
             "a compatible local detector executable."
         ) from exc
-    with CharacterDetector(executable_path, device=device) as detector:
+    with CharacterDetector(executable_path, device=device, confidence_threshold=confidence_threshold) as detector:
         return detection_payload(image_path, detector.detect(image_path, reading_order=reading_order))
 
 
@@ -88,6 +95,7 @@ def detect_character_collection(
     *,
     device: str | None = None,
     reading_order: bool = True,
+    confidence_threshold: float = .45,
     progress: Callable[[int, Path], None] | None = None,
 ) -> dict[str, Any]:
     """Run one detector process across all final images and return one collection."""
@@ -100,7 +108,7 @@ def detect_character_collection(
         ) from exc
     paths = [Path(path) for path in image_paths]
     results = []
-    with CharacterDetector(executable_path, device=device) as detector:
+    with CharacterDetector(executable_path, device=device, confidence_threshold=confidence_threshold) as detector:
         for index, image_path in enumerate(paths, start=1):
             if progress:
                 progress(index, image_path)

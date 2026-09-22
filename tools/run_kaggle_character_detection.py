@@ -72,8 +72,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", type=Path, default=default_model(), help="AutoHDR Linux x86_64 detector executable.")
     parser.add_argument("--output", type=Path, help="Collection JSON path (default: <output-dir>/character_annotations.json).")
     parser.add_argument("--device", default="cpu", help="Torch device, e.g. cpu or cuda (default: cpu).")
+    parser.add_argument("--confidence-threshold", type=float, default=.45, help="Keep detections at or above this confidence (default: 0.45).")
     parser.add_argument("--skip-install", action="store_true", help="Do not run pip install before detection.")
     args = parser.parse_args(argv)
+    if not 0 <= args.confidence_threshold <= 1:
+        parser.error("--confidence-threshold must be between 0 and 1.")
 
     print("AutoHDR character detection collection for Kaggle", flush=True)
     log(1, f"Checking platform: {platform.system()} {platform.machine()}")
@@ -117,10 +120,20 @@ def main(argv: list[str] | None = None) -> int:
     def progress(index: int, image: Path) -> None:
         log(5, f"Detecting image {index}/{len(images)}: {image.name}")
 
-    collection = detect_character_collection(images, model, output_directory, device=args.device, progress=progress)
+    collection = detect_character_collection(
+        images,
+        model,
+        output_directory,
+        device=args.device,
+        confidence_threshold=args.confidence_threshold,
+        progress=progress,
+    )
     output = (args.output or output_directory / "character_annotations.json").resolve()
     write_annotations(output, collection)
-    log(6, f"Done. Wrote {len(collection['images'])} image annotation record(s) to: {output}")
+    counts = [len(record["detections"]) for record in collection["images"]]
+    log(6, f"Done. Wrote {len(collection['images'])} image annotation record(s), {sum(counts)} total box(es), to: {output}")
+    for image, count in zip(images, counts, strict=True):
+        log(6, f"{image.name}: {count} box(es) at confidence >= {args.confidence_threshold:.2f}")
     return 0
 
 
