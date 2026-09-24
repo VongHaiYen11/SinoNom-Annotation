@@ -28,8 +28,8 @@ uv sync --extra text-detection
 
 The DINO configuration and checkpoint are external model assets, as is the OCR
 detector executable. The DINO configuration determines the compatible
-MMDetection/MMCV/MMEngine versions, so that MMLab stack is deliberately not
-pinned in this repository. Install the versions required by the supplied
+MMDetection/MMCV/MMEngine versions, so the general project extra does not pin
+that stack. Install the versions required by the supplied
 `damage_detect.py` before running Stage 1; otherwise the run stops with a
 missing `mmdet` error.
 
@@ -62,6 +62,72 @@ text_detection/
 ```
 
 Model files and generated work images are intentionally ignored by Git.
+
+## Kaggle standalone detection environment
+
+`requirements-detection.txt` selects a minimal CLI runtime for Linux x86_64:
+Python 3.11, Torch 2.1.0/cu121, MMCV 2.1.0, MMEngine 0.10.5 and MMDetection
+3.3.0. MMDetection 3.3.0 requires MMCV below 2.2.0. The MMCV wheel must match
+Python, Torch and CUDA; `mmcv-lite` does not provide the required compiled ops.
+This is a legacy inference environment, separate from the project's
+`torch>=2.6` extra. Do not install `.[text-detection]` or run `uv sync` in it.
+External model configs may require additional packages; inference with the
+supplied checkpoint and OCR executable must still be verified on Kaggle.
+
+Enable a GPU and Internet in the notebook settings. After cloning the repo,
+run these notebook cells (adjust the clone directory if needed):
+
+```python
+%cd /kaggle/working/SinoNom-Annotation
+%pip install uv
+```
+
+```bash
+%%bash
+set -e
+uv python install 3.11
+uv venv --seed .venv-det --python 3.11
+.venv-det/bin/python -m pip install -r requirements-detection.txt
+.venv-det/bin/python -m pip check
+```
+
+The notebook kernel stays unchanged. Execute detection using the environment's
+Python explicitly. Verify imports and both GPU NMS implementations first:
+
+```bash
+%%bash
+set -e
+.venv-det/bin/python - <<'PY'
+import torch
+import torchvision
+import mmcv
+import mmengine
+import mmdet
+from mmcv.ops import nms
+from mmdet.apis import init_detector, inference_detector
+
+print(torch.__version__, torchvision.__version__)
+print(mmcv.__version__, mmengine.__version__, mmdet.__version__)
+assert torch.cuda.is_available(), "Enable a Kaggle GPU accelerator"
+boxes = torch.tensor([[0, 0, 10, 10], [1, 1, 9, 9]], dtype=torch.float32, device="cuda")
+scores = torch.tensor([0.9, 0.8], device="cuda")
+assert nms(boxes, scores, 0.5)[1].tolist() == [0]
+assert torchvision.ops.nms(boxes, scores, 0.5).tolist() == [0]
+print("GPU NMS checks passed")
+PY
+```
+
+Copy both checkpoint files and the complete OCR distribution into the model
+layout above. Then run one image, using its Kaggle path (not its macOS path):
+
+```bash
+%%bash
+set -e
+chmod +x text_detection/models/dists/det_model/det_model
+.venv-det/bin/python -m text_detection \
+  output/tap1-short-21-page/page_003/original/tap1-short-21-page.001.jpg \
+  --output output/detection_test.json
+```
 
 ## Run
 
