@@ -14,11 +14,11 @@ Trích xuất dữ liệu văn bia tiếng Việt có cấu trúc từ PDF có �
 
 Một số PDF lưu văn bản hiển thị dưới dạng character identifier (CID) trong font subset nhúng, thay vì ký tự Unicode đáng tin cậy. Vietnamica Alignment khôi phục glyph được hỗ trợ bằng cách khớp outline với glyph profile đã tạo, sau đó chuyển văn bản đã giải mã thành bản ghi JSON có cấu trúc.
 
-Đầu vào gồm PDF, cấu hình tài liệu và glyph profile. Đầu ra là JSON array UTF-8 chứa các bản ghi văn bia, cùng tệp issue riêng để review. Dự án không dùng OCR và không sửa PDF nguồn.
+Lệnh trích xuất nhận PDF và cấu hình tài liệu. Glyph profile là cache do `text_extraction.glyph_profile` tạo từ cùng PDF/config; đầu ra là JSON array UTF-8 chứa các bản ghi văn bia, cùng tệp issue riêng để review. Dự án không dùng OCR và không sửa PDF nguồn.
 
 ## Bắt đầu nhanh
 
-Yêu cầu: Python 3.11+, [uv](https://docs.astral.sh/uv/), dependency của dự án, và font tham chiếu phù hợp trong `fonts/reference/`.
+Yêu cầu: Python 3.11+, [uv](https://docs.astral.sh/uv/), dependency của dự án, và font tham chiếu phù hợp trong `fonts/`.
 
 ```bash
 uv sync --frozen
@@ -27,17 +27,18 @@ uv sync --frozen
 Tạo config cho tài liệu, xây glyph profile, rồi trích xuất:
 
 ```bash
-uv run python tools/build_glyph_profiles.py \
-  --pdf input/your-document.pdf \
-  --output data/glyph_profiles/your-document.json \
+uv run python -m text_extraction.glyph_profile \
   --config configs/your-document.json
 
-uv run python extract_pdf.py \
-  --config configs/your-document.json \
-  --pretty-output output/your-document.pretty.json
+uv run python -m text_extraction.main \
+  --config configs/your-document.json
 ```
 
-Chạy lệnh từ thư mục gốc của kho. Profile builder không tạo thư mục cha cho `--output`; hãy tạo trước. Lệnh trích xuất có tạo thư mục cha cho đầu ra.
+Cả hai lệnh đều tự dò font nhúng/reference phù hợp và cập nhật `encoded_fonts` trước. Lệnh profile ghi glyph profile; lệnh trích xuất ghi cả hai JSON đầu ra. Chạy lệnh từ thư mục gốc của kho.
+
+## Text detection từ ảnh
+
+`text_detection` là Stage 1 tùy chọn của AutoHDR: nhận một ảnh, phát hiện box ký tự thường và ký tự hư hỏng, gộp chúng rồi sắp xếp thứ tự đọc. CLI ghi một file JSON gồm box, trạng thái `intact`/`damaged` và danh sách ID theo thứ tự đọc; module không nhận dạng nội dung ký tự. Cách chạy, dependency và vị trí model được ghi tại [`text_detection/README.md`](text_detection/README.md).
 
 ## Cách hoạt động
 
@@ -60,35 +61,49 @@ flowchart LR
 
 ## Cấu hình
 
-Dùng [`configs/tap_1.json`](configs/tap_1.json) làm ví dụ schema. `input_pdf`, `output_json`, `glyph_profile` được phân giải tương đối với tệp config.
+Dùng [`configs/tap_1.json`](configs/tap_1.json) làm schema mẫu. PDF nguồn và mọi quy tắc theo tài liệu đều khai báo trong config. Các đường dẫn được phân giải tương đối với tệp config.
 
 ```json
 {
-  "input_pdf": "../input/document.pdf",
-  "output_json": "../output/document.json",
-  "glyph_profile": "../data/glyph_profiles/document.json",
-  "title_pattern": "^VĂN BIA SỐ\\s+(?P<number>\\d+)\\s*$",
-  "content_start": "Nguyên văn chữ Hán Nôm",
-  "content_sections": ["Nguyên văn chữ Hán Nôm", "Phiên âm Hán Việt"],
-  "marker_pattern": "^\\s*<\\s*(?P<id>\\d+)\\s*>?\\s*(?P<rest>.*)$",
-  "encoded_fonts": ["NomNaTong"],
-  "metadata": [
-    {"label": "Tên bia", "field": "ten_bia", "type": "string", "required": true}
-  ]
+  "input_pdf_path": "../input/document.pdf",
+  "paths": {
+    "output_json": "../output/document.json",
+    "glyph_profile": "../data/glyph_profiles/document.json"
+  },
+  "encoded_fonts": {"NomNaTong": "../fonts/NomNaTong.ttf"},
+  "page_filter": {
+    "margins": {"top": 40.0, "bottom": 45.0},
+    "footnotes": null
+  },
+  "records": {
+    "title_pattern": "^VĂN BIA SỐ\\s+(?P<number>\\d+)\\s*$",
+    "metadata": [
+      {"label": "Tên bia", "field": "ten_bia", "type": "string", "required": true}
+    ],
+    "content": {
+      "start_heading": "Nguyên văn chữ Hán Nôm",
+      "section_headings": ["Nguyên văn chữ Hán Nôm", "Phiên âm Hán Việt"]
+    },
+    "face_marker_pattern": "^\\s*<\\s*(?P<id>\\d+)\\s*>?\\s*(?P<rest>.*)$",
+    "require_consecutive_numbers": true
+  }
 }
 ```
 
 | Field | Mục đích |
 | --- | --- |
-| `input_pdf`, `output_json`, `glyph_profile` | PDF nguồn, profile đã tạo và đường dẫn đầu ra. |
-| `title_pattern` | Regex tiêu đề bản ghi; phải có group tên `number`. |
-| `metadata` | Label metadata bắt buộc và field đầu ra. `identifiers` đọc giá trị `<digits>`. |
-| `content_start`, `content_sections` | Heading bắt đầu nội dung và các heading chuyên mục được phép. |
-| `marker_pattern` | Regex marker mặt bia; phải có group tên `id`. |
-| `page_margins`, `footnote_filter` | Lọc dòng tùy chọn. |
-| `expected_record_count`, `require_consecutive_numbers` | Kiểm tra toàn corpus tùy chọn, được báo dưới dạng issue. |
+| `input_pdf_path` | PDF nguồn dùng để dò font, tạo profile và trích xuất text. |
+| `paths` | Đường dẫn JSON kết quả và glyph profile được tạo ra. |
+| `encoded_fonts` | Mapping tự sinh giữa tên font nhúng PDF và tệp font tham chiếu cục bộ chính xác. |
+| `page_filter.margins` | Kích thước vùng lề trên/dưới cần loại rõ ràng. |
+| `page_filter.footnotes` | Object gồm `start_pattern`, `max_font_size`, hoặc `null` để tắt lọc footnote. |
+| `records.title_pattern` | Regex tiêu đề bản ghi; phải có group tên `number`. |
+| `records.metadata` | Label metadata và field đầu ra. `identifiers` đọc giá trị `<digits>`. |
+| `records.content` | Heading bắt đầu nội dung và các heading chuyên mục được phép. |
+| `records.face_marker_pattern` | Regex marker mặt bia; phải có group tên `id`. |
+| `records.require_consecutive_numbers` | Bật hoặc tắt rõ ràng kiểm tra số thứ tự liên tiếp. |
 
-`encoded_fonts` chọn font khi xây profile. Ở decoder hiện tại nó được truyền vào nhưng không dùng để chặn giải mã, nên PDF nhiều font cần được review cẩn thận.
+Trước mỗi lần chạy, pipeline quét PDF đã cấu hình và `fonts/`, rồi cập nhật `encoded_fonts` với mọi font khớp. Khi tạo profile, chương trình chỉ mở đúng các tệp đã ghi trong config, không quét lại `fonts/`. Field thừa, field schema cũ, hoặc field bị thiếu đều bị từ chối; code không có mặc định riêng cho tài liệu. `expected_record_count` đã bị bỏ vì nó gắn config dùng lại được với một phiên bản PDF/fixture cụ thể.
 
 ## Đầu ra
 
@@ -112,31 +127,29 @@ Dùng [`configs/tap_1.json`](configs/tap_1.json) làm ví dụ schema. `input_pd
 ]
 ```
 
-CLI cũng ghi mặc định `<output-stem>_invalid.json`. Tệp này chứa bản ghi malformed, cảnh báo parser và vi phạm số lượng/chuỗi toàn cục. Mặc định, bản ghi có cảnh báo parser bị loại khỏi đầu ra chính; dùng `--keep-flagged-records` để giữ lại.
+CLI cũng ghi mặc định `<output-stem>_invalid.json`. Tệp này chứa bản ghi malformed, cảnh báo parser và vi phạm chuỗi số thứ tự toàn cục. Mặc định, bản ghi có cảnh báo parser bị loại khỏi đầu ra chính.
 
 ### Tùy chọn trích xuất
 
 | Tùy chọn | Mô tả |
 | --- | --- |
 | `--config PATH` | Config tài liệu bắt buộc. |
-| `--pretty-output PATH` | Ghi bản sao thụt lề để review thủ công. |
-| `--issues-output PATH` | Ghi đè đường dẫn tệp issue mặc định. |
-| `--keep-flagged-records` | Giữ bản ghi có cảnh báo parser trong JSON chính. |
-| `--content-layout preserve\|space\|no-space` | Giữ, nối bằng space, hoặc xóa line break trong `van_ban`. |
-| `--strip-literal-backslashes` | Chỉ xóa backslash thực tế khỏi `van_ban`. |
 
 ## Bố cục dự án
 
 | Đường dẫn | Mô tả |
 | --- | --- |
-| `extract_pdf.py` | CLI trích xuất chính. |
+| `text_extraction/main.py` | Pipeline PDF → JSON theo config và CLI. |
+| `text_extraction/font_discovery.py` | Dò font CID nhúng và cập nhật mapping đến tệp font tham chiếu cục bộ. |
+| `text_extraction/glyph_profile.py` | Xây profile CID → Unicode từ các mapping đã cấu hình. |
+| `text_extraction/config.py` | Đọc và kiểm tra config tài liệu cùng JSON glyph profile. |
+| `text_extraction/types.py` | Các kiểu dữ liệu bất biến dùng chung trong pipeline. |
+| `text_extraction/pdf_glyphs.py` | Đọc outline font nhúng, dùng chung cho tạo profile và decoder. |
+| `text_extraction/parser.py` | Chuyển dòng text thành bản ghi văn bia và các lỗi cần review. |
+| `text_extraction/output.py` | Kiểm tra, định dạng và ghi JSON nguyên tử. |
+| `text_detection/` | Stage 1 AutoHDR tùy chọn: định vị box ký tự thường/hư hỏng, sắp xếp thứ tự đọc và ghi JSON một ảnh; không nhận dạng text. |
 | `configs/` | Quy tắc parser và filter theo từng tài liệu. |
-| `extraction/` | Code config, glyph, decoder, parser, JSON và workflow thư viện. |
-| `tools/build_glyph_profiles.py` | Glyph-profile builder. |
-| `tools/get_fonts.py` | Kiểm kê font PDF. |
-| `tools/get_ref_font.py` | Kiểm tra metadata font tham chiếu. |
-| `tools/test_font.py` | Helper render glyph hard-code. |
-| `fonts/reference/` | Font Unicode tham chiếu cục bộ. |
+| `fonts/` | Font Unicode tham chiếu cục bộ. |
 | `tests/` | Unit và integration tests. |
 
 ## Giới hạn
@@ -145,7 +158,6 @@ CLI cũng ghi mặc định `<output-stem>_invalid.json`. Tệp này chứa bả
 - Type1/font đơn giản, CMap không hỗ trợ, và `CIDToGIDMap` Type0 không identity không được giải mã.
 - Raster matcher không có ngưỡng tin cậy; cần review profile đầu ra.
 - Nhận dạng content stream xử lý các mẫu `Tf`/`Tj`/`TJ` cụ thể, không phải mọi cấu trúc PDF hợp lệ.
-- `extraction.searchable_pdf.export_searchable_pdf()` là API thư viện, không phải lệnh CLI.
 
 ## Kiểm tra
 
@@ -153,8 +165,8 @@ CLI cũng ghi mặc định `<output-stem>_invalid.json`. Tệp này chứa bả
 uv run python -m unittest discover -s tests -v
 ```
 
-Parser tests đều pass trong checkout này. Full suite hiện có hai vấn đề sẵn có của kho: một test import `tools/filter_unsupported_characters.py` bị thiếu, và config `tap_1` kỳ vọng 100 bản ghi trong khi PDF ngắn được cấu hình chỉ tạo một khoảng tiêu đề.
+Test kiểm tra font discovery, profile utility, parser, JSON output và thứ tự đọc text-detection.
 
 ## Mở rộng
 
-Với collection mới, hãy thêm config và glyph profile riêng trước khi sửa code. Khi cần hỗ trợ font/CMap hoặc text-show form mới, mở rộng `extraction/glyphs.py` và thêm test tập trung để profile builder và decoder vẫn tương thích.
+Với collection mới, hãy thêm config riêng gồm `input_pdf_path` và object `encoded_fonts` rỗng, rồi chạy `text_extraction.glyph_profile` trước `text_extraction.main`. Lệnh đầu sẽ dò font cục bộ tương thích và tạo profile. Khi cần hỗ trợ font/CMap hoặc text-show form mới, mở rộng `text_extraction/pdf_glyphs.py` và thêm test tập trung để discovery, profile builder và decoder vẫn tương thích.

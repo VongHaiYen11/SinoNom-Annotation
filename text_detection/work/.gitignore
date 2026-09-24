@@ -1,0 +1,4 @@
+# Generated preprocessed images are local runtime artifacts.
+*
+!.gitignore
+!.gitkeep

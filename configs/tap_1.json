@@ -1,56 +1,66 @@
 {
-  "input_pdf": "../input/tap1-short-21-page.pdf",
-  "output_json": "../output/tap_1.json",
-  "glyph_profile": "../data/glyph_profiles/tap1-short_1.json",
-  "title_pattern": "^VĂN BIA SỐ\\s+(?P<number>\\d+)\\s*$",
-  "content_start": "Nguyên văn chữ Hán Nôm",
-  "content_sections": [
-    "Nguyên văn chữ Hán Nôm",
-    "Phiên âm Hán Việt",
-    "Dịch nghĩa",
-    "Toát yếu",
-    "Chú thích"
-  ],
-  "marker_pattern": "^\\s*<\\s*(?P<id>\\d+)\\s*>?\\s*(?P<rest>.*)$",
-  "encoded_fonts": [
-    "PalatinoLinotype",
-    "NomNaTong",
-    "PMingLiU"
-  ],
-  "page_margins": {
-    "top": 40,
-    "bottom": 45
+  "input_pdf_path": "../input/tap1-short-21-page.pdf",
+  "paths": {
+    "output_json": "../output/tap_1.json",
+    "glyph_profile": "../data/glyph_profiles/tap1-short_1.json"
   },
-  "footnote_filter": {
-    "start_pattern": "^\\d+\\s+",
-    "max_font_size": 10.0
+  "encoded_fonts": {
+    "Calibri": "../fonts/calibri.ttf",
+    "Cambria-Bold": "../fonts/Cambria Bold.ttf",
+    "NomNaTong": "../fonts/NomNaTong.ttf",
+    "PalatinoLinotype": "../fonts/Palatino-Regular.ttf",
+    "PalatinoLinotype,Bold": "../fonts/Palatino-Bold.ttf",
+    "PalatinoLinotype,BoldItalic": "../fonts/Palatino-BoldItalic.ttf"
   },
-  "expected_record_count": 100,
-  "require_consecutive_numbers": true,
-  "metadata": [
-    {
-      "label": "Tên bia",
-      "field": "ten_bia",
-      "type": "string",
-      "required": true
+  "page_filter": {
+    "margins": {
+      "top": 40.0,
+      "bottom": 45.0
     },
-    {
-      "label": "Địa điểm",
-      "field": "dia_diem",
-      "type": "string",
-      "required": true
-    },
-    {
-      "label": "Niên đại",
-      "field": "nien_dai",
-      "type": "string",
-      "required": true
-    },
-    {
-      "label": "Kí hiệu VNCHN",
-      "field": "ky_hieu_vnchn",
-      "type": "identifiers",
-      "required": true
+    "footnotes": {
+      "start_pattern": "^\\d+\\s+",
+      "max_font_size": 10.0
     }
-  ]
+  },
+  "records": {
+    "title_pattern": "^VĂN BIA SỐ\\s+(?P<number>\\d+)\\s*$",
+    "metadata": [
+      {
+        "label": "Tên bia",
+        "field": "ten_bia",
+        "type": "string",
+        "required": true
+      },
+      {
+        "label": "Địa điểm",
+        "field": "dia_diem",
+        "type": "string",
+        "required": true
+      },
+      {
+        "label": "Niên đại",
+        "field": "nien_dai",
+        "type": "string",
+        "required": true
+      },
+      {
+        "label": "Kí hiệu VNCHN",
+        "field": "ky_hieu_vnchn",
+        "type": "identifiers",
+        "required": true
+      }
+    ],
+    "content": {
+      "start_heading": "Nguyên văn chữ Hán Nôm",
+      "section_headings": [
+        "Nguyên văn chữ Hán Nôm",
+        "Phiên âm Hán Việt",
+        "Dịch nghĩa",
+        "Toát yếu",
+        "Chú thích"
+      ]
+    },
+    "face_marker_pattern": "^\\s*<\\s*(?P<id>\\d+)\\s*>?\\s*(?P<rest>.*)$",
+    "require_consecutive_numbers": true
+  }
 }

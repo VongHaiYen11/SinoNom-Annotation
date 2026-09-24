@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from text_detection.fusion import calculate_iou, fuse_localizations
+from text_detection.main import build_detection_document, main
+from text_detection.pipeline import (
+    _damage_boxes_from_prediction,
+    _ocr_boxes_from_detection,
+    iter_stage1,
+)
+from text_detection.reading_order import sort_recognized_boxes
+
+
+class _Tensor:
+    """Minimal tensor double for testing model-output conversion without Torch."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def cpu(self):
+        return self
+
+    def numpy(self):
+        return self.value
+
+
+class TextDetectionTests(unittest.TestCase):
+    @staticmethod
+    def _result():
+        damage_boxes = [[120, 450, 180, 520]]
+        normal_boxes = [[120, 350, 180, 420], [220, 350, 280, 420]]
+        return SimpleNamespace(
+            damage_boxes=damage_boxes,
+            normal_boxes=normal_boxes,
+            fused_boxes=damage_boxes + normal_boxes,
+            ordered_boxes=[normal_boxes[0], normal_boxes[1], damage_boxes[0]],
+            num_normal=2,
+            num_damaged=1,
+        )
+
+    def test_damage_boxes_replace_overlapping_ocr_boxes(self) -> None:
+        damage_boxes = [[11, 11, 29, 29]]
+        ocr_boxes = [[10, 10, 30, 30], [40, 10, 50, 30]]
+
+        fused, normal, removed = fuse_localizations(damage_boxes, ocr_boxes)
+
+        self.assertAlmostEqual(calculate_iou(damage_boxes[0], ocr_boxes[0]), 0.81)
+        self.assertEqual({0}, removed)
+        self.assertEqual([[40, 10, 50, 30]], normal)
+        self.assertEqual(damage_boxes + normal, fused)
+
+    def test_model_outputs_are_normalized_to_integer_xyxy_boxes(self) -> None:
+        prediction = SimpleNamespace(
+            pred_instances=SimpleNamespace(
+                bboxes=_Tensor([[1.2, 2.8, 30.1, 40.7], [5, 6, 7, 8]]),
+                scores=_Tensor([0.31, 0.3]),
+            )
+        )
+
+        self.assertEqual([[1, 3, 30, 41]], _damage_boxes_from_prediction(prediction))
+        self.assertEqual(
+            [[1, 3, 30, 41]],
+            _ocr_boxes_from_detection({"page.jpg": [[1.2, 2.8, 30.1, 40.7, 0.9]]}),
+        )
+
+    def test_empty_box_set_needs_no_optional_layout_dependencies(self) -> None:
+        self.assertEqual([], sort_recognized_boxes([], image_height=50, image_width=100))
+
+    def test_missing_model_asset_has_actionable_error(self) -> None:
+        stage = iter_stage1("page.png", SimpleNamespace())
+
+        self.assertEqual("loading_models", next(stage).phase)
+        with self.assertRaisesRegex(FileNotFoundError, "vague-det-config"):
+            next(stage)
+
+    def test_json_document_uses_box_ids_for_global_reading_order(self) -> None:
+        document = build_detection_document(Path("bia_001.jpg"), self._result())
+
+        self.assertEqual("bia_001.jpg", document["image"])
+        self.assertEqual(
+            {
+                "1": {"bbox": [120, 450, 180, 520], "status": "damaged"},
+                "2": {"bbox": [120, 350, 180, 420], "status": "intact"},
+                "3": {"bbox": [220, 350, 280, 420], "status": "intact"},
+            },
+            document["bounding_boxes"],
+        )
+        self.assertEqual([2, 3, 1], document["reading_order"])
+
+    def test_main_writes_one_image_json(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            image_path = Path(directory) / "bia_001.jpg"
+            output_path = Path(directory) / "detections.json"
+            image_path.touch()
+
+            with patch("text_detection.main.run_stage1", return_value=self._result()):
+                exit_code = main(
+                    [str(image_path), "--output", str(output_path)]
+                )
+
+            self.assertEqual(0, exit_code)
+            self.assertEqual(
+                build_detection_document(image_path, self._result()),
+                json.loads(output_path.read_text(encoding="utf-8")),
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

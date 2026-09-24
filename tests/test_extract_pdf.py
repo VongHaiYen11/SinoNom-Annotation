@@ -5,9 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from extract_text import (
+from text_extraction.main import (
     ExtractConfig,
     ExtractionError,
+    EncodedFont,
     GlyphDecoder,
     MetadataSpec,
     TextLine,
@@ -19,7 +20,7 @@ from extract_text import (
     serialize_json,
     serialize_pretty_json,
 )
-from extraction.records import parse_records_with_issues
+from text_extraction.parser import parse_records_with_issues
 
 
 def line(text: str, page: int = 1) -> TextLine:
@@ -28,16 +29,33 @@ def line(text: str, page: int = 1) -> TextLine:
 
 def config(**overrides) -> ExtractConfig:
     values = {
-        "input_pdf": Path("input.pdf"),
+        "input_pdf_path": Path("input.pdf"),
         "output_json": Path("output.json"),
         "glyph_profile": Path("profile.json"),
         "metadata": (
-            MetadataSpec("Tên bia", "ten_bia"),
-            MetadataSpec("Địa điểm", "dia_diem"),
-            MetadataSpec("Niên đại", "nien_dai"),
-            MetadataSpec("Kí hiệu VNCHN", "ky_hieu_vnchn", "identifiers"),
+            MetadataSpec("Tên bia", "ten_bia", "string", True),
+            MetadataSpec("Địa điểm", "dia_diem", "string", True),
+            MetadataSpec("Niên đại", "nien_dai", "string", True),
+            MetadataSpec("Kí hiệu VNCHN", "ky_hieu_vnchn", "identifiers", True),
         ),
-        "expected_record_count": 1,
+        "title_pattern": r"^VĂN BIA SỐ\s+(?P<number>\d+)\s*$",
+        "content_start": "Nguyên văn chữ Hán Nôm",
+        "content_sections": (
+            "Nguyên văn chữ Hán Nôm",
+            "Phiên âm Hán Việt",
+            "Dịch nghĩa",
+            "Toát yếu",
+            "Chú thích",
+        ),
+        "marker_pattern": r"^\s*<\s*(?P<id>\d+)\s*>?\s*(?P<rest>.*)$",
+        "encoded_fonts": (
+            EncodedFont("NomNaTong", Path("fonts/NomNaTong.ttf")),
+        ),
+        "top_margin": 40.0,
+        "bottom_margin": 45.0,
+        "footnote_start_pattern": None,
+        "footnote_max_font_size": None,
+        "require_consecutive_numbers": True,
     }
     values.update(overrides)
     return ExtractConfig(**values)
@@ -190,7 +208,7 @@ class ParserTests(unittest.TestCase):
     def test_non_consecutive_titles_fail(self) -> None:
         source = [line("VĂN BIA SỐ 1"), line("VĂN BIA SỐ 3")]
         with self.assertRaisesRegex(ExtractionError, "not consecutive"):
-            parse_records(source, config(expected_record_count=None))
+            parse_records(source, config())
 
     def test_malformed_record_is_collected_while_later_record_is_kept(self) -> None:
         source = [
@@ -206,7 +224,7 @@ class ParserTests(unittest.TestCase):
         ]
 
         records, warnings, issues = parse_records_with_issues(
-            source, config(expected_record_count=None)
+            source, config()
         )
 
         self.assertEqual([2], [record["so_van_bia"] for record in records])
@@ -232,7 +250,7 @@ class ParserTests(unittest.TestCase):
         pretty = serialize_pretty_json([record])
         self.assertEqual([record], json.loads(pretty))
         self.assertIn('\n    "so_van_bia": 1,', pretty)
-        with self.assertRaisesRegex(ExtractionError, "U\+FFFD"):
+        with self.assertRaisesRegex(ExtractionError, r"U\+FFFD"):
             serialize_json([{"noi_dung": "bad\ufffdtext"}])
 
     def test_output_cleanup_is_explicit_and_only_changes_content(self) -> None:
