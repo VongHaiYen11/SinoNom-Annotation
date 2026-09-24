@@ -77,8 +77,6 @@ def iter_stage1(image_path: str, opt: Any) -> Generator[Stage1Event, None, Stage
     )
     try:
         from mmdet.apis import inference_detector, init_detector
-        # Register AutoHDR dataset names before init_detector reads metadata.
-        from .runtime import datasets  # noqa: F401
     except ModuleNotFoundError as exc:
         if exc.name == 'mmdet':
             raise RuntimeError(
@@ -98,6 +96,8 @@ def iter_stage1(image_path: str, opt: Any) -> Generator[Stage1Event, None, Stage
         damage_config,
         damage_weights,
         device=str(device),
+        # Explicit palette skips dataset construction for visualization metadata.
+        palette='random',
     )
 
     yield Stage1Event('preprocessing')

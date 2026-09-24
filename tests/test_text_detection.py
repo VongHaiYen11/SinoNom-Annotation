@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from text_detection.fusion import calculate_iou, fuse_localizations
 from text_detection.main import build_detection_document, main
@@ -31,6 +31,36 @@ class _Tensor:
 
 
 class TextDetectionTests(unittest.TestCase):
+    def test_detector_initialization_needs_no_dataset_registration(self) -> None:
+        init_detector = Mock(return_value=object())
+        modules = {
+            'mmdet': SimpleNamespace(),
+            'mmdet.apis': SimpleNamespace(
+                init_detector=init_detector, inference_detector=Mock(),
+            ),
+            'cv2': SimpleNamespace(),
+            'numpy': SimpleNamespace(),
+            'torch': SimpleNamespace(
+                cuda=SimpleNamespace(is_available=lambda: False), device=str,
+            ),
+            'PIL': SimpleNamespace(Image=object()),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            asset = Path(directory) / 'model'
+            asset.touch()
+            options = SimpleNamespace(
+                vague_det_config=asset, vague_det_weights=asset,
+                ocr_det_executable=asset,
+            )
+            with patch.dict('sys.modules', modules):
+                stage = iter_stage1('page.png', options)
+                self.assertEqual('loading_models', next(stage).phase)
+                self.assertEqual('preprocessing', next(stage).phase)
+                stage.close()
+        init_detector.assert_called_once_with(
+            str(asset), str(asset), device='cpu', palette='random',
+        )
+
     @staticmethod
     def _result():
         damage_boxes = [[120, 450, 180, 520]]

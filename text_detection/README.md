@@ -63,14 +63,15 @@ text_detection/
 
 Model files and generated work images are intentionally ignored by Git.
 
-The custom `FS_Dataset` and `HDR_Dataset` registrations are provided by
-`text_detection/runtime/datasets.py` and loaded automatically before detector
-initialization. They reuse the installed MMDetection `CocoDataset` annotation
-logic and preserve the AutoHDR class order and palettes. `HDR_Dataset` uses a
-one-element tuple for its class list. No top-level `mmdet/` source copy is
-needed; MMDetection itself must still be installed. If an external config has
-`custom_imports` pointing to `mmdet.datasets.fssj` or `mmdet.datasets.hdr`,
-change those imports to `text_detection.runtime.datasets`.
+Single-image inference passes `palette='random'` to MMDetection 3.3.0, which
+skips building the test dataset solely to obtain visualization colors. No
+`FS_Dataset` or `HDR_Dataset` registration or top-level `mmdet/` source copy
+is needed. The model, checkpoint, test transforms and bbox/score processing
+are unchanged; JSON output does not use the visualization palette.
+MMDetection itself must still be installed. If an external config explicitly
+imports `mmdet.datasets.fssj`, `mmdet.datasets.hdr`, or
+`text_detection.runtime.datasets` through `custom_imports`, remove only those
+dataset imports for inference. Preserve imports for custom models/transforms.
 
 ## Kaggle standalone detection environment
 
