@@ -218,6 +218,17 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-input/
-data/
-character_detection/models
+# Project inputs and generated data
+# Source PDFs and page images can be large or document-specific.
+/input/
+/data/
+
+# Extraction results, per-image annotations, internal state and Save All bundles.
+/output/
+/annotations/
+annotations.zip
+*.zip.tmp
+
+# External detection checkpoints, packaged executables and preprocessed images
+# are ignored by text_detection/models/.gitignore and
+# text_detection/work/.gitignore. Their .gitkeep files remain tracked.

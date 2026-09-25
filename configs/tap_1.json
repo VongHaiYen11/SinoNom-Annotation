@@ -10,11 +10,18 @@
   },
   "encoded_fonts": {
     "Calibri": "../fonts/calibri.ttf",
+    "Cambria": "../fonts/cambria.ttf",
     "Cambria-Bold": "../fonts/Cambria Bold.ttf",
+    "CambriaMath": "../fonts/cambria.ttf",
+    "DengXian": "../fonts/DengXian.ttf",
     "NomNaTong": "../fonts/NomNaTong.ttf",
+    "PMingLiU": "../fonts/PMingLiU.ttf",
+    "PMingLiU-ExtB": "../fonts/PMingLiU-ExtB.ttf",
     "PalatinoLinotype": "../fonts/Palatino-Regular.ttf",
     "PalatinoLinotype,Bold": "../fonts/Palatino-Bold.ttf",
-    "PalatinoLinotype,BoldItalic": "../fonts/Palatino-BoldItalic.ttf"
+    "PalatinoLinotype,BoldItalic": "../fonts/Palatino-BoldItalic.ttf",
+    "PalatinoLinotype,Italic": "../fonts/Palatino-Italic.ttf",
+    "TimesNewRoman": "../fonts/TimesNewRoman.ttf"
   },
   "page_filter": {
     "margins": {

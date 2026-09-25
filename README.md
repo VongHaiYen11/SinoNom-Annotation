@@ -24,6 +24,7 @@
   - [⚙️ Installation](#️-installation)
   - [📄 PDF Text Extraction](#-pdf-text-extraction)
     - [Configuration](#configuration)
+      - [Preparing Reference Fonts](#preparing-reference-fonts)
       - [Config file](#config-file)
       - [Input and output paths](#input-and-output-paths)
       - [Font decoding](#font-decoding)
@@ -139,6 +140,41 @@ All relative paths written inside the config are resolved from the directory con
 | Field | Meaning and When It Is Used |
 | --- | --- |
 | `encoded_fonts` | Maps embedded PDF font names to local Unicode reference-font files. Font discovery refreshes this mapping before glyph-profile generation and text extraction. Update the available reference fonts when the PDF uses a different embedded font set |
+
+#### Preparing reference fonts
+
+Reference fonts are local Unicode fonts used to match embedded CID glyph outlines to Unicode characters. The repository does not download them automatically because font licensing and redistribution terms vary.
+
+First, list the unique embedded Type0/Identity font names used by the PDF:
+
+```bash
+python helpers/list_pdf_fonts.py /path/to/document.pdf
+```
+
+Example output:
+
+```text
+Cambria-Bold
+NomNaTong
+PalatinoLinotype
+```
+
+Use `--json` when a machine-readable list is more convenient:
+
+```bash
+python helpers/list_pdf_fonts.py /path/to/document.pdf --json
+```
+
+Obtain Unicode reference-font files for the reported families and styles, then place the `.ttf`, `.otf`, `.ttc` or `.otc` files in [`fonts/`](fonts/). The internal family/style metadata of each file must match the embedded PDF font name; matching only the filename is not sufficient.
+
+Next, match the PDF fonts against the local files and update `encoded_fonts` in the config:
+
+```bash
+python -m text_extraction.font_discovery \
+  --config configs/tap_1.json
+```
+
+The command reports fonts for which no matching local reference exists. Once every required font is matched, build the glyph profile as described below. Both glyph-profile generation and text extraction also run this synchronization automatically, but the standalone command is useful for checking reference fonts before processing.
 
 #### Page filtering
 
@@ -469,6 +505,7 @@ Crop is stored as `top_left`, `top_right`, `bottom_right` and `bottom_left` in o
 ```text
 configs/                 Document-specific extraction rules
 fonts/                   Unicode reference fonts and Hán/Nôm UI fonts
+helpers/                 Small command-line utilities for data preparation
 text_extraction/         PDF decoding, glyph profiles and record parsing
 text_detection/          OCR/damage localization and reading-order proposal
 gradio/                  Annotation application and UI assets
