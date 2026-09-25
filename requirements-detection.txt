@@ -1,2 +1,0 @@
-# Backward-compatible alias. The root file is the single source of truth.
--r requirements.txt
