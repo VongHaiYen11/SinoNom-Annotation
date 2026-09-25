@@ -100,8 +100,11 @@ def final_document(state):
     if not all(state['workflow'].values()) or not validate_bbox_text_count(state):
         raise ValueError('Complete all verification steps and match the box and character counts.')
     doc = {k: state[k] for k in ('image', 'bounding_boxes', 'reading_order', 'annotations')}
-    from crop.crop import crop_document
-    doc['crop'] = crop_document(state['image'], state.get('crop') or [0, 0, *state['image_size']], state['image_size'])['crop']
+    from crop.crop import crop_document, default_crop
+    doc['crop'] = crop_document(
+        state['image'], state.get('crop') or default_crop(state['image_size']),
+        state['image_size']
+    )['crop']
     validate_document(doc, state['image'], state['image_size'])
     return doc
 

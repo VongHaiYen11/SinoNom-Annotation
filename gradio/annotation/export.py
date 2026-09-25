@@ -8,7 +8,7 @@ from PIL import Image
 
 from .io import load_annotation, read_json
 from .text_extraction import validate_content_document
-from crop.crop import crop_document, crop_bbox
+from crop.crop import crop_document, crop_bbox, default_crop
 
 
 EXPORT_ARCHIVE_NAME = 'annotations.zip'
@@ -63,7 +63,7 @@ def collect_annotations(images, output_dir, allow_empty=False):
             # Legacy files stored crop separately. A missing legacy crop means full image.
             if 'crop' not in doc:
                 crop_path = Path(output_dir) / 'crops' / saved.name
-                bbox = [0, 0, *size]
+                bbox = default_crop(size)
                 if crop_path.exists():
                     crop = read_json(crop_path)
                     if crop['image'] != path.name:

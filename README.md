@@ -387,7 +387,7 @@ Open `http://127.0.0.1:7860`. For a remote environment:
 3. **🔲 Bounding Boxes** — Detect, add, move, resize or delete regions; public Box IDs are not assigned yet
 4. **🏷️ Status** — Select regions on the canvas and mark each one as `intact` or `damaged`
 5. **🔢 Reading Order** — Spatially order the regions, assign Box IDs `1..n`, align verified text and allow drag-and-drop reordering
-6. **✂️ Crop** — Set an independent rectangular crop using original-image coordinates
+6. **✂️ Crop** — Set an independent rectangular crop using original-image coordinates; no crop side can exceed 4096 pixels
 7. **✅ Review** — Inspect the final table/text/JSON and save the image object
 
 The Python state is authoritative. Before Reading Order, every editable region has a hidden `region_uid`; this allows selection, resize and status changes without exposing unstable Box IDs. Entering Reading Order spatially sorts the current regions, assigns contiguous public Box IDs from `1` to `n`, and aligns the verified Hán/Nôm text. Drag-and-drop then changes only `reading_order`, keeping each character attached to its Box ID.
@@ -496,7 +496,7 @@ In this example, `12305` is the number of the corresponding inscription
 
 All JSON is written as UTF-8 with readable Unicode. Per-image annotation writes are atomic.
 
-Crop is stored as `top_left`, `top_right`, `bottom_right` and `bottom_left` in original-image coordinates. If no crop is edited, the saved crop covers the full image. Source updates use an in-process lock and baseline comparison; the application is intended to run as one server process, and concurrent edits of the same image should be avoided.
+Crop is stored as `top_left`, `top_right`, `bottom_right` and `bottom_left` in original-image coordinates. No crop side can exceed 4096 pixels. If an image is larger, its default crop is limited to 4096 pixels on each oversized side. Source updates use an in-process lock and baseline comparison; the application is intended to run as one server process, and concurrent edits of the same image should be avoided.
 
 ---
 

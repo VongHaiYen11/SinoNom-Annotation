@@ -73,6 +73,17 @@ element.addEventListener('pointermove', e => {
   else if(m.corner !== undefined){const n=Number(m.corner); if(n===0||n===3)b[0]+=dx;else b[2]+=dx; if(n===0||n===1)b[1]+=dy;else b[3]+=dy;}
   else {const tx=Math.max(-b[0],Math.min(dx,w-b[2])),ty=Math.max(-b[1],Math.min(dy,h-b[3]));b=[b[0]+tx,b[1]+ty,b[2]+tx,b[3]+ty];}
   b=b.map((v,i)=>Math.max(0,Math.min(v,i%2?h:w)));
+  if(props.value.step===6){
+    const limit=props.value.max_crop_side;
+    if(!m.id){
+      if(b[2]-b[0]>limit) {if(p.x<m.p.x)b[0]=b[2]-limit;else b[2]=b[0]+limit;}
+      if(b[3]-b[1]>limit) {if(p.y<m.p.y)b[1]=b[3]-limit;else b[3]=b[1]+limit;}
+    } else if(m.corner!==undefined){
+      const n=Number(m.corner);
+      if(b[2]-b[0]>limit) {if(n===0||n===3)b[0]=b[2]-limit;else b[2]=b[0]+limit;}
+      if(b[3]-b[1]>limit) {if(n===0||n===1)b[1]=b[3]-limit;else b[3]=b[1]+limit;}
+    }
+  }
   m.result=b; drawPreview(m,b);
 });
 element.addEventListener('pointerup', () => {

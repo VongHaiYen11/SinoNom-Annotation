@@ -17,7 +17,8 @@ from .status import update_status, confirm_status
 from .reading_order import update_reading_order, validate_reading_order
 from .io import load_annotation, validate_document, read_json, atomic_write, save_annotation, final_document
 from .detection_adapter import detect
-from crop.crop import save_crop_coordinates, crop_bbox
+from crop.crop import (save_crop_coordinates, crop_bbox, default_crop,
+                       validate_crop_coordinates)
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class Workflow:
                 sidecar = read_json(meta)
                 if sidecar.get('document_hash') == fingerprint(json.dumps(doc, sort_keys=True, ensure_ascii=False)):
                     state['loaded_meta'] = sidecar
-        state['crop'] = [0, 0, *size]
+        state['crop'] = default_crop(size)
         crop_path = self.output / 'crops' / (path.stem + '.json')
         if saved_crop is not None:
             state['crop'] = crop_bbox(saved_crop, size)
@@ -210,8 +211,7 @@ class Workflow:
         elif action == 'crop':
             if step != 6:
                 raise ValueError('Edit crop in Step 6.')
-            from .bbox import validate_coordinates
-            s['crop'] = validate_coordinates(payload['bbox'], s['image_size'])
+            s['crop'] = validate_crop_coordinates(payload['bbox'], s['image_size'])
             s['crop_saved'] = False
             s['saved'] = False
         elif action == 'save_crop':

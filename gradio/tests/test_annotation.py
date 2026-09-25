@@ -16,7 +16,8 @@ from annotation.status import update_status, confirm_status
 from annotation.io import read_json, atomic_write, load_annotation, save_annotation, final_document
 from annotation.text_extraction import extract_source_content, save_source_content
 from annotation.workflow import Workflow
-from crop.crop import save_crop_coordinates
+from crop.crop import (save_crop_coordinates, crop_document, default_crop,
+                       MAX_CROP_SIDE)
 from PIL import Image
 
 
@@ -98,6 +99,22 @@ class Invariants(unittest.TestCase):
         for coords in ([1,1,0,0],[-1,0,2,2],[0,0,101,2],[0,0,float('nan'),2],[False,0,2,2]):
             candidate=state();uid=next(iter(candidate['regions']))
             with self.assertRaises(ValueError):update_bbox(candidate,uid,coords)
+
+    def test_crop_dimensions_are_limited_to_4096(self):
+        self.assertEqual(default_crop([5000, 3000]), [0, 0, MAX_CROP_SIDE, 3000])
+        self.assertEqual(default_crop([3000, 5000]), [0, 0, 3000, MAX_CROP_SIDE])
+        valid = crop_document('scan.png', [500, 600, 4596, 4696], [6000, 6000])
+        self.assertEqual(valid['crop']['bottom_right'], [4596, 4696])
+        with self.assertRaisesRegex(ValueError, 'cannot exceed 4096'):
+            crop_document('scan.png', [0, 0, 4097, 100], [6000, 6000])
+        with self.assertRaisesRegex(ValueError, 'cannot exceed 4096'):
+            crop_document('scan.png', [0, 0, 100, 4097], [6000, 6000])
+
+        s = aligned_state()
+        s['image_size'] = [5000, 6000]
+        s['workflow']['reading_order_valid'] = True
+        self.assertEqual(final_document(s)['crop']['bottom_right'],
+                         [MAX_CROP_SIDE, MAX_CROP_SIDE])
 
     def test_unicode(self):
         self.assertEqual(count_annotation_characters(' 永、樂。寺\n(𨴦) '),4)

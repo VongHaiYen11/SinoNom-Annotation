@@ -2,6 +2,7 @@
 import html
 from pathlib import Path
 from annotation.reading_order import build_text_sequence
+from crop.crop import MAX_CROP_SIDE
 
 SCRIPT = (Path(__file__).parent / 'assets/editor.js').read_text()
 CSS = (Path(__file__).parent / 'assets/editor.css').read_text()
@@ -77,4 +78,5 @@ def snapshot(s):
             markup+='<section class="review-detail"><div class="review-text"><span class="eyebrow">FINAL TEXT</span><p>'+html.escape(build_text_sequence(s))+'</p></div><p class="order-sequence">Reading order: '+ ' → '.join(map(str,s['reading_order']))+'</p><div class="review-table-wrap"><table><thead><tr><th>Order</th><th>Box ID</th><th>BBox</th><th>Status</th><th>Annotation</th></tr></thead><tbody>'+''.join(rows)+'</tbody></table></div></section>'
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
-                width=w,height=h,boxes=boxes,selected=selected_id)
+                width=w,height=h,boxes=boxes,selected=selected_id,
+                max_crop_side=MAX_CROP_SIDE)
