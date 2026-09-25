@@ -7,7 +7,7 @@ def new_state():
                 verified_content=None, draft_content=None, annotation_text='',
                 bounding_boxes={}, annotations={}, reading_order=[], temporary_order=[],
                 next_box_id=1, selected_box_id=None, revision=0, current_step=1,
-                detection_loaded=False, crop=None, saved=False,
+                detection_loaded=False, crop=None, crop_saved=False, saved=False,
                 workflow=dict(content_verified=False, bbox_valid=False,
                               alignment_valid=False, status_valid=False, reading_order_valid=False))
 
@@ -43,4 +43,4 @@ def set_verified_content(state, content, text):
 
 def require(state, key):
     if not state['workflow'][key]:
-        raise ValueError('Bước trước chưa hợp lệ: ' + key)
+        raise ValueError('Complete the previous validation step: ' + key)

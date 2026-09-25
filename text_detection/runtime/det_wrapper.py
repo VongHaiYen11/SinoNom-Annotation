@@ -1,13 +1,18 @@
 import subprocess
-import torch
 import pickle
 import sys,os
 import time
 import socket
+import logging
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger(__name__)
+
+
 class det_model:
-    def __init__(self, executable_path: Optional[str] = None, port: int = 12345, max_retries: int = 5):
+    def __init__(self, executable_path: Optional[str] = None, port: int = 12345,
+                 max_retries: int = 5, show_subprocess_output: bool = False):
         default_path = Path(__file__).resolve().parents[1] / 'models' / 'dists' / 'det_model' / 'det_model'
         self.executable_path = executable_path or str(default_path)
         self.process = None
@@ -16,6 +21,7 @@ class det_model:
         self.port = port
         self.sock = None
         self.max_retries = max_retries
+        self.show_subprocess_output = show_subprocess_output
 
     def _connect_with_retry(self):
         """尝试连接服务器，带重试机制"""
@@ -26,7 +32,7 @@ class det_model:
                 self.sock.connect(('localhost', self.port))
                 return True
             except ConnectionRefusedError:
-                print(f"Connection attempt {retries + 1} failed, retrying...", file=sys.stderr)
+                log.debug("OCR detector connection attempt %s failed; retrying", retries + 1)
                 retries += 1
                 time.sleep(2)  # 等待2秒后重试
                 continue
@@ -35,29 +41,30 @@ class det_model:
     def start(self):
         try:
             executable_path = os.path.abspath(self.executable_path)
-            print(f"Starting process: {executable_path}")
-            
-          
+            log.debug("Starting OCR detector process: %s", executable_path)
+            streams = {} if self.show_subprocess_output else {
+                'stdin': subprocess.DEVNULL,
+                'stdout': subprocess.DEVNULL,
+                'stderr': subprocess.DEVNULL,
+            }
             self.process = subprocess.Popen(
-                [executable_path, str(self.port)]
+                [executable_path, str(self.port)],
+                **streams,
             )
             # 检查进程是否立即退出
             time.sleep(1)
             exit_code = self.process.poll()
             if exit_code is not None:
-                stdout, stderr = self.process.communicate()
-                print(f"Process exited immediately with code: {exit_code}")
-                print(f"Stdout: {stdout}")
-                print(f"Stderr: {stderr}")
-                raise RuntimeError(f"Process exited with code {exit_code}")
-
-            print("Process started successfully")
+                raise RuntimeError(
+                    f"OCR detector exited immediately with code {exit_code}. "
+                    "Use --show-detection-logs to inspect its startup output."
+                )
 
             # 等待服务器启动并尝试连接
             if not self._connect_with_retry():
                 raise RuntimeError("Failed to connect to server after multiple attempts")
             
-            print(f"Process started with PID: {self.process.pid}")
+            log.debug("OCR detector started with PID %s", self.process.pid)
             self._is_running = True
             
         except Exception as e:
@@ -108,6 +115,7 @@ class det_model:
                 return self.stride
                 
             elif mode == 2:
+                import torch
                 if not isinstance(x, torch.Tensor):
                     raise TypeError(f"For mode 2, input should be torch.Tensor, got {type(x)}")
                 
@@ -154,6 +162,7 @@ if __name__ == '__main__':
         print("Process started successfully")
         
         # 测试初始化
+        import torch
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print(f"Using device: {device}")
         stride = model(device, mode=1)

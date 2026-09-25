@@ -49,6 +49,11 @@ Use model assets from a trusted AutoHDR release and record their release,
 platform, and checksums with the experiment that uses them. The OCR executable
 must be compatible with the host OS and CPU/GPU environment.
 
+The packaged OCR subprocess is quiet by default, including PyInstaller
+`PyiFrozenFinder` import-debug output. Add `--show-detection-logs` only when
+diagnosing executable startup. To remove that output from the executable
+itself, rebuild it without PyInstaller's `--debug=imports` option.
+
 ```text
 text_detection/
 ├── models/
@@ -75,7 +80,8 @@ dataset imports for inference. Preserve imports for custom models/transforms.
 
 ## Kaggle standalone detection environment
 
-`requirements-detection.txt` selects a minimal CLI runtime for Linux x86_64:
+`requirements-detection.txt` installs the full repository runtime (PDF
+extraction, detection and Gradio UI) for Linux x86_64:
 Python 3.11, Torch 2.1.0/cu121, MMCV 2.1.0, MMEngine 0.10.5 and MMDetection
 3.3.0. MMDetection 3.3.0 requires MMCV below 2.2.0. The MMCV wheel must match
 Python, Torch and CUDA; `mmcv-lite` does not provide the required compiled ops.

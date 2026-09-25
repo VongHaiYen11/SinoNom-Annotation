@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ from text_detection.pipeline import (
     iter_stage1,
 )
 from text_detection.reading_order import sort_recognized_boxes
+from text_detection.runtime.det_wrapper import det_model
 
 
 class _Tensor:
@@ -31,6 +33,24 @@ class _Tensor:
 
 
 class TextDetectionTests(unittest.TestCase):
+    def test_packaged_detector_output_is_suppressed_by_default(self) -> None:
+        process = Mock()
+        process.poll.return_value = None
+        process.pid = 42
+        model = det_model('/tmp/det_model')
+        with patch('text_detection.runtime.det_wrapper.subprocess.Popen', return_value=process) as popen, \
+             patch('text_detection.runtime.det_wrapper.time.sleep'), \
+             patch.object(model, '_connect_with_retry', return_value=True):
+            model.start()
+
+        popen.assert_called_once_with(
+            ['/tmp/det_model', '12345'],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        model.cleanup()
+
     def test_detector_initialization_needs_no_dataset_registration(self) -> None:
         init_detector = Mock(return_value=object())
         modules = {

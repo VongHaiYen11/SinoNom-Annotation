@@ -20,7 +20,7 @@ def temporary_align_text(box_ids, text):
     ids = [str(i) for i in box_ids]
     chars = characters(text)
     if not chars or len(ids) != len(chars) or len(set(ids)) != len(ids):
-        raise ValueError('Số box và ký tự phải bằng nhau, khác zero; ID không được trùng.')
+        raise ValueError('Box and character counts must match and be nonzero; IDs must be unique.')
     return dict(zip(ids, chars))
 
 

@@ -49,6 +49,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--img-size", type=int, default=2048)
     parser.add_argument("--conf-thres", type=float, default=0.45)
     parser.add_argument("--iou-thres", type=float, default=0.2)
+    parser.add_argument(
+        "--show-detection-logs",
+        action="store_true",
+        help="Show stdout/stderr from the packaged OCR detector process.",
+    )
     return parser
 
 

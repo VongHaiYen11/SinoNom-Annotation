@@ -11,7 +11,7 @@ def _unique(pairs):
     out = {}
     for k, v in pairs:
         if k in out:
-            raise ValueError('JSON trùng key: ' + k)
+            raise ValueError('Duplicate JSON key: ' + k)
         out[k] = v
     return out
 
@@ -39,30 +39,33 @@ def atomic_write(path, data):
 def load_image_list(folder):
     root = Path(folder)
     if not root.is_dir():
-        raise ValueError('Thư mục ảnh không tồn tại: ' + str(root))
+        raise ValueError('Image folder does not exist: ' + str(root))
     images = sorted(p for p in root.iterdir() if p.is_file() and p.suffix.lower() in ('.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.bmp'))
     stems = [p.stem for p in images]
     if len(stems) != len(set(stems)):
-        raise ValueError('Tên mã ảnh bị trùng giữa các extension.')
+        raise ValueError('Image filenames must have unique stems.')
     return images
 
 
 def validate_document(doc, image, size):
     if doc['image'] != image or not isinstance(doc['bounding_boxes'], dict):
-        raise ValueError('Annotation không thuộc ảnh này.')
+        raise ValueError('Annotation does not belong to this image.')
     for key, box in doc['bounding_boxes'].items():
         if not key.isdecimal() or int(key) < 1 or str(int(key)) != key:
-            raise ValueError('Box ID phải là số nguyên dương dạng canonical.')
+            raise ValueError('Box IDs must be canonical positive integers.')
         validate_coordinates(box['bbox'], size)
         if box['status'] not in ('intact', 'damaged'):
-            raise ValueError('Status không hợp lệ.')
+            raise ValueError('Invalid status.')
     if not validate_reading_order(doc):
-        raise ValueError('Reading order không hợp lệ.')
+        raise ValueError('Invalid reading order.')
     if 'annotations' in doc:
         if set(doc['annotations']) != set(doc['bounding_boxes']):
-            raise ValueError('Annotation thiếu hoặc thừa box ID.')
+            raise ValueError('Annotations contain missing or unknown box IDs.')
         if any(not isinstance(c, str) or characters(c) != [c] for c in doc['annotations'].values()):
-            raise ValueError('Mỗi annotation phải là một ký tự hợp lệ.')
+            raise ValueError('Each annotation must contain one valid character.')
+    if 'crop' in doc:
+        from crop.crop import crop_bbox
+        crop_bbox(doc['crop'], size)
 
 
 def load_annotation(path, image, size):
@@ -73,8 +76,10 @@ def load_annotation(path, image, size):
 
 def final_document(state):
     if not all(state['workflow'].values()) or not validate_bbox_text_count(state):
-        raise ValueError('Chưa hoàn tất xác nhận hoặc số box không khớp ký tự.')
+        raise ValueError('Complete all verification steps and match the box and character counts.')
     doc = {k: state[k] for k in ('image', 'bounding_boxes', 'reading_order', 'annotations')}
+    from crop.crop import crop_document
+    doc['crop'] = crop_document(state['image'], state.get('crop') or [0, 0, *state['image_size']], state['image_size'])['crop']
     validate_document(doc, state['image'], state['image_size'])
     return doc
 

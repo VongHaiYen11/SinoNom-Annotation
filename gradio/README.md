@@ -1,102 +1,142 @@
-# Vietnamica Gradio MVP
+# Vietnamica Gradio annotation
 
-Ứng dụng annotation mới, chỉ dùng module nền `text_detection` để phát hiện box. Source JSON là kết quả của `text_extraction`; app không chạy lại extraction khi mở ảnh.
+A seven-step image annotation workflow using centralized Python state. The UI uses the dark/orange design from `image-annotation-tool-design/`; no Next.js installation is required. Source text comes from existing extraction JSON, while optional detection uses `text_detection`.
 
-## Cài đặt
+## Installation
 
-Python 3.11+, từ repository root:
+Python 3.11+, from the repository root:
 
 ```bash
 pip install -r gradio/requirements.txt
 ```
 
-Hoặc dùng virtualenv hiện có:
+For UI, PDF extraction and detection on Kaggle Linux x86_64 with Python 3.11:
+
+```bash
+python -m pip install -r requirements-detection.txt
+```
+
+That file includes the UI dependencies and uses Torch 2.1.0/cu121 and MMCV 2.1.0. Do not additionally install `.[text-detection]`, which requires newer Torch. Model weights and the OCR executable must be supplied separately. See `../text_detection/README.md` for compatible detection dependencies. UI and state tests do not require the ML runtime.
+
+For the existing virtual environment:
 
 ```bash
 uv pip install --python .venv/bin/python -r gradio/requirements.txt
 ```
 
-Detection trực tiếp cần runtime và model trong `../text_detection/README.md`: Torch, OpenCV, Shapely, MMDetection/MMCV/MMEngine tương thích với DINO config; OCR executable phải chạy được trên hệ điều hành hiện tại. UI và các test state không yêu cầu ML runtime.
-
-## Chạy
-
-Từ repository root:
+## Run
 
 ```bash
 python gradio/app.py \
   --image-dir /absolute/path/images \
   --source-json /absolute/path/source.json \
   --output-dir /absolute/path/annotations \
-  --vague-det-config /absolute/path/damage_detect.py \
-  --vague-det-weights /absolute/path/damage_detect.pth \
-  --ocr-det-executable /absolute/path/det_model
+  --skip-detection
 ```
 
-Hoặc `cd gradio && python app.py` với dữ liệu tại các đường dẫn mặc định tương đối với working directory: `data/images`, `data/source_json/source.json`, `data/annotations`. Nếu thiếu input, app vẫn mở và hiển thị lỗi; khởi động lại với parameter đúng. App bind localhost; mặc định port 7860, đổi bằng `--port`.
+Open `http://127.0.0.1:7860`; use `--port 7870` to change the port. `--skip-detection` disables automatic and manual model execution. Existing annotations still load, and boxes can be drawn manually. All workflow validation remains active. The separate screen-preview mode has been removed.
 
-Input folder phẳng, tên ảnh không extension phải trùng chính xác `ky_hieu`, ví dụ `12305.jpg`. Không có upload ảnh. Không cho hai ảnh cùng stem vì sẽ trùng output filename.
+To enable detection, omit `--skip-detection` and supply:
 
-Source schema được adapter kiểm tra dựa trên output hiện tại:
+```text
+--vague-det-config /absolute/path/damage_detect.py
+--vague-det-weights /absolute/path/damage_detect.pth
+--ocr-det-executable /absolute/path/det_model
+```
+
+The packaged OCR subprocess output is hidden by default, so PyInstaller import
+debug lines do not flood Kaggle logs. Add `--show-detection-logs` temporarily
+when diagnosing an executable that fails to start.
+
+Alternatively, run `python app.py` from `gradio/`. Defaults are relative to the working directory: `data/images`, `data/source_json/source.json`, `data/annotations`. Missing inputs display an error; restart with correct paths.
+
+The image folder is flat. Image stems must match source `ky_hieu` exactly, such as `12305.jpg`. Duplicate stems are rejected to prevent output collisions. Images are selected from the folder, not uploaded.
+
+## Content and source schema
+
+The adapter supports the repository's extraction format:
 
 ```json
 [{"so_van_bia":1,"noi_dung":[{"ky_hieu":"12305","chuyen_muc":[{"tieu_de":"Nguyên văn chữ Hán Nôm","van_ban":"永寺樂"}]}]}]
 ```
 
-Toàn bộ record và các field thêm được giữ nguyên. Annotation chỉ dùng `van_ban` thuộc đúng mặt `ky_hieu`, đúng chuyên mục. Không tìm thấy/trùng mã hoặc chuyên mục sẽ báo lỗi. Muốn hỗ trợ schema khác, thêm adapter tại `annotation/text_extraction.py`.
+The editor exposes only the existing `van_ban` values of these sections for the selected image's face:
+
+| Source title | UI label |
+| --- | --- |
+| Nguyên văn chữ Hán Nôm | Original Hán/Nôm text |
+| Phiên âm Hán Việt | Sino-Vietnamese transcription |
+| Dịch nghĩa | Translation |
+| Toát yếu | Summary |
+| Chú thích | Notes |
+
+Source text, titles, metadata, other sections and other faces remain in their original language and format. Missing sections are not invented. Annotation uses only the original Hán/Nôm text. Missing or ambiguous image codes/annotation sections are errors. Additional schemas require an adapter in `annotation/text_extraction.py`.
 
 ## Workflow
 
-1. **Image:** chọn ảnh, bấm Mở ảnh. Nạp annotation cũ nếu có; giữ draft từng ảnh trong session.
-2. **Content:** xem toàn bộ record; chọn field, sửa, bấm **Áp dụng field**, rồi **Save content** để ghi source JSON và xác nhận. Editor hiển thị chuỗi normalized. Undo quay về lần Save gần nhất; khôi phục bản ban đầu chỉ đưa snapshot vào draft, cần Save để ghi xuống file.
-3. **BBox:** lần đầu vào bước này tự gọi `text_detection`. Nếu model không chạy được, lỗi hiện rõ, vẫn có thể thêm box thủ công. Kéo vùng trống để thêm; kéo trong box để move; kéo bốn góc để resize. Chọn ID để sửa tọa độ/xóa. Chạy lại detection yêu cầu checkbox vì thay toàn bộ boxes và mapping.
-4. **Alignment:** kiểm tra temporary one-to-one mapping. Count mismatch chặn bước này.
-5. **Status:** chọn ID hoặc click box, chọn intact/damaged, cập nhật. Next xác nhận tất cả status.
-6. **Reading Order:** kéo thẻ đến trước thẻ đích, hoặc nhập JSON ID order. Next xác nhận.
-7. **Review:** kiểm tra ảnh, order, bảng, final text, JSON preview; bấm Save annotation.
-8. **Crop:** sau Save, Next mở module crop. Kéo frame/bốn góc hoặc nhập tọa độ rồi Save crop.
+1. **Image:** choose an image and select **Open image**. Saved annotations load automatically; session drafts are retained per image.
+2. **Content:** edit a section, select **Apply content**, then **Save content** to update the source JSON and verify the text. **Undo changes** returns to the latest saved content; **Restore original content** restores the initial snapshot into the draft and requires Save to persist.
+3. **Bounding Boxes:** draw, move or resize boxes; edit coordinates or delete by stable ID. Detection runs on first entry unless disabled. Replacing existing boxes through detection requires its confirmation checkbox.
+4. **Status:** select a box on the image or in the left table, choose intact/damaged, and update. Intact boxes are green; damaged boxes are red, including selected boxes. Character text and alignment cards are hidden on this screen. Count mismatches block entry; temporary alignment is performed internally.
+5. **Reading Order:** drag character cards or apply a JSON list of box IDs. Reordering changes only the sequence, never the ID-to-character mapping.
+6. **Crop:** move/resize the rectangular frame or apply coordinates. Crop remains independent of annotation coordinates and is included when saving the image.
+7. **Review:** inspect the image, table, final text, reading order and complete JSON. **Save image** writes one object containing annotation and crop.
 
-Back/Next dùng cùng state; không tự chạy lại detection. **Reset draft / nạp lại file** bỏ draft của ảnh được chọn và nạp bản đã lưu. Reload trình duyệt tạo session mới; chỉ dữ liệu đã Save được khôi phục.
+Back/Next retain the same state and enforce validation. **Reset draft** reloads the selected image from disk. Browser reload starts a new session; unsaved drafts are lost. There is no automatic file save.
 
-## State architecture
+Canvas zoom and Fit image affect display only. Coordinate controls and the reading-order field provide alternatives to dragging. The workspace stretches with the control panel and keeps navigation at its bottom. Shared CSS classes (`section`, `field-group`, `button-group`, `panel`) use consistent spacing across all steps.
 
-- `box_id = identity`; `bbox = location`; `status = condition`.
-- `annotations[str(box_id)] = character`; `reading_order = sequence of IDs`.
-- Một `gr.State` chứa active state và draft cache từng ảnh. JavaScript chỉ gửi action; Python validate và trả snapshot chính thức.
-- `temporary_order` độc lập với `reading_order`. Reorder không sửa mapping.
-- ID tăng đơn điệu trong state; sidecar giữ high-water mark khi Save. Xóa không renumber; chạy detection lại cấp ID mới.
-- Text thay đổi: bỏ mapping cũ, invalidate alignment/status confirmation/reading order. Add/delete/move/resize box cũng invalidate dependency. Nếu count khớp, tạo mapping mới theo temporary order, vẫn cần xác nhận lại status/order.
-- Sửa status không đổi bbox, ID, mapping hay order.
-- Mọi callback thay đổi state chạy tuần tự; event canvas/card mang image + revision, event cũ bị từ chối.
+## Fonts
 
-## Text verification / Unicode
+The font selector supports NomNaTong, DengXian and PMingLiU. Local font files under `fonts/` are served directly, including PMingLiU-ExtB for extended characters. Missing glyphs fall back to the other fonts. Font selection changes rendering only; text, counts and annotations remain unchanged. PDF extraction's `encoded_fonts` configuration is unaffected.
 
-Raw record → draft → Save source → verified content → annotation text → count validation → temporary alignment.
-
-Normalization NFC; bỏ whitespace và mọi ký tự Unicode category P (punctuation), giữ chữ trong ngoặc và các symbol ngoài category P. Dùng `regex` grapheme `\X` để không đếm dấu kết hợp/variation selector riêng. Text nguồn giữ nguyên dấu câu. Thay rule tại `text_alignment.py`; counting và mapping dùng chung rule.
-
-## Files / persistence
+## Saving and downloading
 
 ```text
 annotations/
-├── 12305.json          # image, bounding_boxes, reading_order, annotations
-├── .state/12305.json   # temporary order, next ID, source/document hashes
-└── crops/12305.json    # image, crop với đủ bốn góc
+├── 12305.json          # One object: image, bounding_boxes, reading_order, annotations, crop
+└── .state/
+    ├── 12305.json      # Temporary order, next ID and source/document hashes
+    └── content.json    # Internal Save-all registry; not a user download
 ```
 
-Annotation và crop lưu UTF-8, `ensure_ascii=False`, `indent=2`, ghi file nguyên tử. Sidecar chỉ được tin khi hash khớp final document. Không có sidecar/source đổi: giữ dữ liệu đã load để review, rồi tạo lại alignment khi xác nhận content; yêu cầu xác nhận status/order lại.
+Crop contains `top_left`, `top_right`, `bottom_right`, `bottom_left` in original image coordinates. If no crop was changed, it covers the full image. Existing separate `crops/<stem>.json` files remain readable; an embedded crop takes precedence. The application does not crop the image file itself.
 
-Source Save kiểm tra record baseline dưới process lock trước khi patch, tránh session trong cùng server ghi đè thay đổi của nhau. File ghi lỗi thì state không báo thành công. Không triển khai khóa liên-process: MVP dành cho một server instance. Annotation cùng ảnh dùng last-save-wins; tránh hai người sửa cùng ảnh đồng thời.
+**Save content** adds or updates that image's object in the internal Save-all registry. It does not trigger a download and does not create a separate content file per image. The object contains `image`, `inscription_code`, and a stable `content` mapping for Original Hán/Nôm text, Sino-Vietnamese transcription, Translation, Summary and Notes. A missing optional source section is represented as `null`; content is never invented. Draft edits do not update the registry until **Save content** is pressed again.
 
-Crop chỉ lưu tọa độ trên ảnh input, không cắt file ảnh hoặc biến đổi annotation coordinates.
+**Save all** in the header downloads up to two aggregate files:
 
-## Kiểm thử
+- `annotations.json` contains only images previously committed with **Save image** on Review.
+- `content.json` contains only images previously committed with **Save content** in Content Verification.
+
+Unsaved images and in-memory draft changes are excluded. Each object reflects its last explicit save. If only one data type has saved records, only its file is downloaded; if neither has records, the app displays an error. Downloading does not modify per-image files or draft state.
+
+JSON uses UTF-8 with readable Unicode. Individual files are written atomically. State sidecars are trusted only when hashes match. When source content changes, verification and dependent confirmations must be repeated. Legacy files without sidecars can be exported after structural and source-character validation, but cannot prove their original source-text ordering.
+
+Source updates compare the record baseline under a process lock to prevent concurrent sessions overwriting source edits. This MVP assumes one server process. Individual annotation files use last-save-wins; avoid concurrent edits of the same image.
+
+## State architecture
+
+- `box_id` is identity; `bbox` is location; `status` is condition.
+- `annotations[str(box_id)]` holds character content; `reading_order` holds IDs.
+- One `gr.State` holds active state and per-image drafts. JavaScript sends actions; Python validates and returns the authoritative snapshot.
+- Temporary order is independent of reading order. Deleted IDs are never reused within state; saved sidecars retain the ID high-water mark.
+- Text changes invalidate alignment/status/order even when character count stays equal. Box edits invalidate dependent verification. Matching counts permit alignment from current temporary order, followed by status/order confirmation.
+- Status edits preserve identity, coordinates, annotation and order. Crop edits preserve annotation data.
+- Mutation callbacks are serialized. Canvas/card events carry image and revision so stale events are rejected.
+
+Raw extraction → draft → Save source → verified content → annotation text → count validation → temporary alignment.
+
+Normalization uses NFC, removes whitespace and Unicode punctuation (category P), and preserves meaningful letters/symbols, including text inside parentheses. Grapheme counting uses `regex` `\X`, so combining marks and variation selectors are not separate characters. Original source text keeps punctuation. Counting and mapping share the rules in `text_alignment.py`.
+
+## Tests
 
 ```bash
 python -m unittest discover -s gradio/tests -v
 ```
 
-Test dùng ảnh/source tạm và detector mock; không cần model và không sửa dataset thật. Ví dụ final JSON tại `examples/bia_001.json`.
+Tests use temporary images/source files and mock detection, without models or changes to real data. They cover state invariants, callbacks, count changes, source conflicts, combined crop persistence and folder export. See `examples/bia_001.json` for an output object.
 
-## Bố cục
+## Modules
 
-`app.py`: CLI, Gradio components/callbacks. `annotation/`: state, workflow, source adapter, bbox/status/order/alignment và persistence. `ui/editor.py` và `ui/assets/editor.js`: SVG canvas/cards. `crop/crop.py`: crop độc lập. Không thêm `gradio/__init__.py` vì trùng tên thư viện Gradio.
+`app.py` builds components and callbacks. `annotation/` handles state, workflow, extraction, boxes, status, order, alignment and persistence/export. `ui/presentation.py` and `ui/assets/workbench.css` define layout; `ui/editor.py` and editor assets implement SVG interactions. `crop/crop.py` handles crop validation independently. Do not add `gradio/__init__.py`, which would shadow the installed Gradio library.

@@ -1,19 +1,2 @@
-# Standalone detection CLI: Linux x86_64, Python 3.11, CUDA 12.1 wheels.
-# Install into an isolated environment; see text_detection/README.md.
-# This legacy runtime does not satisfy the project's torch>=2.6 extra.
---extra-index-url https://download.pytorch.org/whl/cu121
---find-links https://download.openmmlab.com/mmcv/dist/cu121/torch2.1/index.html
---only-binary=mmcv
-
-torch==2.1.0+cu121
-torchvision==0.16.0+cu121
-mmcv==2.1.0
-mmengine==0.10.5
-mmdet==3.3.0
-
-numpy==1.26.4
-opencv-python-headless==4.10.0.84
-Pillow
-shapely>=2.0,<3
-scipy==1.14.1
-pycocotools==2.0.8
+# Backward-compatible alias. The root file is the single source of truth.
+-r requirements.txt

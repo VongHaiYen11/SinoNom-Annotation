@@ -4,12 +4,12 @@ from .state import invalidate
 
 def validate_coordinates(bbox, size):
     if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
-        raise ValueError('BBox phải gồm 4 tọa độ.')
+        raise ValueError('A bounding box must contain four coordinates.')
     if any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) for x in bbox):
-        raise ValueError('Tọa độ phải là số hữu hạn.')
+        raise ValueError('Coordinates must be finite numbers.')
     x1, y1, x2, y2 = bbox
     if not (0 <= x1 < x2 <= size[0] and 0 <= y1 < y2 <= size[1]):
-        raise ValueError('BBox ngoài ảnh hoặc có kích thước không hợp lệ.')
+        raise ValueError('Bounding box is outside the image or has invalid dimensions.')
     return list(bbox)
 
 
@@ -27,7 +27,7 @@ def add_bbox(state, bbox):
 def update_bbox(state, box_id, bbox):
     key = str(box_id)
     if key not in state['bounding_boxes']:
-        raise ValueError('Box ID không tồn tại.')
+        raise ValueError('Box ID does not exist.')
     state['bounding_boxes'][key]['bbox'] = validate_coordinates(bbox, state['image_size'])
     invalidate(state)
 
@@ -35,7 +35,7 @@ def update_bbox(state, box_id, bbox):
 def delete_bbox(state, box_id):
     key = str(box_id)
     if key not in state['bounding_boxes']:
-        raise ValueError('Box ID không tồn tại.')
+        raise ValueError('Box ID does not exist.')
     del state['bounding_boxes'][key]
     state['annotations'].pop(key, None)
     for field in ('temporary_order', 'reading_order'):

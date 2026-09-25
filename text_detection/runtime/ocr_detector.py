@@ -110,7 +110,10 @@ def detect_ocr(opt: Any, image_path: str, batch_size=32, imgsz=640, conf_thres=0
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     default_executable = Path(__file__).resolve().parents[1] / 'models' / 'dists' / 'det_model' / 'det_model'
-    model = det_model(getattr(opt, 'ocr_det_executable', str(default_executable)))
+    model = det_model(
+        getattr(opt, 'ocr_det_executable', str(default_executable)),
+        show_subprocess_output=bool(getattr(opt, 'show_detection_logs', False)),
+    )
     stride = model(device, mode=1)
     imgsz = check_img_size(imgsz, stride)
     half = device.type != 'cpu' and half_precision

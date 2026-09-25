@@ -14,7 +14,7 @@ def update_reading_order(state, order):
     require(state, 'status_valid')
     candidate = dict(state, reading_order=order)
     if not validate_bbox_text_count(state) or not validate_reading_order(candidate):
-        raise ValueError('Reading order thiếu, trùng hoặc chứa ID không hợp lệ.')
+        raise ValueError('Reading order has missing, duplicate, or invalid IDs.')
     state['reading_order'] = list(order)
     state['workflow']['reading_order_valid'] = False
     state['saved'] = False
@@ -22,5 +22,5 @@ def update_reading_order(state, order):
 
 def build_text_sequence(state):
     if not validate_reading_order(state):
-        raise ValueError('Reading order không hợp lệ.')
+        raise ValueError('Invalid reading order.')
     return ''.join(state['annotations'][str(i)] for i in state['reading_order'])

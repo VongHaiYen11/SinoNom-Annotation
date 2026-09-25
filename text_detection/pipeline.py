@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 from typing import Any, Generator, List, Mapping, Sequence
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ from .types import BBox, Stage1Event, Stage1Result
 PACKAGE_DIR = Path(__file__).resolve().parent
 MODEL_DIR = PACKAGE_DIR / 'models'
 WORK_DIR = PACKAGE_DIR / 'work'
+log = logging.getLogger(__name__)
 
 
 def _option(opt: Any, name: str, default: Path | str) -> str:
@@ -111,7 +113,7 @@ def iter_stage1(image_path: str, opt: Any) -> Generator[Stage1Event, None, Stage
     inverted_image_gray = Image.open(inverted_image_path).convert('L').convert('RGB')
 
     yield Stage1Event('detecting')
-    print('Đang phát hiện vị trí ký tự và vùng hư hỏng...')
+    log.debug('Detecting character and damaged-region locations')
     damage_prediction = inference_detector(damage_model, np.array(inverted_image_gray))
     damage_boxes = _damage_boxes_from_prediction(damage_prediction)
     ocr_detection = detect_ocr(
@@ -133,7 +135,7 @@ def iter_stage1(image_path: str, opt: Any) -> Generator[Stage1Event, None, Stage
     fused_boxes, normal_boxes, _ = fuse_localizations(damage_boxes, ocr_boxes)
 
     yield Stage1Event('reading_order')
-    print('Đang sắp xếp thứ tự đọc...')
+    log.debug('Determining initial reading order')
     image_height, image_width = grayscale_image.shape[:2]
     ordered_boxes = sort_recognized_boxes(fused_boxes, image_height, image_width)
 
