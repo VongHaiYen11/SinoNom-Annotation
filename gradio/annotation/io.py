@@ -56,6 +56,9 @@ def validate_document(doc, image, size):
         validate_coordinates(box['bbox'], size)
         if box['status'] not in ('intact', 'damaged'):
             raise ValueError('Invalid status.')
+    expected_ids = {str(index) for index in range(1, len(doc['bounding_boxes']) + 1)}
+    if set(doc['bounding_boxes']) != expected_ids:
+        raise ValueError('Box IDs must be contiguous from 1 to n.')
     if not validate_reading_order(doc):
         raise ValueError('Invalid reading order.')
     if 'annotations' in doc:
@@ -70,6 +73,25 @@ def validate_document(doc, image, size):
 
 def load_annotation(path, image, size):
     doc = read_json(path)
+    if isinstance(doc, dict) and isinstance(doc.get('bounding_boxes'), dict):
+        keys = set(doc['bounding_boxes'])
+        expected = {str(index) for index in range(1, len(keys) + 1)}
+        if keys != expected:
+            order = doc.get('reading_order', [])
+            if (len(order) != len(keys) or len(set(order)) != len(order)
+                    or {str(box_id) for box_id in order} != keys):
+                raise ValueError('Legacy annotation has an invalid reading order.')
+            old_ids = [str(box_id) for box_id in order]
+            doc['bounding_boxes'] = {
+                str(index): doc['bounding_boxes'][old_id]
+                for index, old_id in enumerate(old_ids, 1)
+            }
+            if 'annotations' in doc:
+                doc['annotations'] = {
+                    str(index): doc['annotations'][old_id]
+                    for index, old_id in enumerate(old_ids, 1)
+                }
+            doc['reading_order'] = list(range(1, len(old_ids) + 1))
     validate_document(doc, image, size)
     return doc
 

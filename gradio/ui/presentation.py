@@ -16,7 +16,7 @@ SECTION_LABELS = {
 def header(state):
     step = state['current_step']; workflow = state['workflow']
     complete = [bool(state['image']), workflow['content_verified'],
-                workflow['content_verified'] and workflow['bbox_valid'] and workflow['alignment_valid'],
+                workflow['content_verified'] and workflow['bbox_valid'],
                 workflow['content_verified'] and workflow['status_valid'],
                 workflow['content_verified'] and workflow['reading_order_valid'],
                 state['crop_saved'], state['saved']]
@@ -43,7 +43,8 @@ def panel_heading(state):
 def panel_summary(state):
     if state['current_step'] not in (3, 7):
         return ''
-    boxes = state['bounding_boxes']; count = count_annotation_characters(state['annotation_text'])
+    boxes = state['regions'] if state['current_step'] == 3 else state['bounding_boxes']
+    count = count_annotation_characters(state['annotation_text'])
     matched = state['workflow']['content_verified'] and len(boxes) == count and count > 0
     label = 'Counts match' if matched else 'Content not verified' if not state['workflow']['content_verified'] else 'Count mismatch'
     return f'''<section class="section panel-summary"><h3>Validation</h3>
@@ -53,7 +54,7 @@ def panel_summary(state):
 
 
 def status_rows(state):
-    return [[key, box['status']] for key, box in state['bounding_boxes'].items()]
+    return [[box['status']] for box in state['regions'].values()]
 
 
 def footer(state):

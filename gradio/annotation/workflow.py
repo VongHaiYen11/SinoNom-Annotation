@@ -5,8 +5,10 @@ import json
 import logging
 from copy import deepcopy
 from pathlib import Path
+from uuid import uuid4
 from PIL import Image
-from .state import new_state, set_verified_content, refresh_alignment, require, invalidate
+from .state import (new_state, set_verified_content, refresh_bbox_validation,
+                    initialize_alignment, require, invalidate)
 from .text_extraction import (extract_source_content, annotation_text, edit_content_field,
                               save_source_content, content_document, save_content_document)
 from .text_alignment import count_annotation_characters
@@ -22,6 +24,21 @@ log = logging.getLogger(__name__)
 
 def fingerprint(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def _load_regions(state, document):
+    """Hydrate internal regions while preserving a saved public ID mapping."""
+    state['regions'] = {}
+    state['box_id_by_region'] = {}
+    state['region_uid_by_box_id'] = {}
+    for box_id, box in document['bounding_boxes'].items():
+        uid = uuid4().hex
+        state['regions'][uid] = deepcopy(box)
+        state['box_id_by_region'][uid] = box_id
+        state['region_uid_by_box_id'][box_id] = uid
+    state['bounding_boxes'] = deepcopy(document['bounding_boxes'])
+    state['annotations'] = deepcopy(document.get('annotations', {}))
+    state['reading_order'] = list(document['reading_order'])
 
 
 class Workflow:
@@ -47,20 +64,15 @@ class Workflow:
         if saved.exists():
             doc = load_annotation(saved, path.name, size)
             saved_crop = doc.get('crop')
-            state.update({k: deepcopy(doc[k]) for k in ('image', 'bounding_boxes', 'reading_order', 'annotations')})
-            state['temporary_order'] = list(doc['reading_order'])
-            state['next_box_id'] = max(map(int, doc['bounding_boxes']), default=0) + 1
+            _load_regions(state, doc)
             state['detection_loaded'] = True
             state['loaded_document'] = {k: deepcopy(doc[k]) for k in ('image', 'bounding_boxes', 'reading_order', 'annotations')}
+            state['loaded_region_uid_by_box_id'] = deepcopy(state['region_uid_by_box_id'])
             meta = self.output / '.state' / (path.stem + '.json')
             if meta.exists():
                 sidecar = read_json(meta)
                 if sidecar.get('document_hash') == fingerprint(json.dumps(doc, sort_keys=True, ensure_ascii=False)):
-                    order = sidecar.get('temporary_order', [])
-                    if validate_reading_order(dict(state, reading_order=order)):
-                        state['temporary_order'] = order
-                        state['next_box_id'] = max(state['next_box_id'], int(sidecar['next_box_id']))
-                        state['loaded_meta'] = sidecar
+                    state['loaded_meta'] = sidecar
         state['crop'] = [0, 0, *size]
         crop_path = self.output / 'crops' / (path.stem + '.json')
         if saved_crop is not None:
@@ -101,15 +113,22 @@ class Workflow:
             content_doc = content_document(s['image'], s['code'], s['draft_content'])
             save_source_content(self.options.source_json, s['image'], s['source_baseline'], s['draft_content'])
             save_content_document(content_doc, self.output)
+            loaded_mapping = deepcopy(s.get('loaded_region_uid_by_box_id', {}))
             set_verified_content(s, s['draft_content'], text)
             s['source_baseline'] = deepcopy(s['verified_content'])
             # Exact restore is allowed only with matching source AND document fingerprints.
             meta = s.pop('loaded_meta', None)
             if meta and meta.get('text_hash') == fingerprint(text) and 'loaded_document' in s:
-                s.update(deepcopy(s['loaded_document']))
+                document = deepcopy(s['loaded_document'])
+                s['bounding_boxes'] = document['bounding_boxes']
+                s['reading_order'] = document['reading_order']
+                s['annotations'] = document['annotations']
+                s['region_uid_by_box_id'] = loaded_mapping
+                s['box_id_by_region'] = {uid: box_id for box_id, uid in loaded_mapping.items()}
                 s['workflow'].update(bbox_valid=True, alignment_valid=True)
             s.pop('loaded_document', None)
-            refresh_alignment(s)
+            s.pop('loaded_region_uid_by_box_id', None)
+            refresh_bbox_validation(s)
         elif action in ('add', 'update', 'delete', 'detect'):
             require(s, 'content_verified')
             if step != 3:
@@ -117,32 +136,36 @@ class Workflow:
             if action == 'detect':
                 if getattr(self.options, 'skip_detection', False):
                     raise ValueError('Detection is disabled (--skip-detection). Draw boxes manually.')
-                # Re-running uses fresh IDs beyond the previous high-water mark.
+                # Detection IDs are discarded; Gradio owns hidden region identity.
                 doc = detect(s['image_path'], self.options)
                 validate_document(doc, s['image'], s['image_size'])
-                old_next = s['next_box_id']
-                ids = {k: str(old_next + i) for i, k in enumerate(doc['bounding_boxes'])}
-                s['bounding_boxes'] = {ids[k]: v for k, v in doc['bounding_boxes'].items()}
-                s['temporary_order'] = [int(ids[str(i)]) for i in doc['reading_order']]
-                s['next_box_id'] += len(ids)
+                s['regions'] = {uuid4().hex: deepcopy(box) for box in doc['bounding_boxes'].values()}
+                s['selected_region_uid'] = next(iter(s['regions']), None)
                 s['detection_loaded'] = True
                 invalidate(s, clear=True)
             elif action == 'add':
-                s['selected_box_id'] = add_bbox(s, payload['bbox'])
+                s['selected_region_uid'] = add_bbox(s, payload['bbox'])
             elif action == 'update':
-                update_bbox(s, payload['id'], payload['bbox'])
+                update_bbox(s, payload.get('uid') or payload.get('id') or s['selected_region_uid'], payload['bbox'])
             else:
-                delete_bbox(s, payload['id'])
-            refresh_alignment(s)
+                delete_bbox(s, payload.get('uid') or payload.get('id') or s['selected_region_uid'])
+            refresh_bbox_validation(s)
         elif action == 'select':
-            key = str(payload['id'])
-            if key not in s['bounding_boxes']:
-                raise ValueError('Box does not exist.')
-            s['selected_box_id'] = key
+            if step in (3, 4):
+                uid = payload.get('uid') or payload.get('id')
+                if uid not in s['regions']:
+                    raise ValueError('Region does not exist.')
+                s['selected_region_uid'] = uid
+            else:
+                key = str(payload['id'])
+                if key not in s['bounding_boxes']:
+                    raise ValueError('Box does not exist.')
+                s['selected_box_id'] = key
+                s['selected_region_uid'] = s['region_uid_by_box_id'].get(key)
         elif action == 'status':
             if step != 4:
                 raise ValueError('Edit status in Step 4.')
-            update_status(s, payload['id'], payload['status'])
+            update_status(s, payload.get('uid') or payload.get('id') or s['selected_region_uid'], payload['status'])
         elif action == 'reorder':
             if step != 5:
                 raise ValueError('Edit reading order in Step 5.')
@@ -154,13 +177,13 @@ class Workflow:
                 require(s, 'content_verified')
                 s['current_step'] = 3
             elif step == 3:
-                refresh_alignment(s)
+                refresh_bbox_validation(s)
                 require(s, 'bbox_valid')
-                require(s, 'alignment_valid')
                 s['current_step'] = 4
             elif step == 4:
-                require(s, 'alignment_valid')
                 confirm_status(s)
+                if not s['workflow']['alignment_valid']:
+                    initialize_alignment(s)
                 s['current_step'] = 5
             elif step == 5:
                 require(s, 'status_valid')
@@ -180,8 +203,7 @@ class Workflow:
             path = save_annotation(s, self.output)
             atomic_write(self.output / '.state' / path.name,
                          dict(text_hash=fingerprint(s['annotation_text']),
-                              document_hash=fingerprint(json.dumps(final_document(s), sort_keys=True, ensure_ascii=False)),
-                              temporary_order=s['temporary_order'], next_box_id=s['next_box_id']))
+                              document_hash=fingerprint(json.dumps(final_document(s), sort_keys=True, ensure_ascii=False))))
             s['saved'] = True
             s['crop_saved'] = True
             log.info('Saved annotation %s', path)

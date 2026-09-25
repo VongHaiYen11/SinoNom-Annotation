@@ -25,4 +25,4 @@ def temporary_align_text(box_ids, text):
 
 
 def validate_bbox_text_count(state):
-    return bool(characters(state['annotation_text'])) and len(state['bounding_boxes']) == count_annotation_characters(state['annotation_text'])
+    return bool(characters(state['annotation_text'])) and len(state['regions']) == count_annotation_characters(state['annotation_text'])

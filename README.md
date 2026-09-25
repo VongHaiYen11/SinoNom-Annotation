@@ -317,25 +317,26 @@ Open `http://127.0.0.1:7860`. For a remote environment:
 
 1. **🖼️ Image** — Select an image from the configured folder
 2. **📝 Content** — Verify and save the five configured sections: original Hán/Nôm, Sino-Vietnamese transcription, translation, summary and notes
-3. **🔲 Bounding Boxes** — Detect, add, move, resize or delete boxes with stable IDs
-4. **🏷️ Status** — Mark every character as `intact` or `damaged`
-5. **🔢 Reading Order** — Reorder stable box IDs without changing their character mapping
+3. **🔲 Bounding Boxes** — Detect, add, move, resize or delete regions; public Box IDs are not assigned yet
+4. **🏷️ Status** — Select regions on the canvas and mark each one as `intact` or `damaged`
+5. **🔢 Reading Order** — Spatially order the regions, assign Box IDs `1..n`, align verified text and allow drag-and-drop reordering
 6. **✂️ Crop** — Set an independent rectangular crop using original-image coordinates
 7. **✅ Review** — Inspect the final table/text/JSON and save the image object
 
-The Python state is authoritative. JavaScript only reports UI actions. Any content or box change invalidates dependent alignment and reading-order confirmation. Annotation can continue only when normalized character count equals box count.
+The Python state is authoritative. JavaScript only reports UI actions. Any content or region geometry change invalidates the public Box ID mapping, text alignment and reading-order confirmation. Annotation can continue only when normalized character count equals region count.
 
-Identity and order are deliberately separate:
+Editing identity, exported identity and order are deliberately separate:
 
 ```text
-box_id = identity
+region_uid = hidden editing identity
 bbox = location
 status = condition
+box_id = exported identity assigned at Reading Order
 annotations[box_id] = character
 reading_order = sequence of box IDs
 ```
 
-Deleting a box removes its annotation and order entry without renumbering other boxes. Reordering changes only `reading_order`. Text normalization uses NFC, removes whitespace and Unicode punctuation, and counts grapheme clusters so combining marks and variation selectors are not separate characters.
+On entering Reading Order, the current regions are spatially sorted, assigned contiguous Box IDs from `1` to `n`, and aligned with the verified text. Reordering then changes only `reading_order`. Returning to Bounding Boxes and changing any region clears that derived mapping; statuses remain attached to the surviving hidden region identities and IDs are rebuilt on the next Reading Order entry. `region_uid` is never written to annotation JSON. Text normalization uses NFC, removes whitespace and Unicode punctuation, and counts grapheme clusters so combining marks and variation selectors are not separate characters.
 
 The UI serves NomNaTong, DengXian and PMingLiU locally, with PMingLiU-ExtB available for extended characters. Font selection changes rendering only and never changes stored text or alignment.
 

@@ -131,6 +131,8 @@ class GradioCallbacks(unittest.TestCase):
                 ctx=action('add')(ctx,None,0,0,10,10)[0]
                 ctx=action('next')(ctx)[0]
                 self.assertEqual(ctx['active']['current_step'],4)
+                self.assertEqual(ctx['active']['annotations'],{})
+                ctx=action('next')(ctx)[0]
                 self.assertEqual(ctx['active']['annotations'],{'1':'永'})
                 detector.assert_not_called()
 
@@ -168,9 +170,11 @@ class GradioCallbacks(unittest.TestCase):
             self.assertNotIn('source-preview',result[8]['value']['markup'])
             self.assertNotIn('data-card',result[8]['value']['markup'])
             self.assertNotIn('永',result[8]['value']['markup'])
-            ctx=board_action(ctx,'select',{'id':'2'})[0]
-            ctx=board_action(ctx,'status',{'id':'2','status':'damaged'})[0]
-            self.assertEqual(ctx['active']['bounding_boxes']['2']['status'],'damaged')
+            self.assertNotIn('data-box-id',result[8]['value']['markup'])
+            damaged_uid=list(ctx['active']['regions'])[1]
+            ctx=board_action(ctx,'select',{'uid':damaged_uid})[0]
+            ctx=board_action(ctx,'status',{'uid':damaged_uid,'status':'damaged'})[0]
+            self.assertEqual(ctx['active']['regions'][damaged_uid]['status'],'damaged')
             result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],5)
             self.assertTrue(result[18]['visible'])

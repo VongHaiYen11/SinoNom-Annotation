@@ -46,13 +46,16 @@ const drawPreview = (m, b) => {
 element.addEventListener('pointerdown', e => {
   if (pending || e.button !== 0) return;
   const svg=e.target.closest('.annotation-canvas'); if(!svg) return;
-  const group=e.target.closest('[data-box-id]');
+  const group=e.target.closest('[data-region-uid],[data-box-id]');
   const mode=props.value.step;
-  if(group && ![3,6].includes(mode)) {send('select',{id:group.dataset.boxId}); return;}
+  const regionUid=group?.dataset.regionUid, id=regionUid || group?.dataset.boxId;
+  if(group && ![3,6].includes(mode)) {
+    send('select',regionUid?{uid:regionUid}:{id}); return;
+  }
   if(![3,6].includes(mode)) return;
-  const p=point(e,svg), id=group?.dataset.boxId;
+  const p=point(e,svg);
   const box=id ? [...props.value.boxes[id].bbox] : [p.x,p.y,p.x,p.y];
-  moving={svg,id,group,box,p,corner:e.target.dataset.corner,rect:group?.querySelector('rect')};
+  moving={svg,id,regionUid,group,box,p,corner:e.target.dataset.corner,rect:group?.querySelector('rect')};
   if(!id){
     moving.rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
     moving.rect.setAttribute('fill','#ff7a1a22'); moving.rect.setAttribute('stroke','#ff7a1a');
@@ -74,8 +77,9 @@ element.addEventListener('pointermove', e => {
 });
 element.addEventListener('pointerup', () => {
   if(!moving)return; const m=moving; moving=null;
-  if(m.result) send(props.value.step===6?'crop':m.id?'update':'add',{id:m.id,bbox:m.result});
-  else if(m.id && props.value.step!==6) send('select',{id:m.id});
+  if(m.result) send(props.value.step===6?'crop':m.id?'update':'add',
+                    {...(m.regionUid?{uid:m.regionUid}:{id:m.id}),bbox:m.result});
+  else if(m.id && props.value.step!==6) send('select',m.regionUid?{uid:m.regionUid}:{id:m.id});
   else if(!m.id) m.rect.remove();
 });
 element.addEventListener('pointercancel',()=>{

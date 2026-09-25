@@ -118,7 +118,7 @@ def create_app(options):
                 with gr.Group(visible=False, elem_classes='section') as box_group:
                     with gr.Group(elem_classes='section'):
                         gr.Markdown('### Selected Region')
-                        box_id=gr.Dropdown(label='Box ID')
+                        box_id=gr.Dropdown(visible=False)
                     with gr.Group(elem_classes='section'):
                         gr.Markdown('### Coordinates')
                         with gr.Row(elem_classes=['coordinate-row','field-group']):
@@ -135,8 +135,8 @@ def create_app(options):
                         detect=gr.Button('Run detection', interactive=not skip_detection)
                 with gr.Group(visible=False, elem_classes='section') as status_group:
                     gr.Markdown('### Region Status')
-                    status_table=gr.Dataframe(headers=['Box ID','Status'],datatype=['str','str'],value=[],interactive=False, label='Regions',elem_id='status-table')
-                    status_id=gr.Dropdown(label='Box ID')
+                    status_table=gr.Dataframe(headers=['Status'],datatype=['str'],value=[],interactive=False, label='Regions',elem_id='status-table')
+                    status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Status',elem_id='status-radio')
                     set_status=gr.Button('Update status', variant='primary')
                 with gr.Group(visible=False, elem_classes='section') as order_group:
@@ -178,13 +178,14 @@ def create_app(options):
             chosen=choices[0][1] if choices else None
             val=fields[0]['value'] if fields else ''
             draft_preview=[dict(tieu_de=field['title'],van_ban=field['value']) for field in fields]
-            ids=list(s['bounding_boxes']);selected=s['selected_box_id'] if s['selected_box_id'] in ids else (ids[0] if ids else None)
-            box=s['bounding_boxes'].get(selected,dict(bbox=[0,0,1,1],status='intact'))
+            region_ids=list(s['regions'])
+            selected=s['selected_region_uid'] if s['selected_region_uid'] in region_ids else (region_ids[0] if region_ids else None)
+            box=s['regions'].get(selected,dict(bbox=[0,0,1,1],status='intact'))
             final=final_document(s) if step==7 else None
             return [ctx,header(s),gr.update(value=msg,visible=bool(msg)),
                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
-                    gr.update(visible=step==3 and has),gr.update(choices=ids,value=selected),*box['bbox'],
-                    gr.update(visible=step==4),gr.update(choices=ids,value=selected),box['status'],
+                    gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected),*box['bbox'],
+                    gr.update(visible=step==4),gr.update(choices=region_ids,value=selected),box['status'],
                     gr.update(visible=step==5),json.dumps(s['reading_order']),gr.update(value=final,visible=step==7),
                     gr.update(visible=step==6),json.dumps(s.get('crop')),gr.update(visible=step==7),
                     panel_heading(s),panel_summary(s),footer(s),gr.update(visible=step==2 and has),
@@ -292,8 +293,11 @@ def create_app(options):
         set_order.click(lambda c,v:parse_action(c,'reorder','order',v),[session,order_text],**event_args)
         apply_crop.click(lambda c,v:parse_action(c,'crop','bbox',v),[session,crop_coords],**event_args)
         def select_status_row(ctx,evt:gr.SelectData):
-            key=str(evt.row_value[0])
-            return run(ctx,'select',dict(id=key))
+            row = evt.index[0] if isinstance(evt.index, (list, tuple)) else evt.index
+            uids = list(ctx['active']['regions'])
+            if not isinstance(row, int) or not 0 <= row < len(uids):
+                return render(ctx,'Select a valid region.')
+            return run(ctx,'select',dict(uid=uids[row]))
         status_table.select(select_status_row,[session],**event_args)
         def on_action(ctx,evt:gr.EventData):
             return run(ctx,evt._data['action'],evt._data['payload'])

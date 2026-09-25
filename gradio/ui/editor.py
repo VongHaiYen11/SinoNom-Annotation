@@ -13,8 +13,15 @@ def snapshot(s):
             <h2>Select an image</h2></div>''',
             revision=s['revision'], image=None, step=1)
     step=s['current_step']; w,h=s['image_size']
-    boxes = {'crop':dict(bbox=s['crop'],status='intact')} if step==6 else s['bounding_boxes']
-    selected_id = s['selected_box_id'] if s['selected_box_id'] in s['bounding_boxes'] else next(iter(s['bounding_boxes']), None)
+    if step == 6:
+        boxes = {'crop': dict(bbox=s['crop'], status='intact')}
+        selected_id = 'crop'
+    elif step in (3, 4):
+        boxes = s['regions']
+        selected_id = s['selected_region_uid'] if s['selected_region_uid'] in boxes else next(iter(boxes), None)
+    else:
+        boxes = s['bounding_boxes']
+        selected_id = s['selected_box_id'] if s['selected_box_id'] in boxes else next(iter(boxes), None)
     filename=html.escape(s['image'])
     markup=f'''<div class="workbench-board"><div class="workspace-toolbar">
         <div class="workspace-context"><span class="file-icon">▧</span><strong>{filename}</strong><span class="dimensions">{w} × {h} px</span></div>
@@ -29,11 +36,13 @@ def snapshot(s):
     for key,b in boxes.items():
         x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6
         color='#ff7a1a' if step==6 else '#ef4444' if b['status']=='damaged' else '#22c55e'
-        label=html.escape(key if step==4 else key+' '+s['annotations'].get(key,''))
+        public_box = step not in (3, 4, 6)
+        label=html.escape(key+' '+s['annotations'].get(key,'')) if public_box else ''
         dashed=' stroke-dasharray="5 4"' if b['status']=='damaged' else ''
-        markup+=f'''<g data-box-id="{key}" class="{'selected-region' if selected else ''}"><title>{label} · {b['status']}</title>
+        identity_attr = f'data-region-uid="{key}"' if step in (3, 4) else f'data-box-id="{key}"'
+        markup+=f'''<g {identity_attr} class="{'selected-region' if selected else ''}"><title>{'Region' if not public_box else label} · {b['status']}</title>
             <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{color}" fill-opacity="{'.16' if selected else '.04'}" stroke="{color}" stroke-width="{'2.5' if selected else '1.5'}" vector-effect="non-scaling-stroke"{dashed}/>
-            <text x="{x1+2*unit}" y="{max(15*unit,y1-4*unit)}" fill="{color}" font-size="{15*unit}" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{2*unit}">{label}</text>'''
+            {f'<text x="{x1+2*unit}" y="{max(15*unit,y1-4*unit)}" fill="{color}" font-size="{15*unit}" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{2*unit}">{label}</text>' if label else ''}'''
         if step in (3,6):
             for n,(x,y) in enumerate([(x1,y1),(x2,y1),(x2,y2),(x1,y2)]):
                 markup+=f'<circle data-corner="{n}" cx="{x}" cy="{y}" r="{6*unit}" fill="{color}" stroke="#17191c" stroke-width="{1.5*unit}"/>'

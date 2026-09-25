@@ -1,4 +1,5 @@
 import math
+from uuid import uuid4
 from .state import invalidate
 
 
@@ -15,31 +16,23 @@ def validate_coordinates(bbox, size):
 
 def add_bbox(state, bbox):
     coords = validate_coordinates(bbox, state['image_size'])
-    key = str(state['next_box_id'])
-    state['next_box_id'] += 1
-    state['bounding_boxes'][key] = dict(bbox=coords, status='intact')
-    state['temporary_order'].append(int(key))
-    state['reading_order'].append(int(key))
-    invalidate(state)
-    return key
+    uid = uuid4().hex
+    state['regions'][uid] = dict(bbox=coords, status='intact')
+    invalidate(state, clear=True)
+    return uid
 
 
-def update_bbox(state, box_id, bbox):
-    key = str(box_id)
-    if key not in state['bounding_boxes']:
-        raise ValueError('Box ID does not exist.')
-    state['bounding_boxes'][key]['bbox'] = validate_coordinates(bbox, state['image_size'])
-    invalidate(state)
+def update_bbox(state, region_uid, bbox):
+    if region_uid not in state['regions']:
+        raise ValueError('Region does not exist.')
+    state['regions'][region_uid]['bbox'] = validate_coordinates(bbox, state['image_size'])
+    invalidate(state, clear=True)
 
 
-def delete_bbox(state, box_id):
-    key = str(box_id)
-    if key not in state['bounding_boxes']:
-        raise ValueError('Box ID does not exist.')
-    del state['bounding_boxes'][key]
-    state['annotations'].pop(key, None)
-    for field in ('temporary_order', 'reading_order'):
-        state[field] = [i for i in state[field] if str(i) != key]
-    if state['selected_box_id'] == key:
-        state['selected_box_id'] = None
-    invalidate(state)
+def delete_bbox(state, region_uid):
+    if region_uid not in state['regions']:
+        raise ValueError('Region does not exist.')
+    del state['regions'][region_uid]
+    if state['selected_region_uid'] == region_uid:
+        state['selected_region_uid'] = None
+    invalidate(state, clear=True)
