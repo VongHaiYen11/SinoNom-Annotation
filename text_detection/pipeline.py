@@ -30,7 +30,7 @@ def _required_model_path(opt: Any, name: str, default: Path) -> str:
     if not path.is_file():
         raise FileNotFoundError(
             f"{name.replace('_', '-')} does not exist: {path}. "
-            "See text_detection/README.md for the required model layout."
+            "See README.md#detection-models for the required model layout."
         )
     return str(path)
 

@@ -18,6 +18,36 @@ Tools for extracting structured Vietnamese inscription content from PDF files an
 
 The Gradio app consumes extraction JSON. It does not extract text directly from a PDF.
 
+## Processing flow
+
+Before starting, prepare:
+
+- one source PDF;
+- one document config based on [`configs/tap_1.json`](configs/tap_1.json);
+- a flat image folder whose filename stems match the inscription `ky_hieu` values;
+- matching reference fonts in `fonts/`;
+- detection checkpoints and the OCR executable only when automatic box detection is needed.
+
+```mermaid
+flowchart LR
+    A[PDF + config + fonts] --> B[Build glyph profile]
+    B --> C[Extract source JSON]
+    C --> D[Review invalid JSON]
+    D --> E[Source JSON + valid image folder]
+    M[Detection models, optional] --> F[Gradio annotation]
+    E --> F
+    F --> G[annotations.json + content.json]
+```
+
+| Step | Required input | Result |
+| --- | --- | --- |
+| Build glyph profile | PDF, document config and reference fonts | CID-to-Unicode glyph profile. |
+| Extract text | PDF, config and glyph profile | Source JSON plus `_invalid.json` for manual review. |
+| Prepare images | Flat image folder and valid `ky_hieu` values | Images with invalid/missing source records removed. |
+| Run Gradio | Valid image folder and extracted source JSON | Content verification and character annotation workflow. |
+| Automatic detection | The three model assets in their default folders | Initial intact/damaged bounding boxes and reading order. |
+| Save results | Verified content and completed Review steps | Downloadable `content.json` and `annotations.json`. |
+
 ## Installation
 
 The complete runtime targets Linux x86_64, Python 3.11 and CUDA 12.1:
@@ -103,6 +133,15 @@ chmod +x text_detection/models/dists/det_model/det_model
 
 With this layout, Gradio needs no model-path arguments. The packaged OCR subprocess is quiet by default, including PyInstaller `PyiFrozenFinder` output. Use `--show-detection-logs` only for startup debugging.
 
+The config and checkpoint must come from the same AutoHDR release. The OCR executable must match the host operating system and architecture. The pinned runtime uses Torch 2.1.0/cu121, MMCV 2.1.0, MMEngine 0.10.5 and MMDetection 3.3.0; MMDetection 3.3.0 requires MMCV below 2.2.0. Use full `mmcv`, not `mmcv-lite`, because detection requires compiled operations.
+
+Detection performs four operations:
+
+1. locate ordinary character boxes with the OCR detector;
+2. locate damaged-character boxes with DINO;
+3. remove an ordinary box when its IoU with a damaged box is at least `0.5`;
+4. fuse the remaining boxes and propose a layout-aware reading order.
+
 Run detection for one image independently:
 
 ```bash
@@ -110,11 +149,38 @@ python -m text_detection path/to/image.jpg \
   --output output/detection.json
 ```
 
-See [`text_detection/README.md`](text_detection/README.md) for model compatibility and runtime details.
+The detection result uses stable one-based IDs and original-image `xyxy` coordinates:
+
+```json
+{
+  "image": "12305.jpg",
+  "bounding_boxes": {
+    "1": {"bbox": [120, 450, 180, 520], "status": "damaged"},
+    "2": {"bbox": [120, 350, 180, 420], "status": "intact"}
+  },
+  "reading_order": [2, 1]
+}
+```
+
+For Python integrations, `text_detection.run_stage1()` returns a `Stage1Result` with `ocr_boxes`, `damage_boxes`, `normal_boxes`, `fused_boxes` and `ordered_boxes`. `iter_stage1()` additionally emits progress phases for model loading, preprocessing, detection, fusion and reading order.
+
+If an external DINO config imports unavailable dataset-only modules such as `mmdet.datasets.fssj` or `mmdet.datasets.hdr`, remove those dataset imports for inference while preserving custom model and transform imports.
 
 ## Gradio annotation app
 
 Image files must be directly inside one flat folder. Each filename stem must match one `ky_hieu` in the source JSON and must be unique.
+
+The Content screen exposes only these existing sections from the selected inscription face:
+
+| Source section | UI label |
+| --- | --- |
+| `Nguyên văn chữ Hán Nôm` | Original Hán/Nôm text |
+| `Phiên âm Hán Việt` | Sino-Vietnamese transcription |
+| `Dịch nghĩa` | Translation |
+| `Toát yếu` | Summary |
+| `Chú thích` | Notes |
+
+The original Hán/Nôm section is the character-annotation source. Missing sections are not invented, and metadata or content belonging to another face cannot be edited from this screen.
 
 ```bash
 python gradio/app.py \
@@ -151,6 +217,20 @@ Open `http://127.0.0.1:7860`. For a remote environment:
 
 The Python state is authoritative. JavaScript only reports UI actions. Any content or box change invalidates dependent alignment and reading-order confirmation. Annotation can continue only when normalized character count equals box count.
 
+Identity and order are deliberately separate:
+
+```text
+box_id = identity
+bbox = location
+status = condition
+annotations[box_id] = character
+reading_order = sequence of box IDs
+```
+
+Deleting a box removes its annotation and order entry without renumbering other boxes. Reordering changes only `reading_order`. Text normalization uses NFC, removes whitespace and Unicode punctuation, and counts grapheme clusters so combining marks and variation selectors are not separate characters.
+
+The UI serves NomNaTong, DengXian and PMingLiU locally, with PMingLiU-ExtB available for extended characters. Font selection changes rendering only and never changes stored text or alignment.
+
 ### Saving
 
 - **Save content** updates the source JSON and adds/updates that image in the internal content registry. It does not download a file.
@@ -173,6 +253,8 @@ annotations/
 
 All JSON is written as UTF-8 with readable Unicode. Per-image annotation writes are atomic.
 
+Crop is stored as `top_left`, `top_right`, `bottom_right` and `bottom_left` in original-image coordinates. If no crop is edited, the saved crop covers the full image. Source updates use an in-process lock and baseline comparison; the application is intended to run as one server process, and concurrent edits of the same image should be avoided.
+
 ## Repository layout
 
 ```text
@@ -183,11 +265,3 @@ text_detection/          OCR/damage localization and reading-order proposal
 gradio/                  Annotation application and UI assets
 requirements.txt         Complete Python 3.11/CUDA 12.1 runtime
 ```
-
-## Known limitations
-
-- Glyph profiling supports Type0 `cff`, `cid`, `ttf` and `otf` resources using two-byte `Identity-H`/`Identity-V` CIDs.
-- Type1/simple fonts, unsupported CMaps and non-identity Type0 `CIDToGIDMap` cases are not decoded.
-- The glyph raster matcher has no confidence threshold; generated profiles require review.
-- Content-stream parsing supports the expected `Tf`/`Tj`/`TJ` patterns, not every valid PDF construction.
-- Detection requires external model files compatible with the pinned MMDetection runtime.

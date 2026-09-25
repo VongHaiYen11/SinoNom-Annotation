@@ -38,7 +38,7 @@ Cả hai lệnh đều tự dò font nhúng/reference phù hợp và cập nhậ
 
 ## Text detection từ ảnh
 
-`text_detection` là Stage 1 tùy chọn của AutoHDR: nhận một ảnh, phát hiện box ký tự thường và ký tự hư hỏng, gộp chúng rồi sắp xếp thứ tự đọc. CLI ghi một file JSON gồm box, trạng thái `intact`/`damaged` và danh sách ID theo thứ tự đọc; module không nhận dạng nội dung ký tự. Cách chạy, dependency và vị trí model được ghi tại [`text_detection/README.md`](text_detection/README.md).
+`text_detection` là Stage 1 tùy chọn của AutoHDR: nhận một ảnh, phát hiện box ký tự thường và ký tự hư hỏng, gộp chúng rồi sắp xếp thứ tự đọc. CLI ghi một file JSON gồm box, trạng thái `intact`/`damaged` và danh sách ID theo thứ tự đọc; module không nhận dạng nội dung ký tự. Cách chạy, dependency và vị trí model được ghi tại [`README.md`](README.md#detection-models).
 
 ## Cách hoạt động
 
