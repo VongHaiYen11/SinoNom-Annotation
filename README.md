@@ -11,11 +11,6 @@
   <a href="gradio/requirements.txt">
     <img src="https://img.shields.io/badge/Gradio-6.28-FF7C00?logo=gradio&logoColor=white" alt="Gradio 6.28">
   </a>
-  <a href="#outputs">
-    <img src="https://img.shields.io/badge/Output-UTF--8_JSON-EA580C?logo=json&logoColor=white" alt="UTF-8 JSON">
-  </a>
-  <img src="https://img.shields.io/badge/Platform-Linux_x86__64-FCC624?logo=linux&logoColor=black" alt="Linux x86_64">
-  <img src="https://img.shields.io/badge/CUDA-12.1-76B900?logo=nvidia&logoColor=white" alt="CUDA 12.1">
 </p>
 
 ---
