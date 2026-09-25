@@ -1,10 +1,13 @@
 """Exercise real Gradio callbacks without requiring a browser or ML assets."""
 import asyncio
+import base64
 import json
 import sys
 import tempfile
 import unittest
+import zipfile
 from copy import deepcopy
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -84,9 +87,12 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(content_doc['inscription_code'],'12306')
             self.assertEqual(content_doc['content']['Dịch nghĩa'],'Bản dịch đã sửa')
             export=next(f for f in functions if f.__name__=='save_folder')
-            files=json.loads(export())
-            self.assertNotIn('annotations.json',files)
-            self.assertEqual(files['content.json'],[content_doc])
+            payload=json.loads(export())
+            self.assertEqual(payload['name'],'annotations.zip')
+            self.assertTrue((root/'out/annotations.zip').is_file())
+            with zipfile.ZipFile(BytesIO(base64.b64decode(payload['content']))) as bundle:
+                self.assertNotIn('text_annotations.json',bundle.namelist())
+                self.assertEqual(json.loads(bundle.read('inscription_content.json')),[content_doc])
             # A submitted path cannot edit metadata, headings, other faces, or other sections.
             for path in (['ten_bia'],['noi_dung',0,'chuyen_muc',0,'van_ban'],
                          ['noi_dung',1,'chuyen_muc',0,'tieu_de'],
@@ -191,10 +197,15 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(saved['reading_order'],[1,3,2])
             self.assertEqual(saved['crop']['top_left'],[5,10])
             export=next(f for f in functions if f.__name__=='save_folder')
-            files=json.loads(export())
-            self.assertEqual(files['annotations.json'],[saved])
-            self.assertEqual(files['content.json'][0]['image'],'12305.png')
-            self.assertEqual(files['content.json'][0]['content']['Nguyên văn chữ Hán Nôm'],'永寺樂')
+            payload=json.loads(export())
+            self.assertEqual(payload['name'],'annotations.zip')
+            self.assertTrue((root/'out/annotations.zip').is_file())
+            with zipfile.ZipFile(BytesIO(base64.b64decode(payload['content']))) as bundle:
+                annotations=json.loads(bundle.read('text_annotations.json'))
+                contents=json.loads(bundle.read('inscription_content.json'))
+            self.assertEqual(annotations,[saved])
+            self.assertEqual(contents[0]['image'],'12305.png')
+            self.assertEqual(contents[0]['content']['Nguyên văn chữ Hán Nôm'],'永寺樂')
             # Session switching must preserve drafts, while reset reloads saved data.
             restored=open_image(ctx,str(path))[0]
             self.assertEqual(restored['active']['current_step'],7)

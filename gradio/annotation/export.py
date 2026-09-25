@@ -2,12 +2,40 @@
 from pathlib import Path
 import hashlib
 import json
+import zipfile
 
 from PIL import Image
 
 from .io import load_annotation, read_json
 from .text_extraction import validate_content_document
 from crop.crop import crop_document, crop_bbox
+
+
+EXPORT_ARCHIVE_NAME = 'annotations.zip'
+
+
+def save_export_archive(annotations, content, output_dir):
+    """Persist the Save-all payload as one ZIP and return its path."""
+    documents = {}
+    if annotations:
+        documents['text_annotations.json'] = annotations
+    if content:
+        documents['inscription_content.json'] = content
+    if not documents:
+        raise ValueError('No image or content records have been saved yet.')
+
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    archive = output / EXPORT_ARCHIVE_NAME
+    temporary = archive.with_suffix('.zip.tmp')
+    try:
+        with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED) as bundle:
+            for name, data in documents.items():
+                bundle.writestr(name, json.dumps(data, ensure_ascii=False, indent=2))
+        temporary.replace(archive)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return archive
 
 
 def collect_annotations(images, output_dir, allow_empty=False):

@@ -1,32 +1,66 @@
 # SinoNom Annotation
 
-Tools for extracting structured Vietnamese inscription content from PDF files and annotating Hán/Nôm characters in images.
+<p align="center">
+  <strong>Tools for extracting structured Vietnamese inscription content from PDF files and annotating Hán/Nôm characters in images.</strong>
+</p>
 
-[![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](requirements.txt)
-[![Gradio 6.28](https://img.shields.io/badge/Gradio-6.28-FF7C00)](gradio/requirements.txt)
-[![Output JSON](https://img.shields.io/badge/output-UTF--8_JSON-EA580C)](#outputs)
+<p align="center">
+  <a href="requirements.txt">
+    <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" alt="Python 3.11">
+  </a>
+  <a href="gradio/requirements.txt">
+    <img src="https://img.shields.io/badge/Gradio-6.28-FF7C00?logo=gradio&logoColor=white" alt="Gradio 6.28">
+  </a>
+  <a href="#outputs">
+    <img src="https://img.shields.io/badge/Output-UTF--8_JSON-EA580C?logo=json&logoColor=white" alt="UTF-8 JSON">
+  </a>
+  <img src="https://img.shields.io/badge/Platform-Linux_x86__64-FCC624?logo=linux&logoColor=black" alt="Linux x86_64">
+  <img src="https://img.shields.io/badge/CUDA-12.1-76B900?logo=nvidia&logoColor=white" alt="CUDA 12.1">
+</p>
 
-[Tiếng Việt](README.vi.md)
+---
 
-## Components
+## 📑 Table of Contents
+
+- [SinoNom Annotation](#sinonom-annotation)
+  - [📑 Table of Contents](#-table-of-contents)
+  - [🧩 Components](#-components)
+  - [🔄 Processing Flow](#-processing-flow)
+  - [⚙️ Installation](#️-installation)
+  - [📄 PDF Text Extraction](#-pdf-text-extraction)
+    - [Configuration Fields](#configuration-fields)
+  - [🔍 Detection Models](#-detection-models)
+  - [🖥️ Gradio Annotation App](#️-gradio-annotation-app)
+    - [Workflow](#workflow)
+    - [Saving](#saving)
+  - [📦 Outputs](#-outputs)
+  - [🗂️ Repository Layout](#️-repository-layout)
+
+---
+
+## 🧩 Components
 
 | Component | Purpose |
 | --- | --- |
-| `text_extraction/` | Decodes embedded Type0 CID glyphs and converts PDF content into structured JSON. |
-| `text_detection/` | Detects intact and damaged character boxes and proposes an initial reading order. It does not recognize characters. |
-| `gradio/` | Seven-step interface for content verification, box editing, status, reading order, crop and review. |
+| `text_extraction/` | Decodes embedded Type0 CID glyphs and converts PDF content into structured JSON |
+| `text_detection/` | Detects intact and damaged character boxes and proposes an initial reading order. It does not recognize characters |
+| `gradio/` | Seven-step interface for content verification, box editing, status, reading order, crop and review |
 
-The Gradio app consumes extraction JSON. It does not extract text directly from a PDF.
+> **Note**
+>
+> The Gradio app consumes extraction JSON. It does not extract text directly from a PDF.
 
-## Processing flow
+---
+
+## 🔄 Processing Flow
 
 Before starting, prepare:
 
-- one source PDF;
-- one document config based on [`configs/tap_1.json`](configs/tap_1.json);
-- a flat image folder whose filename stems match the inscription `ky_hieu` values;
-- matching reference fonts in `fonts/`;
-- detection checkpoints and the OCR executable only when automatic box detection is needed.
+- One source PDF
+- One document config based on [`configs/tap_1.json`](configs/tap_1.json)
+- A flat image folder whose filename stems match the inscription `ky_hieu` values
+- Matching reference fonts in `fonts/`
+- Detection checkpoints and the OCR executable only when automatic box detection is needed
 
 ```mermaid
 flowchart LR
@@ -36,21 +70,23 @@ flowchart LR
     D --> E[Source JSON + valid image folder]
     M[Detection models, optional] --> F[Gradio annotation]
     E --> F
-    F --> G[annotations.json + content.json]
+    F --> G[annotations.zip]
 ```
 
-| Step | Required input | Result |
+| Step | Required Input | Result |
 | --- | --- | --- |
-| Build glyph profile | PDF, document config and reference fonts | CID-to-Unicode glyph profile. |
-| Extract text | PDF, config and glyph profile | Source JSON plus `_invalid.json` for manual review. |
-| Prepare images | Flat image folder and valid `ky_hieu` values | Images with invalid/missing source records removed. |
-| Run Gradio | Valid image folder and extracted source JSON | Content verification and character annotation workflow. |
-| Automatic detection | The three model assets in their default folders | Initial intact/damaged bounding boxes and reading order. |
-| Save results | Verified content and completed Review steps | Downloadable `content.json` and `annotations.json`. |
+| Build Glyph Profile | PDF, document config and reference fonts | CID-to-Unicode glyph profile |
+| Extract Text | PDF, config and glyph profile | Source JSON plus `_invalid.json` for manual review |
+| Prepare Images | Flat image folder and valid `ky_hieu` values | Images with invalid/missing source records removed |
+| Run Gradio | Valid image folder and extracted source JSON | Content verification and character annotation workflow |
+| Automatic Detection | The three model assets in their default folders | Initial intact/damaged bounding boxes and reading order |
+| Save Results | Verified content and completed Review steps | `annotations.zip`, saved in the configured output folder and downloaded by the browser |
 
-## Installation
+---
 
-The complete runtime targets Linux x86_64, Python 3.11 and CUDA 12.1:
+## ⚙️ Installation
+
+The complete runtime targets **Linux x86_64**, **Python 3.11** and **CUDA 12.1**:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -64,38 +100,40 @@ For the UI without detection models:
 python -m pip install -r gradio/requirements.txt
 ```
 
-## PDF text extraction
+---
+
+## 📄 PDF Text Extraction
 
 Extraction is config-driven. [`configs/tap_1.json`](configs/tap_1.json) is the reference configuration and defines:
 
-- source PDF, glyph profile and output paths;
-- page margins and footnote filtering;
-- record titles and metadata fields;
-- face-marker syntax;
-- allowed content sections;
-- Gradio image input and annotation output directories.
+- Source PDF, glyph profile and output paths
+- Page margins and footnote filtering
+- Record titles and metadata fields
+- Face-marker syntax
+- Allowed content sections
+- Gradio image input and annotation output directories
 
-### Configuration fields
+### Configuration Fields
 
 All relative paths are resolved from the directory containing the config file.
 
-| Field | Input/output | Meaning and when it is used |
+| Field | Input/Output | Meaning and When It Is Used |
 | --- | --- | --- |
-| `input_pdf_path` | Input | PDF processed by both glyph-profile generation and text extraction. Change it when processing another PDF. |
-| `paths.output_json` | Output, then input | Destination of the extracted inscription JSON. After extraction, Gradio uses the same file as its source content unless `--source-json` overrides it. |
-| `paths.glyph_profile` | Intermediate output/input | Glyph profile generated by `text_extraction.glyph_profile` and read by `text_extraction.main` to convert embedded CIDs into Unicode. Use a separate profile for each PDF/font set. |
-| `gradio.image_dir` | Input | Flat folder of images displayed and annotated by Gradio. Each filename stem must equal a `ky_hieu` found in `paths.output_json`. Override with `--image-dir` when necessary. |
-| `gradio.output_dir` | Output | Folder where **Save image** writes per-image annotation JSON and internal state. Override with `--output-dir` when necessary. |
-| `encoded_fonts` | Input mapping, auto-refreshed | Maps embedded PDF font names to local reference-font files. Font discovery updates this mapping before profile generation and extraction. |
-| `page_filter.margins.top` | Extraction rule | Height removed from the top of every PDF page before record parsing. |
-| `page_filter.margins.bottom` | Extraction rule | Height removed from the bottom of every PDF page before record parsing. |
-| `page_filter.footnotes` | Extraction rule | Footnote detection using `start_pattern` and `max_font_size`; use `null` to disable footnote filtering. |
-| `records.title_pattern` | Parsing rule | Regular expression identifying the start of an inscription record. It must provide the named group `number`. |
-| `records.metadata` | Parsing rule | Declares metadata headings, output field names, value type and whether each field is required. |
-| `records.content.start_heading` | Parsing rule | Heading that marks the start of content sections. |
-| `records.content.section_headings` | Parsing rule | Exact content section names accepted by the extractor. These also determine which sections can be shown by the Gradio content editor. |
-| `records.face_marker_pattern` | Parsing rule | Regular expression mapping content to an inscription face/image. It must provide the named group `id`, which becomes `ky_hieu`. |
-| `records.require_consecutive_numbers` | Validation rule | When `true`, non-consecutive or duplicate inscription numbers are reported in `_invalid.json`. |
+| `input_pdf_path` | Input | PDF processed by both glyph-profile generation and text extraction. Change it when processing another PDF |
+| `paths.output_json` | Output, then input | Destination of the extracted inscription JSON. After extraction, Gradio uses the same file as its source content unless `--source-json` overrides it |
+| `paths.glyph_profile` | Intermediate output/input | Glyph profile generated by `text_extraction.glyph_profile` and read by `text_extraction.main` to convert embedded CIDs into Unicode. Use a separate profile for each PDF/font set |
+| `gradio.image_dir` | Input | Flat folder of images displayed and annotated by Gradio. Each filename stem must equal a `ky_hieu` found in `paths.output_json`. Override with `--image-dir` when necessary |
+| `gradio.output_dir` | Output | Folder where **Save Image** writes per-image annotation JSON and internal state. Override with `--output-dir` when necessary |
+| `encoded_fonts` | Input mapping, auto-refreshed | Maps embedded PDF font names to local reference-font files. Font discovery updates this mapping before profile generation and extraction |
+| `page_filter.margins.top` | Extraction rule | Height removed from the top of every PDF page before record parsing |
+| `page_filter.margins.bottom` | Extraction rule | Height removed from the bottom of every PDF page before record parsing |
+| `page_filter.footnotes` | Extraction rule | Footnote detection using `start_pattern` and `max_font_size`; use `null` to disable footnote filtering |
+| `records.title_pattern` | Parsing rule | Regular expression identifying the start of an inscription record. It must provide the named group `number` |
+| `records.metadata` | Parsing rule | Declares metadata headings, output field names, value type and whether each field is required |
+| `records.content.start_heading` | Parsing rule | Heading that marks the start of content sections |
+| `records.content.section_headings` | Parsing rule | Exact content section names accepted by the extractor. These also determine which sections can be shown by the Gradio content editor |
+| `records.face_marker_pattern` | Parsing rule | Regular expression mapping content to an inscription face/image. It must provide the named group `id`, which becomes `ky_hieu` |
+| `records.require_consecutive_numbers` | Validation rule | When `true`, non-consecutive or duplicate inscription numbers are reported in `_invalid.json` |
 
 Build the glyph profile, then extract the PDF:
 
@@ -134,7 +172,9 @@ The primary output is a UTF-8 JSON array:
 
 Extraction also creates `<output-stem>_invalid.json` containing malformed records, parser warnings and sequence errors. Records flagged for review are excluded from the primary JSON.
 
-## Detection models
+---
+
+## 🔍 Detection Models
 
 Place external model assets at the default paths:
 
@@ -158,12 +198,15 @@ With this layout, Gradio needs no model-path arguments. The packaged OCR subproc
 
 The config and checkpoint must come from the same AutoHDR release. The OCR executable must match the host operating system and architecture. The pinned runtime uses Torch 2.1.0/cu121, MMCV 2.1.0, MMEngine 0.10.5 and MMDetection 3.3.0; MMDetection 3.3.0 requires MMCV below 2.2.0. Use full `mmcv`, not `mmcv-lite`, because detection requires compiled operations.
 
+> [!NOTE]
+> The damaged-character detection using **DINO**, ordinary character detection, and reading-order arrangement used in this project are based on components from the [AutoHDR repository](https://github.com/SCUT-DLVCLab/AutoHDR). Refer to the original repository for additional details about these detection and reading-order components.
+
 Detection performs four operations:
 
-1. locate ordinary character boxes with the OCR detector;
-2. locate damaged-character boxes with DINO;
-3. remove an ordinary box when its IoU with a damaged box is at least `0.5`;
-4. fuse the remaining boxes and propose a layout-aware reading order.
+1. Locate ordinary character boxes with the OCR detector
+2. Locate damaged-character boxes with DINO
+3. Remove an ordinary box when its IoU with a damaged box is at least `0.5`
+4. Fuse the remaining boxes and propose a layout-aware reading order
 
 Run detection for one image independently:
 
@@ -178,18 +221,26 @@ The detection result uses stable one-based IDs and original-image `xyxy` coordin
 {
   "image": "12305.jpg",
   "bounding_boxes": {
-    "1": {"bbox": [120, 450, 180, 520], "status": "damaged"},
-    "2": {"bbox": [120, 350, 180, 420], "status": "intact"}
+    "1": {
+      "bbox": [120, 450, 180, 520],
+      "status": "damaged"
+    },
+    "2": {
+      "bbox": [120, 350, 180, 420],
+      "status": "intact"
+    }
   },
   "reading_order": [2, 1]
 }
 ```
 
-For Python integrations, `text_detection.run_stage1()` returns a `Stage1Result` with `ocr_boxes`, `damage_boxes`, `normal_boxes`, `fused_boxes` and `ordered_boxes`. `iter_stage1()` additionally emits progress phases for model loading, preprocessing, detection, fusion and reading order.
+For Python integrations, `text_detection.run_detection_pipeline()` returns a `DetectionResult` with `ocr_boxes`, `damage_boxes`, `normal_boxes`, `fused_boxes` and `ordered_boxes`. `iter_detection_pipeline()` additionally emits progress phases for model loading, preprocessing, detection, fusion and reading order.
 
 If an external DINO config imports unavailable dataset-only modules such as `mmdet.datasets.fssj` or `mmdet.datasets.hdr`, remove those dataset imports for inference while preserving custom model and transform imports.
 
-## Gradio annotation app
+---
+
+## 🖥️ Gradio Annotation App
 
 Image files must be directly inside one flat folder. Each filename stem must match one `ky_hieu` in the source JSON and must be unique.
 
@@ -212,10 +263,10 @@ When CLI paths are omitted, Gradio reads them from the document config:
 
 In this example:
 
-- `../output/tap_1.json` is first created by PDF extraction, then read by Gradio as source content;
-- `../data/glyph_profiles/tap1-short_1.json` stores the CID-to-Unicode profile used during extraction;
-- `../data/images` contains the images shown in the annotation interface;
-- `../data/annotations` receives per-image annotation files and internal Save-all state.
+- `../output/tap_1.json` is first created by PDF extraction, then read by Gradio as source content
+- `../data/glyph_profiles/tap1-short_1.json` stores the CID-to-Unicode profile used during extraction
+- `../data/images` contains the images shown in the annotation interface
+- `../data/annotations` receives per-image annotation files and internal Save-all state
 
 Run entirely from the default `configs/tap_1.json`:
 
@@ -234,10 +285,10 @@ python gradio/app.py \
 
 The Content screen exposes only these existing sections from the selected inscription face:
 
-| Source section | UI label |
+| Source Section | UI Label |
 | --- | --- |
-| `Nguyên văn chữ Hán Nôm` | Original Hán/Nôm text |
-| `Phiên âm Hán Việt` | Sino-Vietnamese transcription |
+| `Nguyên văn chữ Hán Nôm` | Original Hán/Nôm Text |
+| `Phiên âm Hán Việt` | Sino-Vietnamese Transcription |
 | `Dịch nghĩa` | Translation |
 | `Toát yếu` | Summary |
 | `Chú thích` | Notes |
@@ -269,13 +320,13 @@ Open `http://127.0.0.1:7860`. For a remote environment:
 
 ### Workflow
 
-1. **Image** — select an image from the configured folder.
-2. **Content** — verify and save the five configured sections: original Hán/Nôm, Sino-Vietnamese transcription, translation, summary and notes.
-3. **Bounding Boxes** — detect, add, move, resize or delete boxes with stable IDs.
-4. **Status** — mark every character as `intact` or `damaged`.
-5. **Reading Order** — reorder stable box IDs without changing their character mapping.
-6. **Crop** — set an independent rectangular crop using original-image coordinates.
-7. **Review** — inspect the final table/text/JSON and save the image object.
+1. **🖼️ Image** — Select an image from the configured folder
+2. **📝 Content** — Verify and save the five configured sections: original Hán/Nôm, Sino-Vietnamese transcription, translation, summary and notes
+3. **🔲 Bounding Boxes** — Detect, add, move, resize or delete boxes with stable IDs
+4. **🏷️ Status** — Mark every character as `intact` or `damaged`
+5. **🔢 Reading Order** — Reorder stable box IDs without changing their character mapping
+6. **✂️ Crop** — Set an independent rectangular crop using original-image coordinates
+7. **✅ Review** — Inspect the final table/text/JSON and save the image object
 
 The Python state is authoritative. JavaScript only reports UI actions. Any content or box change invalidates dependent alignment and reading-order confirmation. Annotation can continue only when normalized character count equals box count.
 
@@ -295,29 +346,35 @@ The UI serves NomNaTong, DengXian and PMingLiU locally, with PMingLiU-ExtB avail
 
 ### Saving
 
-- **Save content** updates the source JSON and adds/updates that image in the internal content registry. It does not download a file.
-- **Save image** on Review commits bounding boxes, annotations, reading order and crop for that image.
-- **Save all** downloads:
-  - `annotations.json` for images committed with **Save image**;
-  - `content.json` for images committed with **Save content**.
+- **Save Content** updates the source JSON and adds/updates that image in the internal content registry. It does not download a file
+- **Save Image** on Review commits bounding boxes, annotations, reading order and crop for that image
+- **Save All** creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
+  - `text_annotations.json` for images committed with **Save Image**
+  - `inscription_content.json` for images committed with **Save Content**
 
-Drafts are never included until their corresponding Save action is used.
+> **Note**
+>
+> Drafts are never included until their corresponding Save action is used.
 
-## Outputs
+---
+
+## 📦 Outputs
 
 ```text
 annotations/
-├── 12305.json          # boxes, statuses, annotations, reading order and crop
+├── 12305.json          # Boxes, statuses, annotations, reading order and crop
 └── .state/
-    ├── 12305.json      # stable-ID and validation metadata
-    └── content.json    # internal Save-all content registry
+    ├── 12305.json      # Stable-ID and validation metadata
+    └── content.json    # Internal Save-all content registry
 ```
 
 All JSON is written as UTF-8 with readable Unicode. Per-image annotation writes are atomic.
 
 Crop is stored as `top_left`, `top_right`, `bottom_right` and `bottom_left` in original-image coordinates. If no crop is edited, the saved crop covers the full image. Source updates use an in-process lock and baseline comparison; the application is intended to run as one server process, and concurrent edits of the same image should be avoided.
 
-## Repository layout
+---
+
+## 🗂️ Repository Layout
 
 ```text
 configs/                 Document-specific extraction rules

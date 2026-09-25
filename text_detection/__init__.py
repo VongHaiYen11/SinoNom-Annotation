@@ -1,18 +1,18 @@
-"""AutoHDR Stage 1: OCR-Assisted Damage Localization (OADL)."""
+"""OCR-assisted intact and damaged Sino-Nôm character detection."""
 
 from .fusion import calculate_iou, fuse_localizations
-from .pipeline import detect_ocr, iter_stage1, run_stage1
+from .pipeline import detect_ocr, iter_detection_pipeline, run_detection_pipeline
 from .reading_order import sort_recognized_boxes
-from .types import BBox, Stage1Event, Stage1Result
+from .types import BBox, DetectionEvent, DetectionResult
 
 __all__ = [
     'BBox',
-    'Stage1Event',
-    'Stage1Result',
+    'DetectionEvent',
+    'DetectionResult',
     'calculate_iou',
     'detect_ocr',
     'fuse_localizations',
-    'iter_stage1',
-    'run_stage1',
+    'iter_detection_pipeline',
+    'run_detection_pipeline',
     'sort_recognized_boxes',
 ]

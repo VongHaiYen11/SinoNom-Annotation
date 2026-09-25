@@ -1,4 +1,4 @@
-"""Command-line entry point and JSON output for AutoHDR Stage 1."""
+"""Command-line entry point and JSON output for character detection."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from types import SimpleNamespace
 from typing import Any, Sequence
 from uuid import uuid4
 
-from .pipeline import MODEL_DIR, run_stage1
-from .types import BBox, Stage1Result
+from .pipeline import MODEL_DIR, run_detection_pipeline
+from .types import BBox, DetectionResult
 
 
 def _json_path(value: str) -> Path:
@@ -75,8 +75,8 @@ def _ordered_box_ids(fused_boxes: Sequence[BBox], ordered_boxes: Sequence[BBox])
     return ordered_ids
 
 
-def build_detection_document(image_path: Path, result: Stage1Result) -> dict[str, Any]:
-    """Convert a Stage 1 result to the public JSON document schema."""
+def build_detection_document(image_path: Path, result: DetectionResult) -> dict[str, Any]:
+    """Convert a detection result to the public JSON document schema."""
 
     expected_fused = list(result.damage_boxes) + list(result.normal_boxes)
     if list(result.fused_boxes) != expected_fused:
@@ -127,7 +127,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     runtime_values = vars(options).copy()
     runtime_values.pop("image")
     runtime_values.pop("output")
-    result = run_stage1(str(options.image), SimpleNamespace(**runtime_values))
+    result = run_detection_pipeline(str(options.image), SimpleNamespace(**runtime_values))
     document = build_detection_document(options.image, result)
     write_detection_json(output_path, document)
     print(

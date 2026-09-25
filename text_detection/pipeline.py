@@ -1,4 +1,4 @@
-"""Localization-only implementation of AutoHDR Stage 1 (OADL)."""
+"""OCR-assisted intact and damaged character localization."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from uuid import uuid4
 from .fusion import fuse_localizations
 from .reading_order import sort_recognized_boxes
 from .runtime.ocr_detector import detect_ocr
-from .types import BBox, Stage1Event, Stage1Result
+from .types import BBox, DetectionEvent, DetectionResult
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -58,14 +58,14 @@ def _ocr_boxes_from_detection(detection_result: Mapping[str, Sequence[Sequence[f
     return ocr_boxes
 
 
-def iter_stage1(image_path: str, opt: Any) -> Generator[Stage1Event, None, Stage1Result]:
+def iter_detection_pipeline(image_path: str, opt: Any) -> Generator[DetectionEvent, None, DetectionResult]:
     """Run only localization, fusion, and reading order.
 
     No character crop is sent to the OCR recognizer. The OCR model in this
     module is used solely as a character *box detector*.
     """
 
-    yield Stage1Event('loading_models')
+    yield DetectionEvent('loading_models')
     damage_config = _required_model_path(
         opt, 'vague_det_config', MODEL_DIR / 'ckpts' / 'damage_detect.py'
     )
@@ -102,17 +102,17 @@ def iter_stage1(image_path: str, opt: Any) -> Generator[Stage1Event, None, Stage
         palette='random',
     )
 
-    yield Stage1Event('preprocessing')
+    yield DetectionEvent('preprocessing')
     original_image = Image.open(image_path).convert('RGB')
     inverted_image = Image.fromarray(255 - np.array(original_image))
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     # Do not overwrite another invocation's OCR input. The retained path is
-    # part of Stage1Result so callers can inspect the exact preprocessed image.
+    # part of DetectionResult so callers can inspect the exact preprocessed image.
     inverted_image_path = str(WORK_DIR / f'inverted-{uuid4().hex}.jpg')
     inverted_image.save(inverted_image_path)
     inverted_image_gray = Image.open(inverted_image_path).convert('L').convert('RGB')
 
-    yield Stage1Event('detecting')
+    yield DetectionEvent('detecting')
     log.debug('Detecting character and damaged-region locations')
     damage_prediction = inference_detector(damage_model, np.array(inverted_image_gray))
     damage_boxes = _damage_boxes_from_prediction(damage_prediction)
@@ -131,15 +131,15 @@ def iter_stage1(image_path: str, opt: Any) -> Generator[Stage1Event, None, Stage
     if grayscale_image is None:
         raise RuntimeError(f'Cannot read generated OCR input: {inverted_image_path}')
 
-    yield Stage1Event('fusing')
+    yield DetectionEvent('fusing')
     fused_boxes, normal_boxes, _ = fuse_localizations(damage_boxes, ocr_boxes)
 
-    yield Stage1Event('reading_order')
+    yield DetectionEvent('reading_order')
     log.debug('Determining initial reading order')
     image_height, image_width = grayscale_image.shape[:2]
     ordered_boxes = sort_recognized_boxes(fused_boxes, image_height, image_width)
 
-    result = Stage1Result(
+    result = DetectionResult(
         original_image=original_image,
         inverted_image=inverted_image,
         grayscale_image=grayscale_image,
@@ -158,12 +158,12 @@ def iter_stage1(image_path: str, opt: Any) -> Generator[Stage1Event, None, Stage
     return result
 
 
-def run_stage1(image_path: str, opt: Any) -> Stage1Result:
+def run_detection_pipeline(image_path: str, opt: Any) -> DetectionResult:
     """Synchronously return the ordered normal/damaged bounding boxes."""
 
-    stage1 = iter_stage1(image_path, opt)
+    detection_run = iter_detection_pipeline(image_path, opt)
     while True:
         try:
-            next(stage1)
+            next(detection_run)
         except StopIteration as completed:
             return completed.value

@@ -1,5 +1,6 @@
 """Run from any directory: python gradio/app.py --image-dir ... --source-json ..."""
 import argparse
+import base64
 import json
 import logging
 import sys
@@ -13,7 +14,7 @@ from annotation.state import new_state
 from annotation.workflow import Workflow
 from annotation.io import load_image_list, final_document, read_json
 from annotation.text_extraction import content_fields, annotation_text
-from annotation.export import collect_annotations, collect_content_documents
+from annotation.export import collect_annotations, collect_content_documents, save_export_archive
 from ui.editor import snapshot, SCRIPT, CSS
 from ui.presentation import APP_CSS, header, panel_heading, panel_summary, footer, status_rows, SECTION_LABELS
 from ui.fonts import FONT_FILES, FONT_PICKER, FONT_PICKER_SCRIPT
@@ -239,24 +240,22 @@ def create_app(options):
             try:
                 annotations=collect_annotations(images,options.output_dir,allow_empty=True)
                 content=collect_content_documents(images,options.output_dir,allow_empty=True)
-                files={}
-                if annotations:files['annotations.json']=annotations
-                if content:files['content.json']=content
-                if not files:raise ValueError('No image or content records have been saved yet.')
-                return json.dumps(files,ensure_ascii=False)
+                archive=save_export_archive(annotations,content,options.output_dir)
+                return json.dumps({'name':archive.name,
+                                   'content':base64.b64encode(archive.read_bytes()).decode('ascii')})
             except (ValueError,OSError,KeyError,TypeError) as exc:
                 raise gr.Error(str(exc)) from exc
         save_all.click(save_folder,[],[download_payload],concurrency_id='annotation-actions',concurrency_limit=1).success(
             fn=None,inputs=[download_payload],outputs=None,js="""(payload) => {
                 if (!payload) return;
-                const files=JSON.parse(payload);
-                for (const [name,data] of Object.entries(files)) {
-                    const text=JSON.stringify(data,null,2);
-                    const url=URL.createObjectURL(new Blob([text],{type:'application/json;charset=utf-8'}));
-                    const link=document.createElement('a');link.href=url;link.download=name;
-                    document.body.appendChild(link);link.click();link.remove();
-                    setTimeout(()=>URL.revokeObjectURL(url),10000);
-                }
+                const archive=JSON.parse(payload);
+                const binary=atob(archive.content);
+                const bytes=new Uint8Array(binary.length);
+                for (let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+                const url=URL.createObjectURL(new Blob([bytes],{type:'application/zip'}));
+                const link=document.createElement('a');link.href=url;link.download=archive.name;
+                document.body.appendChild(link);link.click();link.remove();
+                setTimeout(()=>URL.revokeObjectURL(url),10000);
             }""")
         open_button.click(open_image,[session,image_choice],**event_args)
         reset_button.click(lambda c,p:open_image(c,p,True),[session,image_choice],**event_args)

@@ -13,7 +13,7 @@ from text_detection.main import build_detection_document, main
 from text_detection.pipeline import (
     _damage_boxes_from_prediction,
     _ocr_boxes_from_detection,
-    iter_stage1,
+    iter_detection_pipeline,
 )
 from text_detection.reading_order import sort_recognized_boxes
 from text_detection.runtime.det_wrapper import det_model
@@ -73,10 +73,10 @@ class TextDetectionTests(unittest.TestCase):
                 ocr_det_executable=asset,
             )
             with patch.dict('sys.modules', modules):
-                stage = iter_stage1('page.png', options)
-                self.assertEqual('loading_models', next(stage).phase)
-                self.assertEqual('preprocessing', next(stage).phase)
-                stage.close()
+                detection_run = iter_detection_pipeline('page.png', options)
+                self.assertEqual('loading_models', next(detection_run).phase)
+                self.assertEqual('preprocessing', next(detection_run).phase)
+                detection_run.close()
         init_detector.assert_called_once_with(
             str(asset), str(asset), device='cpu', palette='random',
         )
@@ -123,11 +123,11 @@ class TextDetectionTests(unittest.TestCase):
         self.assertEqual([], sort_recognized_boxes([], image_height=50, image_width=100))
 
     def test_missing_model_asset_has_actionable_error(self) -> None:
-        stage = iter_stage1("page.png", SimpleNamespace())
+        detection_run = iter_detection_pipeline("page.png", SimpleNamespace())
 
-        self.assertEqual("loading_models", next(stage).phase)
+        self.assertEqual("loading_models", next(detection_run).phase)
         with self.assertRaisesRegex(FileNotFoundError, "vague-det-config"):
-            next(stage)
+            next(detection_run)
 
     def test_json_document_uses_box_ids_for_global_reading_order(self) -> None:
         document = build_detection_document(Path("bia_001.jpg"), self._result())
@@ -149,7 +149,7 @@ class TextDetectionTests(unittest.TestCase):
             output_path = Path(directory) / "detections.json"
             image_path.touch()
 
-            with patch("text_detection.main.run_stage1", return_value=self._result()):
+            with patch("text_detection.main.run_detection_pipeline", return_value=self._result()):
                 exit_code = main(
                     [str(image_path), "--output", str(output_path)]
                 )
