@@ -8,7 +8,7 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from app import create_app, parser
+from app import create_app, parser, resolve_app_paths
 import gradio as gr
 from annotation.state import new_state
 from annotation.io import atomic_write
@@ -19,6 +19,31 @@ from PIL import Image
 
 
 class GradioCallbacks(unittest.TestCase):
+    def test_cli_paths_override_config_and_missing_paths_use_config(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve()
+            config=root/'config.json'
+            config.write_text(json.dumps({
+                'paths': {'output_json': 'source.json'},
+                'gradio': {'image_dir': 'images', 'output_dir': 'annotations'},
+            }))
+            override=root/'override-images'
+            options=parser().parse_args([
+                '--config',str(config),'--image-dir',str(override),
+            ])
+            resolve_app_paths(options)
+            self.assertEqual(options.image_dir,str(override))
+            self.assertEqual(options.source_json,str(root/'source.json'))
+            self.assertEqual(options.output_dir,str(root/'annotations'))
+
+            missing=root/'missing.json'
+            explicit=parser().parse_args([
+                '--config',str(missing),'--image-dir','images',
+                '--source-json','source.json','--output-dir','annotations',
+            ])
+            resolve_app_paths(explicit)
+            self.assertEqual(explicit.source_json,'source.json')
+
     def test_content_editor_only_selected_face_sections(self):
         titles=['Nguyên văn chữ Hán Nôm','Phiên âm Hán Việt','Dịch nghĩa','Toát yếu','Chú thích']
         with tempfile.TemporaryDirectory() as folder:

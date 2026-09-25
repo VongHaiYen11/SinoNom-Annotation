@@ -4,6 +4,10 @@
     "output_json": "../output/tap_1.json",
     "glyph_profile": "../data/glyph_profiles/tap1-short_1.json"
   },
+  "gradio": {
+    "image_dir": "../data/images",
+    "output_dir": "../data/annotations"
+  },
   "encoded_fonts": {
     "Calibri": "../fonts/calibri.ttf",
     "Cambria-Bold": "../fonts/Cambria Bold.ttf",

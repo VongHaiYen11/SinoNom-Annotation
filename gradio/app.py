@@ -19,18 +19,55 @@ from ui.presentation import APP_CSS, header, panel_heading, panel_summary, foote
 from ui.fonts import FONT_FILES, FONT_PICKER, FONT_PICKER_SCRIPT
 
 log = logging.getLogger(__name__)
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _config_relative(config_path, value, field):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f'Config field {field} must be a non-empty path string.')
+    path = Path(value).expanduser()
+    return str(path.resolve() if path.is_absolute() else (config_path.parent / path).resolve())
+
+
+def resolve_app_paths(options):
+    """Fill omitted CLI paths from config while preserving CLI precedence."""
+    if all(getattr(options, name, None) for name in ('image_dir', 'source_json', 'output_dir')):
+        return options
+    config_path = Path(options.config).expanduser().resolve()
+    try:
+        config = read_json(config_path)
+    except OSError as exc:
+        raise ValueError(f'Cannot read app config {config_path}: {exc}') from exc
+    if not isinstance(config, dict):
+        raise ValueError('App config must be a JSON object.')
+    paths = config.get('paths')
+    gradio_paths = config.get('gradio')
+    if not isinstance(paths, dict) or not isinstance(gradio_paths, dict):
+        raise ValueError("Config must contain 'paths' and 'gradio' objects.")
+    if not options.image_dir:
+        options.image_dir = _config_relative(config_path, gradio_paths.get('image_dir'), 'gradio.image_dir')
+    if not options.source_json:
+        options.source_json = _config_relative(config_path, paths.get('output_json'), 'paths.output_json')
+    if not options.output_dir:
+        options.output_dir = _config_relative(config_path, gradio_paths.get('output_dir'), 'gradio.output_dir')
+    return options
 
 
 def parser():
     p=argparse.ArgumentParser(description='Vietnamica character annotation workflow')
-    p.add_argument('--image-dir', default='data/images')
-    p.add_argument('--source-json', default='data/source_json/source.json')
-    p.add_argument('--output-dir', default='data/annotations')
+    p.add_argument('--config', default=str(REPO_ROOT / 'configs/tap_1.json'),
+                   help='Config used for omitted image/source/output paths.')
+    p.add_argument('--image-dir', default=None,
+                   help='Override config gradio.image_dir.')
+    p.add_argument('--source-json', default=None,
+                   help='Override config paths.output_json.')
+    p.add_argument('--output-dir', default=None,
+                   help='Override config gradio.output_dir.')
     p.add_argument('--skip-detection', action='store_true',
                    help='Disable detection; load existing annotations or draw boxes manually.')
-    p.add_argument('--vague-det-config', default='text_detection/models/ckpts/damage_detect.py')
-    p.add_argument('--vague-det-weights', default='text_detection/models/ckpts/damage_detect.pth')
-    p.add_argument('--ocr-det-executable', default='text_detection/models/dists/det_model/det_model')
+    p.add_argument('--vague-det-config', default=str(REPO_ROOT / 'text_detection/models/ckpts/damage_detect.py'))
+    p.add_argument('--vague-det-weights', default=str(REPO_ROOT / 'text_detection/models/ckpts/damage_detect.pth'))
+    p.add_argument('--ocr-det-executable', default=str(REPO_ROOT / 'text_detection/models/dists/det_model/det_model'))
     p.add_argument('--det-batch-size', type=int, default=1)
     p.add_argument('--img-size', type=int, default=2048)
     p.add_argument('--conf-thres', type=float, default=.45)
@@ -44,6 +81,7 @@ def parser():
 
 
 def create_app(options):
+    options=resolve_app_paths(options)
     # Expose only the requested font assets, regardless of the working directory.
     gr.set_static_paths(paths=[path for path in FONT_FILES.values() if path.is_file()])
     engine=Workflow(options)

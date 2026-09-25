@@ -146,14 +146,21 @@ def load_config(path: Path) -> ExtractConfig:
     except (OSError, json.JSONDecodeError) as exc:
         raise ExtractionError(f"Cannot read config {path}: {exc}") from exc
     root = _require_object(raw, "root")
-    _require_exact_keys(
-        root,
-        "root",
-        {"input_pdf_path", "paths", "encoded_fonts", "page_filter", "records"},
-    )
+    required_root = {"input_pdf_path", "paths", "encoded_fonts", "page_filter", "records"}
+    missing = required_root - root.keys()
+    unknown = root.keys() - required_root - {"gradio"}
+    if missing:
+        raise ExtractionError(f"Config field 'root' is missing: {', '.join(sorted(missing))}")
+    if unknown:
+        raise ExtractionError(f"Config field 'root' has unknown keys: {', '.join(sorted(unknown))}")
 
     paths = _require_object(root["paths"], "paths")
     _require_exact_keys(paths, "paths", {"output_json", "glyph_profile"})
+    if "gradio" in root:
+        gradio_paths = _require_object(root["gradio"], "gradio")
+        _require_exact_keys(gradio_paths, "gradio", {"image_dir", "output_dir"})
+        _require_string(gradio_paths["image_dir"], "gradio.image_dir")
+        _require_string(gradio_paths["output_dir"], "gradio.output_dir")
     page_filter = _require_object(root["page_filter"], "page_filter")
     _require_exact_keys(page_filter, "page_filter", {"margins", "footnotes"})
     margins = _require_object(page_filter["margins"], "page_filter.margins")
