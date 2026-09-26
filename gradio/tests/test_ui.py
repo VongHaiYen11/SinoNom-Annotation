@@ -72,20 +72,23 @@ class GradioCallbacks(unittest.TestCase):
             ctx=result[0];choices=result[4]['choices']
             self.assertEqual([label for label,_ in choices],[SECTION_LABELS[t] for t in titles])
             self.assertEqual(result[5],'永寺樂')
-            self.assertEqual([entry['tieu_de'] for entry in result[6]],titles)
-            self.assertNotIn('ten_bia',json.dumps(result[6]))
+            preview=json.loads(result[6])
+            self.assertEqual([entry['tieu_de'] for entry in preview],titles)
+            self.assertNotIn('ten_bia',result[6])
             selected=choices[2][1]
             self.assertEqual(choose(ctx,selected),'Dịch nghĩa gốc')
-            ctx=edit(ctx,selected,'Bản dịch đã sửa')[0]
+            edited=edit(ctx,selected,'Bản dịch\nđã sửa')
+            self.assertIn('Bản dịch\\nđã sửa',edited[6])
+            ctx=edited[0]
             ctx=save(ctx)[0]
             expected=deepcopy(original)
-            expected[0]['noi_dung'][1]['chuyen_muc'][2]['van_ban']='Bản dịch đã sửa'
+            expected[0]['noi_dung'][1]['chuyen_muc'][2]['van_ban']='Bản dịch\nđã sửa'
             self.assertEqual(json.loads(source.read_text()),expected)
             self.assertEqual(ctx['active']['annotation_text'],'永寺樂')
             content_doc=json.loads((root/'out/.state/content.json').read_text())[0]
             self.assertEqual(content_doc['image'],'12306.png')
             self.assertEqual(content_doc['inscription_code'],'12306')
-            self.assertEqual(content_doc['content']['Dịch nghĩa'],'Bản dịch đã sửa')
+            self.assertEqual(content_doc['content']['Dịch nghĩa'],'Bản dịch\nđã sửa')
             export=next(f for f in functions if f.__name__=='save_folder')
             payload=json.loads(export())
             self.assertEqual(payload['name'],'annotations.zip')

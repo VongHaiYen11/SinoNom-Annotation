@@ -160,7 +160,10 @@ def create_app(options):
                         with gr.Row(elem_classes='button-group'):
                             apply_field=gr.Button('Apply content', variant='primary')
                         with gr.Accordion('Content JSON', open=False, elem_classes='section'):
-                            content_preview=gr.JSON(label='Content', elem_classes='han-nom-json')
+                            content_preview=gr.Code(
+                                label='Content', language='json', interactive=False,
+                                lines=12, max_lines=30, elem_classes='han-nom-json',
+                            )
                     board=gr.HTML(value=snapshot(initial['active']),html_template='${value.markup}',css_template=CSS,js_on_load=SCRIPT, elem_id='annotation-board')
                     preview=gr.JSON(label='Image JSON',visible=False, elem_id='final-preview', elem_classes='han-nom-json')
                 message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
@@ -179,7 +182,10 @@ def create_app(options):
             choices=[(SECTION_LABELS[field['title']],json.dumps(field['path'],ensure_ascii=False)) for field in fields]
             chosen=choices[0][1] if choices else None
             val=fields[0]['value'] if fields else ''
-            draft_preview=[dict(tieu_de=field['title'],van_ban=field['value']) for field in fields]
+            draft_preview=json.dumps(
+                [dict(tieu_de=field['title'],van_ban=field['value']) for field in fields],
+                ensure_ascii=False, indent=2,
+            )
             region_ids=list(s['regions'])
             selected=s['selected_region_uid'] if s['selected_region_uid'] in region_ids else (region_ids[0] if region_ids else None)
             box=s['regions'].get(selected,dict(bbox=[0,0,1,1],status='intact'))
