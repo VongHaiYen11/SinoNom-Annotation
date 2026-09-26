@@ -76,6 +76,31 @@ class FolderExport(unittest.TestCase):
         self.assertEqual(docs[0]['annotations'], {'1': '永', '2': '寺'})
         self.assertEqual(read_json(self.output / '1.json')['crop']['top_left'], [0, 0])
 
+    def test_content_editor_newlines_round_trip_to_json(self):
+        state = self.engine.open_image(self.images[0])
+        field = content_fields(state['draft_content'], state['code'])[0]
+
+        state = self.engine.apply(
+            state, 'field', {'path': field['path'], 'value': '永\n寺'}
+        )
+        state = self.engine.apply(state, 'save_content')
+        self.assertEqual(
+            read_json(self.source)[0]['noi_dung'][0]['chuyen_muc'][0]['van_ban'],
+            '永\n寺',
+        )
+        self.assertIn('永\\n寺', self.source.read_text(encoding='utf-8'))
+
+        field = content_fields(state['draft_content'], state['code'])[0]
+        state = self.engine.apply(
+            state, 'field', {'path': field['path'], 'value': '永寺'}
+        )
+        self.engine.apply(state, 'save_content')
+        self.assertEqual(
+            read_json(self.source)[0]['noi_dung'][0]['chuyen_muc'][0]['van_ban'],
+            '永寺',
+        )
+        self.assertNotIn('永\\n寺', self.source.read_text(encoding='utf-8'))
+
     def test_only_review_saved_images_are_included(self):
         self.complete(self.images[0])
         self.assertEqual([doc['image'] for doc in self.export()], ['1.png'])

@@ -90,7 +90,7 @@ body, .gradio-container { background: #0b0d0f !important; color: #f4f4f5 !import
 #action-message p { font-size: 12px; margin: 0; }
 #action-message .ui-icon { width: 15px; height: 15px; margin-right: 6px; color: #f87171; }
 #final-preview { margin: 0 20px 24px; width: auto; max-height: 400px; overflow: auto; }
-.han-nom-text textarea { font-family: var(--han-nom-font), Arial, sans-serif !important; font-size: 20px !important; line-height: 1.8 !important; padding: 16px !important; }
+.han-nom-text textarea { font-family: var(--han-nom-font), Arial, sans-serif !important; font-size: 20px !important; line-height: 1.8 !important; padding: 16px !important; white-space: pre-wrap !important; overflow-x: hidden !important; overflow-wrap: anywhere !important; word-break: normal !important; }
 .han-nom-json, .han-nom-json * { font-family: var(--han-nom-font), monospace !important; }
 .font-picker { border-top: 1px solid #303237; padding-top: var(--space-panel); }
 .font-picker label { display: block; color: #a1a1aa; font-size: 12px; margin-bottom: var(--space-label); }
