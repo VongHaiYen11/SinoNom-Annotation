@@ -2,6 +2,7 @@
 import hashlib
 import json
 import logging
+import shutil
 import tempfile
 from copy import deepcopy
 from pathlib import Path
@@ -84,14 +85,17 @@ class Workflow:
         path = Path(path).resolve()
         with Image.open(path) as im:
             size = list(im.size)
-            # Decode the full source, not an embedded thumbnail. PNG carries no
-            # EXIF orientation, so browser geometry agrees with detection's
-            # original pixel coordinate system. Cache across repeated opens.
+            # Serve ordinary JPEGs without decoding/re-encoding or expanding
+            # them into large PNG files. Normalize other formats/orientations
+            # once, retaining the original pixel dimensions for box alignment.
             stat = path.stat()
             key = fingerprint(f'{path}:{stat.st_mtime_ns}:{stat.st_size}')
-            preview_path = self.preview_dir / (key + '.png')
+            preview_path = self.preview_dir / (key + '.jpg')
             if not preview_path.exists():
-                im.convert('RGB').save(preview_path, format='PNG', compress_level=1)
+                if im.format == 'JPEG' and im.mode in ('RGB', 'L') and im.getexif().get(274, 1) == 1:
+                    shutil.copyfile(path, preview_path)
+                else:
+                    im.convert('RGB').save(preview_path, format='JPEG', quality=95, subsampling=0)
         located = self._source_content_for(path.name)
         state.update(image=path.name, image_path=str(path), image_size=size,
                      image_url='gradio_api/file=' + quote(str(preview_path), safe='/'),
@@ -193,14 +197,23 @@ class Workflow:
                 validate_document(doc, s['image'], s['image_size'])
                 s['regions'] = {uuid4().hex: deepcopy(box) for box in doc['bounding_boxes'].values()}
                 s['selected_region_uid'] = next(iter(s['regions']), None)
+                s['selected_region_uids'] = [s['selected_region_uid']] if s['selected_region_uid'] else []
                 s['detection_loaded'] = True
                 invalidate(s, clear=True)
             elif action == 'add':
                 s['selected_region_uid'] = add_bbox(s, payload['bbox'])
+                s['selected_region_uids'] = [s['selected_region_uid']]
             elif action == 'update':
                 update_bbox(s, payload.get('uid') or payload.get('id') or s['selected_region_uid'], payload['bbox'])
             else:
-                delete_bbox(s, payload.get('uid') or payload.get('id') or s['selected_region_uid'])
+                selected = payload.get('ids') or [payload.get('uid') or payload.get('id') or s['selected_region_uid']]
+                selected = list(dict.fromkeys(selected))
+                if not selected or any(uid not in s['regions'] for uid in selected):
+                    raise ValueError('One or more selected regions do not exist.')
+                for uid in selected:
+                    delete_bbox(s, uid)
+                s['selected_region_uids'] = [uid for uid in s.get('selected_region_uids', []) if uid in s['regions']]
+                s['selected_region_uid'] = s['selected_region_uids'][-1] if s['selected_region_uids'] else next(iter(s['regions']), None)
             refresh_bbox_validation(s)
         elif action == 'select':
             if step in (3, 4):
@@ -208,6 +221,17 @@ class Workflow:
                 if uid not in s['regions']:
                     raise ValueError('Region does not exist.')
                 s['selected_region_uid'] = uid
+                selected = list(s.get('selected_region_uids', []))
+                if payload.get('toggle'):
+                    was_selected = uid in selected
+                    selected = [item for item in selected if item != uid] if was_selected else selected + [uid]
+                    if not was_selected:
+                        s['selected_region_uid'] = uid
+                    elif s['selected_region_uid'] == uid:
+                        s['selected_region_uid'] = selected[-1] if selected else None
+                else:
+                    selected = [uid]
+                s['selected_region_uids'] = selected
             else:
                 key = str(payload['id'])
                 if key not in s['bounding_boxes']:

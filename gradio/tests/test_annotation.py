@@ -162,7 +162,7 @@ class Integration(unittest.TestCase):
         preview_path = unquote(s['image_url'].split('file=',1)[1])
         with Image.open(preview_path) as preview_image:
             self.assertEqual(preview_image.size,tuple(s['image_size']))
-            self.assertEqual(preview_image.format,'PNG')
+            self.assertEqual(preview_image.format,'JPEG')
             self.assertEqual(preview_image.getpixel((0,0)),(255,255,255))
         detected={'image':self.image.name,
                   'bounding_boxes':{str(i+1):dict(bbox=[i*10,0,i*10+9,9],status='intact') for i in range(3)},
@@ -227,6 +227,22 @@ class Integration(unittest.TestCase):
         self.assertFalse(s['crop_saved'])
         s=e.apply(s,'save');self.assertTrue(s['saved'])
         self.assertEqual(e.apply(s,'next')['current_step'],7)
+
+    def test_multiselect_then_delete_regions(self):
+        e=self.engine
+        s=e.apply(e.open_image(self.image),'save_content')
+        s=e.apply(s,'next')
+        for x in (0,20,40):
+            s=e.apply(s,'add',{'bbox':[x,0,x+10,10]})
+        uids=list(s['regions'])
+        s=e.apply(s,'select',{'uid':uids[0]})
+        s=e.apply(s,'select',{'uid':uids[2],'toggle':True})
+        self.assertEqual(s['selected_region_uids'],[uids[0],uids[2]])
+        self.assertEqual(s['selected_region_uid'],uids[2])
+        s=e.apply(s,'delete',{'ids':s['selected_region_uids']})
+        self.assertEqual(set(s['regions']),{uids[1]})
+        self.assertEqual(s['selected_region_uids'],[])
+        self.assertEqual(s['selected_region_uid'],uids[1])
 
     def test_stale_and_transaction(self):
         s=self.engine.open_image(self.image);before=deepcopy(s)

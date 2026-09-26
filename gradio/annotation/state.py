@@ -5,7 +5,7 @@ from .text_alignment import validate_bbox_text_count, temporary_align_text
 def new_state():
     return dict(image=None, image_path=None, image_size=None, source_content=None,
                 verified_content=None, draft_content=None, annotation_text='',
-                regions={}, selected_region_uid=None,
+                regions={}, selected_region_uid=None, selected_region_uids=[],
                 bounding_boxes={}, annotations={}, reading_order=[],
                 box_id_by_region={}, region_uid_by_box_id={}, selected_box_id=None,
                 revision=0, current_step=1,

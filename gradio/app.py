@@ -26,6 +26,26 @@ log = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def loading_markup(label='Loading…', visible=False):
+    """The single, application-wide progress surface used for queued actions."""
+    state = ' is-visible' if visible else ''
+    return (
+        f'<div id="global-loading" class="global-loading{state}" '
+        'role="status" aria-live="polite" aria-busy="true">'
+        '<div class="global-loading-card">'
+        '<span class="global-loading-spinner" aria-hidden="true"></span>'
+        f'<span>{html.escape(label)}</span>'
+        '</div></div>'
+    )
+
+
+LOADING_HIDDEN = loading_markup()
+SHOW_LOADING_JS = """(...args) => {
+    document.getElementById('global-loading')?.classList.add('is-visible');
+    return args;
+}"""
+
+
 def _config_relative(config_path, value, field):
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f'Config field {field} must be a non-empty path string.')
@@ -105,6 +125,8 @@ def create_app(options):
             progress=gr.HTML(header(initial['active']), elem_id='app-chrome')
             save_all=gr.Button('Save all', variant='primary', scale=0, elem_id='save-all')
         download_payload=gr.Textbox(visible=False)
+        # This remains mounted across every callback, so only one loading modal is shown.
+        loading_modal=gr.HTML(value=LOADING_HIDDEN, elem_id='global-loading-host')
         with gr.Row(elem_id='workspace'):
             with gr.Column(elem_id='control-panel', min_width=0, elem_classes='panel'):
                 heading=gr.HTML(panel_heading(initial['active']))
@@ -134,8 +156,9 @@ def create_app(options):
                         update=gr.Button('Update coordinates')
                     with gr.Group(elem_classes='section'):
                         gr.Markdown('### Box Actions')
+                        gr.Markdown('Click a box to select and adjust it. Shift/Ctrl/Cmd-click adds or removes it from the deletion selection.')
                         with gr.Row(elem_classes='button-group'):
-                            add=gr.Button('Add box', min_width=0);delete=gr.Button('Delete box', elem_id='delete-box', min_width=0)
+                            add=gr.Button('Add box', min_width=0);delete=gr.Button('Delete selected', elem_id='delete-box', min_width=0)
                     with gr.Accordion('Detection', open=False, elem_classes='section'):
                         rerun_confirm=gr.Checkbox(label='Replace all existing boxes')
                         detect=gr.Button('Run detection', interactive=not skip_detection)
@@ -180,6 +203,7 @@ def create_app(options):
         normalized=gr.State(None)
         outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,order_group,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table]
         outputs.append(preview_modal)
+        outputs.append(loading_modal)
 
         def render(ctx, msg=''):
             s=ctx['active']; step=s['current_step']; has=bool(s.get('image'))
@@ -203,7 +227,7 @@ def create_app(options):
                     gr.update(visible=step==6),json.dumps(s.get('crop')),gr.update(visible=step==7),
                     panel_heading(s),panel_summary(s),footer(s),gr.update(visible=step==2 and has),
                     gr.update(interactive=has and step>1),gr.update(interactive=has and step<7,visible=step<7),
-                    status_rows(s),s.get('image_url','')]
+                    status_rows(s),s.get('image_url',''),LOADING_HIDDEN]
 
         def run(ctx, action, payload=None, auto_detect=True):
             try:
@@ -227,7 +251,7 @@ def create_app(options):
                     'field': {0,2,6,7},
                 }.get(action)
                 if affected is not None:
-                    result = [value if i in affected | {1,25} else gr.skip() for i,value in enumerate(result)]
+                    result = [value if i in affected | {1,25,len(result)-1} else gr.skip() for i,value in enumerate(result)]
                 return result
             except Exception as exc:
                 log.exception('Action %s rejected',action)
@@ -249,7 +273,9 @@ def create_app(options):
                 log.exception('Cannot open image')
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
 
-        event_args=dict(outputs=outputs,concurrency_id='annotation-actions',concurrency_limit=1)
+        # Hide Gradio's per-component timers/spinners and show one centered modal instead.
+        event_args=dict(outputs=outputs,concurrency_id='annotation-actions',concurrency_limit=1,
+                        show_progress='hidden',js=SHOW_LOADING_JS)
         def save_folder():
             try:
                 annotations=collect_annotations(images,options.output_dir,allow_empty=True)
@@ -259,8 +285,10 @@ def create_app(options):
                                    'content':base64.b64encode(archive.read_bytes()).decode('ascii')})
             except (ValueError,OSError,KeyError,TypeError) as exc:
                 raise gr.Error(str(exc)) from exc
-        save_all.click(save_folder,[],[download_payload],concurrency_id='annotation-actions',concurrency_limit=1).success(
+        save_all.click(save_folder,[],[download_payload],concurrency_id='annotation-actions',concurrency_limit=1,
+                       show_progress='hidden',js=SHOW_LOADING_JS).success(
             fn=None,inputs=[download_payload],outputs=None,js="""(payload) => {
+                document.getElementById('global-loading')?.classList.remove('is-visible');
                 if (!payload) return;
                 const archive=JSON.parse(payload);
                 const binary=atob(archive.content);
@@ -301,6 +329,7 @@ def create_app(options):
                 result[2] = gr.update(value='Running detection…', visible=True)
                 result[29] = gr.update(interactive=False)
                 result[28] = gr.update(interactive=False)
+                result[-1] = loading_markup('Running detection…', visible=True)
             yield result
             if needs_detection:
                 yield run(result[0], 'detect')
@@ -315,7 +344,8 @@ def create_app(options):
             except (ValueError,TypeError):
                 pass
             raise gr.Error('This section does not belong to the selected image.')
-        field.input(choose_field,[session,field],[field_value],concurrency_id='annotation-actions')
+        field.input(choose_field,[session,field],[field_value],concurrency_id='annotation-actions',
+                    show_progress='hidden')
         def apply_content_field(ctx,path,value):
             try:
                 parsed=json.loads(path)
@@ -325,7 +355,7 @@ def create_app(options):
         apply_field.click(apply_content_field,[session,field,field_value],**event_args)
         for button,action in [(add,'add'),(update,'update')]:
             button.click(lambda c,i,a,b,d,e,op=action:run(c,op,dict(id=i,bbox=[a,b,d,e])),[session,box_id,x1,y1,x2,y2],**event_args)
-        delete.click(lambda c,i:run(c,'delete',dict(id=i)),[session,box_id],**event_args)
+        delete.click(lambda c:run(c,'delete',dict(ids=c['active'].get('selected_region_uids', []))),[session],**event_args)
         detect.click(lambda c,ok:run(c,'detect') if ok or not c['active']['detection_loaded'] else render(c,'Confirm replacement of existing boxes.'),[session,rerun_confirm],**event_args)
         for selector in (box_id,status_id):
             selector.input(lambda c,i:run(c,'select',dict(id=i)),[session,selector],**event_args)

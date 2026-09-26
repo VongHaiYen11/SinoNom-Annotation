@@ -20,10 +20,10 @@ const send = (action, payload={}) => {
   element.setAttribute('aria-busy', 'true');
   trigger('action', {action, payload: {...payload, revision: props.value.revision, image: props.value.image}});
 };
-const showLocalSelection = group => {
+const showLocalSelection = (group, toggle=false) => {
   if (!group) return;
   element.querySelectorAll('[data-region-uid],[data-box-id]').forEach(candidate => {
-    const active = candidate === group;
+    const active = toggle && candidate === group ? !candidate.classList.contains('selected-region') : candidate === group;
     candidate.classList.toggle('selected-region', active);
     const rect = candidate.querySelector('rect');
     if (rect) {
@@ -61,7 +61,12 @@ element.addEventListener('pointerdown', e => {
   const group=e.target.closest('[data-region-uid],[data-box-id]');
   const mode=props.value.step;
   const regionUid=group?.dataset.regionUid, id=regionUid || group?.dataset.boxId;
-  if (group && mode !== 6) showLocalSelection(group);
+  const toggle = mode === 3 && (e.shiftKey || e.metaKey || e.ctrlKey);
+  if (group && mode !== 6) showLocalSelection(group, toggle);
+  if (group && mode === 3 && (toggle || id !== props.value.selected)) {
+    send('select', {...(regionUid?{uid:regionUid}:{id}), ...(toggle?{toggle:true}:{})});
+    return;
+  }
   if(group && ![3,6].includes(mode)) {
     send('select',regionUid?{uid:regionUid}:{id}); return;
   }

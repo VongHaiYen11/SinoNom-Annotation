@@ -11,7 +11,7 @@
 .toolbar-tools button:hover { background: #282b30; }
 .image-viewport { height: 60vh; min-height: 350px; max-height: 760px; overflow: auto; background-color: #0b0d0f; background-image: radial-gradient(#303237 .65px, transparent .65px); background-size: 12px 12px; padding: 20px; box-sizing: border-box; }
 .annotation-canvas { display: block; width: auto; height: 100%; max-width: 100%; margin: 0 auto; overflow: visible; touch-action: none; background: #17191c; box-shadow: 0 4px 24px #0007; user-select: none; }
-.annotation-canvas [data-box-id] { cursor: pointer; }.annotation-canvas [data-corner] { cursor: nwse-resize; }.annotation-canvas [data-corner="1"], .annotation-canvas [data-corner="3"] { cursor: nesw-resize; }
+.annotation-canvas [data-box-id] { cursor: pointer; }.annotation-canvas [data-region-uid] { cursor: move; }.annotation-canvas [data-corner] { cursor: nwse-resize; }.annotation-canvas [data-corner="1"], .annotation-canvas [data-corner="3"] { cursor: nesw-resize; }
 .stage-caption { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-top: 1px solid #303237; font-size: 10px; color: #a1a1aa; }
 .legend { display: flex; align-items: center; gap: 5px; }.legend i { display: inline-block; width: 9px; height: 9px; border: 1px solid #ff7a1a; }.legend i.damaged { border-style: dashed; margin-left: 8px; }
 .source-preview { margin: 14px 16px; padding: 12px; border: 1px solid #303237; border-radius: 5px; }

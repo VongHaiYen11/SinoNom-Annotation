@@ -18,12 +18,15 @@ def snapshot(s):
     if step == 6:
         boxes = {'crop': dict(bbox=s['crop'], status='intact')}
         selected_id = 'crop'
+        selected_ids = {'crop'}
     elif step in (3, 4):
         boxes = s['regions']
         selected_id = s['selected_region_uid'] if s['selected_region_uid'] in boxes else next(iter(boxes), None)
+        selected_ids = set(s.get('selected_region_uids', [])) or ({selected_id} if selected_id else set())
     else:
         boxes = s['bounding_boxes']
         selected_id = s['selected_box_id'] if s['selected_box_id'] in boxes else next(iter(boxes), None)
+        selected_ids = {selected_id} if selected_id else set()
     filename=html.escape(s['image'])
     markup=f'''<div class="workbench-board"><div class="workspace-toolbar">
         <div class="workspace-context"><span class="file-icon">{DOCUMENT}</span><strong>{filename}</strong><span class="dimensions">{w} × {h} px</span></div>
@@ -36,14 +39,14 @@ def snapshot(s):
     # Scale labels/handles to image size so full-resolution scans remain editable.
     unit=max(w,h)/900
     for key,b in boxes.items():
-        x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6
+        x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6; multi_selected=key in selected_ids
         color='#ff7a1a' if step==6 else '#ef4444' if b['status']=='damaged' else '#22c55e'
         public_box = step not in (3, 4, 6)
         label=html.escape(key+' '+s['annotations'].get(key,'')) if public_box else ''
         dashed=' stroke-dasharray="5 4"' if b['status']=='damaged' else ''
         identity_attr = f'data-region-uid="{key}"' if step in (3, 4) else f'data-box-id="{key}"'
-        markup+=f'''<g {identity_attr} class="{'selected-region' if selected else ''}"><title>{'Region' if not public_box else label} · {b['status']}</title>
-            <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{color}" fill-opacity="{'.16' if selected else '.04'}" stroke="{color}" stroke-width="{'2.5' if selected else '1.5'}" vector-effect="non-scaling-stroke"{dashed}/>
+        markup+=f'''<g {identity_attr} class="{'selected-region' if multi_selected else ''}"><title>{'Region' if not public_box else label} · {b['status']}</title>
+            <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{color}" fill-opacity="{'.16' if multi_selected else '.04'}" stroke="{color}" stroke-width="{'2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{dashed}/>
             {f'<text x="{x1+2*unit}" y="{max(15*unit,y1-4*unit)}" fill="{color}" font-size="{15*unit}" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{2*unit}">{label}</text>' if label else ''}'''
         # Resize handles belong only to the active region. Rendering handles on
         # every region makes the canvas look as though all boxes are selected.
@@ -82,5 +85,5 @@ def snapshot(s):
             markup+='<section class="review-detail"><div class="review-text"><span class="eyebrow">FINAL TEXT</span><p>'+html.escape(build_text_sequence(s))+'</p></div><p class="order-sequence"><span>Reading order:</span> '+ order_separator.join(map(str,s['reading_order']))+'</p><div class="review-table-wrap"><table><thead><tr><th>Order</th><th>Box ID</th><th>BBox</th><th>Status</th><th>Annotation</th></tr></thead><tbody>'+''.join(rows)+'</tbody></table></div></section>'
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
-                width=w,height=h,boxes=boxes,selected=selected_id,
+                width=w,height=h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
                 max_crop_side=MAX_CROP_SIDE)

@@ -1,10 +1,18 @@
 const dialog = element.querySelector('dialog');
 const openButton = element.querySelector('.preview-open');
 const photo = element.querySelector('img');
-const sync = () => { openButton.disabled = !props.value; };
+let loadedSource = '';
+const sync = () => {
+  openButton.disabled = !props.value;
+  // Start loading when the image is opened in the workflow, and reuse that
+  // request on modal open and subsequent state updates for the same image.
+  if (props.value && props.value !== loadedSource) {
+    loadedSource = props.value;
+    photo.src = loadedSource;
+  }
+};
 openButton.addEventListener('click', () => {
   if (!props.value) return;
-  photo.src = props.value;
   dialog.showModal();
 });
 element.querySelector('.preview-close').addEventListener('click', () => dialog.close());

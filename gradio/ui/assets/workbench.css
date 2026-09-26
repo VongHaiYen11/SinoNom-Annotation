@@ -23,6 +23,14 @@ body, .gradio-container { background: #0b0d0f !important; color: #f4f4f5 !import
 }
 .gradio-container .main { gap: 0 !important; padding: 0 !important; }
 
+/* A single modal replaces Gradio's component-by-component loading indicators. */
+#global-loading-host { position: fixed; inset: 0; z-index: 10000; pointer-events: none; }
+#global-loading { display: none; position: fixed; inset: 0; place-items: center; padding: 24px; background: rgb(0 0 0 / .46); pointer-events: auto; }
+#global-loading.is-visible { display: grid; }
+.global-loading-card { display: inline-flex; align-items: center; gap: 12px; min-width: 180px; padding: 18px 22px; border: 1px solid #3c4046; border-radius: 8px; background: #17191c; box-shadow: 0 18px 56px rgb(0 0 0 / .45); color: #f4f4f5; font-size: 14px; font-weight: 600; }
+.global-loading-spinner { width: 18px; height: 18px; box-sizing: border-box; border: 2px solid #5d6168; border-top-color: #ff7a1a; border-radius: 50%; animation: global-loading-spin .75s linear infinite; }
+@keyframes global-loading-spin { to { transform: rotate(360deg); } }
+
 .gradio-container { --space-section: 28px; --space-panel: 20px; --space-field: 14px; --space-label: 8px; --space-button: 10px; }
 #header-row { position: relative; display: block; margin: 0; padding: 0; }
 #app-chrome { width: 100%; padding: 0; border: 0; margin: 0; }
