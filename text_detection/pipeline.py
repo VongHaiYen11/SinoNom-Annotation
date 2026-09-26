@@ -133,6 +133,9 @@ def iter_detection_pipeline(image_path: str, opt: Any) -> Generator[DetectionEve
 
     yield DetectionEvent('fusing')
     fused_boxes, normal_boxes, _ = fuse_localizations(damage_boxes, ocr_boxes)
+    # Fusion may promote a larger OCR character box to damaged when a small
+    # damage localization is contained inside it.
+    damage_boxes = fused_boxes[:len(fused_boxes) - len(normal_boxes)]
 
     yield DetectionEvent('reading_order')
     log.debug('Determining initial reading order')

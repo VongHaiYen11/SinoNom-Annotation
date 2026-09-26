@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import sys
 
+import numpy as np
 import pymupdf
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
@@ -146,10 +147,63 @@ def unique_cmap_candidates(cmap: dict[int, str]) -> list[tuple[int, str]]:
     return [(codepoint, glyph_name) for glyph_name, codepoint in codepoints_by_glyph.items()]
 
 
-def _reference_pixels(
-    font: TTFont, cache: dict[int, dict[str, bytes]]
-) -> dict[str, bytes]:
-    return cache.setdefault(id(font), {})
+def _reference_index(
+    font: TTFont,
+    cache: dict[int, dict[str, object]],
+) -> dict[str, object]:
+    """Cache normalized commands and exact signatures without rasterizing."""
+    key = id(font)
+    if key not in cache:
+        units = font["head"].unitsPerEm
+        glyph_set = font.getGlyphSet()
+        candidates = sorted(unique_cmap_candidates(font.getBestCmap()))
+        entries = []
+        exact = {}
+        for codepoint, glyph_name in candidates:
+            commands = glyph_commands(glyph_set[glyph_name], 1000 / units, glyph_set)
+            entries.append((codepoint, glyph_name, commands))
+            exact.setdefault(signature(commands), codepoint)
+        cache[key] = {"entries": entries, "exact": exact, "pixels": None}
+    return cache[key]
+
+
+def _reference_pixel_matrix(index: dict[str, object], reference_path: Path) -> np.ndarray:
+    """Rasterize a reference font once and store a compact uint8 matrix."""
+    pixels = index["pixels"]
+    if pixels is None:
+        entries = index["entries"]
+        LOGGER.info(
+            "Rasterizing %d reference glyphs once: %s", len(entries), reference_path.name
+        )
+        pixels = np.stack(
+            [np.frombuffer(rasterize(commands), dtype=np.uint8) for _, _, commands in entries]
+        )
+        index["pixels"] = pixels
+    return pixels
+
+
+def _closest_reference_codepoint(
+    source_pixels: bytes,
+    index: dict[str, object],
+    reference_path: Path,
+    batch_size: int = 512,
+) -> int:
+    """Compute the same L1 pixel score in vectorized, memory-bounded batches."""
+    matrix = _reference_pixel_matrix(index, reference_path)
+    source = np.frombuffer(source_pixels, dtype=np.uint8).astype(np.int16)
+    best_score = None
+    best_index = 0
+    for start in range(0, len(matrix), batch_size):
+        batch = matrix[start:start + batch_size].astype(np.int16)
+        scores = np.abs(batch - source).sum(axis=1)
+        local_index = int(scores.argmin())
+        score = int(scores[local_index])
+        # Entries are sorted by codepoint, so retaining the first equal score
+        # preserves the previous (score, codepoint) tie-breaking policy.
+        if best_score is None or score < best_score:
+            best_score = score
+            best_index = start + local_index
+    return index["entries"][best_index][0]
 
 
 def match_font(
@@ -158,7 +212,7 @@ def match_font(
     reference_path: Path,
     font: TTFont,
     profile: dict[str, dict],
-    reference_pixel_cache: dict[int, dict[str, bytes]],
+    reference_cache: dict[int, dict[str, object]],
     used_cids: set[int],
 ) -> None:
     """Match used embedded glyphs to Unicode glyphs by rasterized outlines."""
@@ -187,10 +241,7 @@ def match_font(
             f"type={font_type}, ext={extension}"
         )
 
-    units = font["head"].unitsPerEm
-    glyph_set = font.getGlyphSet()
-    candidates = unique_cmap_candidates(font.getBestCmap())
-    reference_pixels = _reference_pixels(font, reference_pixel_cache)
+    reference_index = _reference_index(font, reference_cache)
     for source_glyph in source_glyphs:
         name = source_glyph.name
         glyph = source_glyph.glyph
@@ -207,25 +258,22 @@ def match_font(
                 "char": " ",
             }
             continue
+        exact_codepoint = reference_index["exact"].get(digest)
+        if exact_codepoint is not None:
+            profile[digest] = {
+                "glyph": name,
+                "codepoint": exact_codepoint,
+                "unicode": f"U+{exact_codepoint:04X}",
+                "char": chr(exact_codepoint),
+            }
+            continue
         pixels = rasterize(commands)
-        ranked: list[tuple[int, int]] = []
-        for codepoint, reference_name in candidates:
-            if reference_name not in reference_pixels:
-                reference_pixels[reference_name] = rasterize(
-                    glyph_commands(glyph_set[reference_name], 1000 / units, glyph_set)
-                )
-            score = sum(
-                abs(left - right)
-                for left, right in zip(pixels, reference_pixels[reference_name])
-            )
-            ranked.append((score, codepoint))
-        if not ranked:
+        if not reference_index["entries"]:
             raise ExtractionError(
                 f"Không tìm thấy candidate cho xref={xref}, glyph={name}, "
                 f"reference={reference_path.name}"
             )
-        ranked.sort()
-        codepoint = ranked[0][1]
+        codepoint = _closest_reference_codepoint(pixels, reference_index, reference_path)
         profile[digest] = {
             "glyph": name,
             "codepoint": codepoint,
@@ -259,7 +307,7 @@ def build_glyph_profile(
         }
         profile: dict[str, dict] = {}
         reference_font_cache: dict[str, tuple[Path, TTFont]] = {}
-        reference_pixel_cache: dict[int, dict[str, bytes]] = {}
+        reference_cache: dict[int, dict[str, object]] = {}
         for xref, used_cids in sorted(used_cids_by_xref.items()):
             row = fonts_by_xref[xref]
             font_name = row[3]
@@ -275,7 +323,7 @@ def build_glyph_profile(
                 reference_path,
                 reference_font,
                 profile,
-                reference_pixel_cache,
+                reference_cache,
                 used_cids,
             )
     finally:

@@ -209,6 +209,8 @@ python -m text_extraction.main \
 
 Both commands discover compatible embedded/reference fonts and refresh `encoded_fonts`. Paths inside a config are resolved relative to that config file.
 
+Glyph-profile runtime depends primarily on the number of glyphs in the configured reference fonts, not only on the PDF page count. Large CJK fonts may contain tens of thousands of candidates even when the PDF has only a few pages. The builder first attempts an exact normalized-outline signature match, which avoids rasterization when the embedded and reference outlines are identical. Only unresolved glyphs use visual matching; reference glyphs are rasterized once per font and L1 pixel scores are then computed with NumPy in bounded batches. Log output reports when this slower fallback is required. Reuse the generated profile for subsequent extractions from the same PDF/font set instead of rebuilding it for every run.
+
 The primary output is a UTF-8 JSON array:
 
 ```json
@@ -267,8 +269,21 @@ Detection performs four operations:
 
 1. Locate ordinary character boxes with the OCR detector
 2. Locate damaged-character boxes with DINO
-3. Remove an ordinary box when its IoU with a damaged box is at least `0.5`
+3. Remove an ordinary box when its IoU with a damaged box is at least `0.5`; when a small damaged box is contained within a larger ordinary character box, promote the larger box to `damaged`
 4. Fuse the remaining boxes and propose a layout-aware reading order
+
+### Difference from the original AutoHDR fusion
+
+This repository intentionally modifies the fusion rule used by the original AutoHDR pipeline. The detection models are unchanged; the difference is only in the post-processing of DINO damaged-region boxes and OCR character boxes.
+
+| Case | Original AutoHDR fusion | Fusion in this repository |
+|---|---|---|
+| Damaged box and OCR box have IoU ≥ `0.5` | Remove the OCR box and keep the DINO damaged-box geometry | Same behavior: remove the OCR box and keep the DINO box as `damaged` |
+| A small damaged box is contained in a substantially larger OCR box, so standard IoU is below `0.5` | Keep both boxes because the IoU threshold is not reached | If their intersection covers at least `80%` of the smaller box, remove the small DINO box and promote the larger OCR box to `damaged` |
+
+The containment extension is needed because standard IoU can be low even when a small DINO damage detection lies entirely inside the OCR box for the same character. Keeping both produces a small red box inside a large green box. Promoting the OCR geometry instead produces one full-character red box, which is the intended annotation region. For example, a damaged box `[15, 15, 25, 25]` inside an OCR box `[10, 10, 30, 30]` has IoU `0.25` but smaller-box coverage `1.0`; the fused output is therefore `[10, 10, 30, 30]` with status `damaged`.
+
+This is a project-specific post-processing deviation from the original AutoHDR fusion and should be taken into account when comparing detection counts or bounding-box geometry with results produced directly by AutoHDR.
 
 Run detection for one image independently:
 

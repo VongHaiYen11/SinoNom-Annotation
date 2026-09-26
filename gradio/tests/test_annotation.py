@@ -156,6 +156,8 @@ class Integration(unittest.TestCase):
 
     def test_full_workflow_roundtrip_and_edit(self):
         e=self.engine;s=e.open_image(self.image);s=e.apply(s,'save_content');s=e.apply(s,'next')
+        self.assertTrue(s['image_url'].startswith('gradio_api/file='))
+        self.assertNotIn('base64',s['image_url'])
         detected={'image':self.image.name,
                   'bounding_boxes':{str(i+1):dict(bbox=[i*10,0,i*10+9,9],status='intact') for i in range(3)},
                   'reading_order':[1,2,3]}

@@ -1,6 +1,7 @@
 """Run from any directory: python gradio/app.py --image-dir ... --source-json ..."""
 import argparse
 import base64
+import html
 import json
 import logging
 import sys
@@ -18,6 +19,7 @@ from annotation.export import collect_annotations, collect_content_documents, sa
 from ui.editor import snapshot, SCRIPT, CSS
 from ui.presentation import APP_CSS, header, panel_heading, panel_summary, footer, status_rows, SECTION_LABELS
 from ui.fonts import FONT_FILES, FONT_PICKER, FONT_PICKER_SCRIPT
+from ui.icons import WARNING
 
 log = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -163,10 +165,10 @@ def create_app(options):
                     preview=gr.JSON(label='Image JSON',visible=False, elem_id='final-preview', elem_classes='han-nom-json')
                 message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
                 with gr.Row(elem_id='workflow-footer',elem_classes='button-group'):
-                    back=gr.Button('← Back', interactive=False, scale=0)
+                    back=gr.Button('Back', interactive=False, scale=0, elem_id='back-button')
                     footer_label=gr.HTML(footer(initial['active']))
                     save=gr.Button('Save image',visible=False,variant='primary', scale=0)
-                    next_button=gr.Button('Next →',variant='primary',interactive=False, scale=0)
+                    next_button=gr.Button('Next',variant='primary',interactive=False, scale=0, elem_id='next-button')
         # Preserve callback output slots while removing the normalized-text component.
         normalized=gr.State(None)
         outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,order_group,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table]
@@ -220,7 +222,7 @@ def create_app(options):
                 log.exception('Action %s rejected',action)
                 # Return a new revision even on errors, so the browser releases pending state.
                 ctx=deepcopy(ctx);ctx['active']['revision']+=1
-                return render(ctx,'⚠ '+str(exc))
+                return render(ctx,WARNING+' '+html.escape(str(exc)))
 
         def open_image(ctx,path,reset=False):
             try:
@@ -234,7 +236,7 @@ def create_app(options):
                 return render(ctx)
             except Exception as exc:
                 log.exception('Cannot open image')
-                return render(ctx,'⚠ '+str(exc))
+                return render(ctx,WARNING+' '+html.escape(str(exc)))
 
         event_args=dict(outputs=outputs,concurrency_id='annotation-actions',concurrency_limit=1)
         def save_folder():
@@ -309,4 +311,5 @@ if __name__=='__main__':
     logging.basicConfig(level=logging.INFO,format='%(levelname)s: %(message)s')
     args=parser().parse_args()
     create_app(args).queue().launch(server_name=args.server_name,server_port=args.port,share=args.share,css=APP_CSS,
-        theme=gr.themes.Base(font=['Arial', 'sans-serif'], font_mono=['monospace']), footer_links=[])
+        theme=gr.themes.Base(font=['Arial', 'sans-serif'], font_mono=['monospace']), footer_links=[],
+        allowed_paths=[str(Path(args.image_dir).resolve())])

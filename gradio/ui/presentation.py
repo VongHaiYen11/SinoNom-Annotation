@@ -3,13 +3,14 @@ import html
 from pathlib import Path
 from annotation.text_alignment import count_annotation_characters
 from .fonts import FONT_CSS
+from .icons import ALERT, CHECK, CIRCLE, DOCUMENT
 
 APP_CSS = FONT_CSS + (Path(__file__).parent / 'assets/workbench.css').read_text()
 LABELS = ('Image', 'Content', 'Bounding Boxes', 'Status', 'Reading Order', 'Crop', 'Review')
 SECTION_LABELS = {
-    'Nguyên văn chữ Hán Nôm': 'Original Han/Nom text',
-    'Phiên âm Hán Việt': 'Sino-Vietnamese transcription',
-    'Dịch nghĩa': 'Translation', 'Toát yếu': 'Summary', 'Chú thích': 'Notes',
+    'Nguyên văn chữ Hán Nôm': 'Nguyên văn chữ Hán Nôm',
+    'Phiên âm Hán Việt': 'Phiên âm Hán Việt',
+    'Dịch nghĩa': 'Dịch nghĩa', 'Toát yếu': 'Toát yếu', 'Chú thích': 'Chú thích',
 }
 
 
@@ -27,12 +28,12 @@ def header(state):
         active = index == step; done = complete[index - 1]
         cls = ' is-active' if active else ' is-complete' if done else ''
         current = ' aria-current="step"' if active else ''
-        mark = '✓' if done and not active else str(index)
+        mark = CHECK if done and not active else str(index)
         steps.append(f'<li class="stepper-item{cls}"{current}><span class="stepper-dot">{mark}</span>{label}</li>')
     return f'''<header class="app-header">
-      <div class="brand-lockup"><span class="brand-mark" aria-hidden="true">▧</span>
+      <div class="brand-lockup"><span class="brand-mark" aria-hidden="true">{DOCUMENT}</span>
         <div><h1>Sino-Nôm Annotation Tool</h1><div class="file-name"><span class="file-dot"></span>{filename}</div></div></div>
-      <div class="save-indicator">{'✓' if state['saved'] else '○'} {status}</div>
+      <div class="save-indicator">{CHECK if state['saved'] else CIRCLE}<span>{status}</span></div>
     </header><nav aria-label="Annotation workflow"><ol class="stepper">{''.join(steps)}</ol></nav>'''
 
 
@@ -48,7 +49,7 @@ def panel_summary(state):
     matched = state['workflow']['content_verified'] and len(boxes) == count and count > 0
     label = 'Counts match' if matched else 'Content not verified' if not state['workflow']['content_verified'] else 'Count mismatch'
     return f'''<section class="section panel-summary"><h3>Validation</h3>
-      <div class="validation-badge">{'✓' if matched else '!'} {label}</div>
+      <div class="validation-badge">{CHECK if matched else ALERT}<span>{label}</span></div>
       <dl><div><dt>Bounding boxes</dt><dd>{len(boxes)}</dd></div>
       <div><dt>Characters</dt><dd>{count}</dd></div></dl></section>'''
 

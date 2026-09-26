@@ -3,6 +3,7 @@ import html
 from pathlib import Path
 from annotation.reading_order import build_text_sequence
 from crop.crop import MAX_CROP_SIDE
+from .icons import ARROW_RIGHT, DOCUMENT
 
 SCRIPT = (Path(__file__).parent / 'assets/editor.js').read_text()
 CSS = (Path(__file__).parent / 'assets/editor.css').read_text()
@@ -10,7 +11,7 @@ CSS = (Path(__file__).parent / 'assets/editor.css').read_text()
 
 def snapshot(s):
     if not s.get('image'):
-        return dict(markup='''<div class="empty-workspace"><span class="empty-icon">▧</span>
+        return dict(markup=f'''<div class="empty-workspace"><span class="empty-icon">{DOCUMENT}</span>
             <h2>Select an image</h2></div>''',
             revision=s['revision'], image=None, step=1)
     step=s['current_step']; w,h=s['image_size']
@@ -25,11 +26,11 @@ def snapshot(s):
         selected_id = s['selected_box_id'] if s['selected_box_id'] in boxes else next(iter(boxes), None)
     filename=html.escape(s['image'])
     markup=f'''<div class="workbench-board"><div class="workspace-toolbar">
-        <div class="workspace-context"><span class="file-icon">▧</span><strong>{filename}</strong><span class="dimensions">{w} × {h} px</span></div>
+        <div class="workspace-context"><span class="file-icon">{DOCUMENT}</span><strong>{filename}</strong><span class="dimensions">{w} × {h} px</span></div>
         <div class="toolbar-tools"><span class="zoom-label" aria-live="polite">100%</span>
-        <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
-        <button type="button" data-zoom="in" aria-label="Zoom in">＋</button>
-        <button type="button" data-zoom="fit" aria-label="Fit image to view">⛶</button></div></div>
+        <button type="button" data-zoom="out" aria-label="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
+        <button type="button" data-zoom="in" aria-label="Zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg></button>
+        <button type="button" data-zoom="fit" aria-label="Fit image to view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3H3v3M10 3h3v3M6 13H3v-3M10 13h3v-3"/></svg></button></div></div>
         <div class="image-viewport"><svg class="annotation-canvas" viewBox="0 0 {w} {h}" role="img" aria-label="{filename} · annotation canvas" style="aspect-ratio:{w}/{h}">
         <image href="{s['image_url']}" width="{w}" height="{h}"/>'''
     # Scale labels/handles to image size so full-resolution scans remain editable.
@@ -44,7 +45,9 @@ def snapshot(s):
         markup+=f'''<g {identity_attr} class="{'selected-region' if selected else ''}"><title>{'Region' if not public_box else label} · {b['status']}</title>
             <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{color}" fill-opacity="{'.16' if selected else '.04'}" stroke="{color}" stroke-width="{'2.5' if selected else '1.5'}" vector-effect="non-scaling-stroke"{dashed}/>
             {f'<text x="{x1+2*unit}" y="{max(15*unit,y1-4*unit)}" fill="{color}" font-size="{15*unit}" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{2*unit}">{label}</text>' if label else ''}'''
-        if step in (3,6):
+        # Resize handles belong only to the active region. Rendering handles on
+        # every region makes the canvas look as though all boxes are selected.
+        if step == 6 or (step == 3 and selected):
             for n,(x,y) in enumerate([(x1,y1),(x2,y1),(x2,y2),(x1,y2)]):
                 markup+=f'<circle data-corner="{n}" cx="{x}" cy="{y}" r="{6*unit}" fill="{color}" stroke="#17191c" stroke-width="{1.5*unit}"/>'
         markup+='</g>'
@@ -75,7 +78,8 @@ def snapshot(s):
             for pos,key in enumerate(s['reading_order'],1):
                 box=s['bounding_boxes'][str(key)]
                 rows.append(f'<tr><td>{pos}</td><td>{key}</td><td>{box["bbox"]}</td><td><span class="table-status {box["status"]}">{box["status"]}</span></td><td class="table-character">{html.escape(s["annotations"][str(key)])}</td></tr>')
-            markup+='<section class="review-detail"><div class="review-text"><span class="eyebrow">FINAL TEXT</span><p>'+html.escape(build_text_sequence(s))+'</p></div><p class="order-sequence">Reading order: '+ ' → '.join(map(str,s['reading_order']))+'</p><div class="review-table-wrap"><table><thead><tr><th>Order</th><th>Box ID</th><th>BBox</th><th>Status</th><th>Annotation</th></tr></thead><tbody>'+''.join(rows)+'</tbody></table></div></section>'
+            order_separator = ARROW_RIGHT
+            markup+='<section class="review-detail"><div class="review-text"><span class="eyebrow">FINAL TEXT</span><p>'+html.escape(build_text_sequence(s))+'</p></div><p class="order-sequence"><span>Reading order:</span> '+ order_separator.join(map(str,s['reading_order']))+'</p><div class="review-table-wrap"><table><thead><tr><th>Order</th><th>Box ID</th><th>BBox</th><th>Status</th><th>Annotation</th></tr></thead><tbody>'+''.join(rows)+'</tbody></table></div></section>'
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=w,height=h,boxes=boxes,selected=selected_id,

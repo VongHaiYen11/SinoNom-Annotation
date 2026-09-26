@@ -8,7 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from text_detection.fusion import calculate_iou, fuse_localizations
+from text_detection.fusion import (calculate_iou, calculate_smaller_box_coverage,
+                                   fuse_localizations)
 from text_detection.main import build_detection_document, main
 from text_detection.pipeline import (
     _damage_boxes_from_prediction,
@@ -104,6 +105,19 @@ class TextDetectionTests(unittest.TestCase):
         self.assertEqual({0}, removed)
         self.assertEqual([[40, 10, 50, 30]], normal)
         self.assertEqual(damage_boxes + normal, fused)
+
+    def test_contained_damage_box_replaces_loose_ocr_box(self) -> None:
+        damage_boxes = [[15, 15, 25, 25]]
+        ocr_boxes = [[10, 10, 30, 30], [40, 10, 50, 30]]
+
+        # IoU alone is only 0.25, but the damaged region is fully contained.
+        self.assertAlmostEqual(calculate_iou(damage_boxes[0], ocr_boxes[0]), 0.25)
+        self.assertAlmostEqual(calculate_smaller_box_coverage(damage_boxes[0], ocr_boxes[0]), 1.0)
+        fused, normal, removed = fuse_localizations(damage_boxes, ocr_boxes)
+
+        self.assertEqual({0}, removed)
+        self.assertEqual([ocr_boxes[1]], normal)
+        self.assertEqual([ocr_boxes[0]] + normal, fused)
 
     def test_model_outputs_are_normalized_to_integer_xyxy_boxes(self) -> None:
         prediction = SimpleNamespace(

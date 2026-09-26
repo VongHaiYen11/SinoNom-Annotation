@@ -20,6 +20,18 @@ const send = (action, payload={}) => {
   element.setAttribute('aria-busy', 'true');
   trigger('action', {action, payload: {...payload, revision: props.value.revision, image: props.value.image}});
 };
+const showLocalSelection = group => {
+  if (!group) return;
+  element.querySelectorAll('[data-region-uid],[data-box-id]').forEach(candidate => {
+    const active = candidate === group;
+    candidate.classList.toggle('selected-region', active);
+    const rect = candidate.querySelector('rect');
+    if (rect) {
+      rect.setAttribute('fill-opacity', active ? '.16' : '.04');
+      rect.setAttribute('stroke-width', active ? '2.5' : '1.5');
+    }
+  });
+};
 watch('value', () => {
   pending = false; moving = null; dragged = null;
   element.style.opacity = '1'; element.setAttribute('aria-busy', 'false');
@@ -49,6 +61,7 @@ element.addEventListener('pointerdown', e => {
   const group=e.target.closest('[data-region-uid],[data-box-id]');
   const mode=props.value.step;
   const regionUid=group?.dataset.regionUid, id=regionUid || group?.dataset.boxId;
+  if (group && mode !== 6) showLocalSelection(group);
   if(group && ![3,6].includes(mode)) {
     send('select',regionUid?{uid:regionUid}:{id}); return;
   }

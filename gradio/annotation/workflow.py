@@ -1,15 +1,15 @@
 """Transactional application actions. UI receives only accepted state snapshots."""
-import base64
 import hashlib
 import json
 import logging
 from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
+from urllib.parse import quote
 from PIL import Image
 from .state import (new_state, set_verified_content, refresh_bbox_validation,
                     initialize_alignment, require, invalidate)
-from .text_extraction import (extract_source_content, annotation_text, edit_content_field,
+from .text_extraction import (annotation_text, edit_content_field,
                               save_source_content, content_document, save_content_document)
 from .text_alignment import count_annotation_characters
 from .bbox import add_bbox, update_bbox, delete_bbox
@@ -46,18 +46,44 @@ class Workflow:
     def __init__(self, options):
         self.options = options
         self.output = Path(options.output_dir)
+        self._source_records = None
+        self._source_mtime_ns = None
+        self._source_locations = None
+
+    def _cached_source_records(self):
+        """Avoid reparsing the complete extraction JSON for every opened image."""
+        source = Path(self.options.source_json)
+        mtime_ns = source.stat().st_mtime_ns
+        if self._source_records is None or mtime_ns != self._source_mtime_ns:
+            self._source_records = read_json(source)
+            self._source_mtime_ns = mtime_ns
+            locations = {}
+            for record_index, record in enumerate(self._source_records):
+                for face_index, face in enumerate(record.get('noi_dung', [])):
+                    locations.setdefault(str(face.get('ky_hieu')), []).append((record_index, face_index))
+            self._source_locations = locations
+        return self._source_records
+
+    def _source_content_for(self, image_name):
+        records = self._cached_source_records()
+        code = Path(image_name).stem
+        matches = self._source_locations.get(code, [])
+        if len(matches) != 1:
+            raise ValueError(f'Image code {code}: found {len(matches)} inscription faces; expected exactly one.')
+        record_index, face_index = matches[0]
+        record = deepcopy(records[record_index])
+        # Keep the same schema validation as the public extraction adapter.
+        annotation_text(record, code)
+        return dict(record=record, record_index=record_index, face_index=face_index, code=code)
 
     def open_image(self, path):
         state = new_state()
         path = Path(path).resolve()
         with Image.open(path) as im:
             size = list(im.size)
-            import io
-            stream = io.BytesIO()
-            im.convert('RGB').save(stream, format='JPEG')
-        located = extract_source_content(path.name, self.options.source_json)
+        located = self._source_content_for(path.name)
         state.update(image=path.name, image_path=str(path), image_size=size,
-                     image_url='data:image/jpeg;base64,' + base64.b64encode(stream.getvalue()).decode(),
+                     image_url='gradio_api/file=' + quote(str(path), safe='/'),
                      source_content=deepcopy(located['record']), source_baseline=deepcopy(located['record']),
                      draft_content=deepcopy(located['record']), code=located['code'], current_step=2)
         saved = self.output / (path.stem + '.json')
@@ -89,7 +115,17 @@ class Workflow:
         return state
 
     def apply(self, original, action, payload=None):
-        s = deepcopy(original)
+        # Selection changes only two scalar fields. Box editing changes the
+        # region/workflow branches. Avoid copying the potentially large source
+        # record for these high-frequency canvas actions.
+        if action == 'select':
+            s = original.copy()
+        elif action in ('add', 'update', 'delete', 'detect'):
+            s = original.copy()
+            s['regions'] = deepcopy(original['regions'])
+            s['workflow'] = original['workflow'].copy()
+        else:
+            s = deepcopy(original)
         payload = payload or {}
         if not s.get('image'):
             raise ValueError('Select an image first.')
@@ -113,6 +149,10 @@ class Workflow:
                 raise ValueError('Annotation text contains no characters after normalization.')
             content_doc = content_document(s['image'], s['code'], s['draft_content'])
             save_source_content(self.options.source_json, s['image'], s['source_baseline'], s['draft_content'])
+            # The persisted source changed; refresh lazily on the next image open.
+            self._source_records = None
+            self._source_mtime_ns = None
+            self._source_locations = None
             save_content_document(content_doc, self.output)
             loaded_mapping = deepcopy(s.get('loaded_region_uid_by_box_id', {}))
             set_verified_content(s, s['draft_content'], text)
