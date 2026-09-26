@@ -2,6 +2,7 @@
 import hashlib
 import json
 import logging
+import tempfile
 from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
@@ -46,6 +47,8 @@ class Workflow:
     def __init__(self, options):
         self.options = options
         self.output = Path(options.output_dir)
+        self._preview_cache = tempfile.TemporaryDirectory(prefix='vietnamica-preview-')
+        self.preview_dir = Path(self._preview_cache.name)
         self._source_records = None
         self._source_mtime_ns = None
         self._source_locations = None
@@ -81,9 +84,17 @@ class Workflow:
         path = Path(path).resolve()
         with Image.open(path) as im:
             size = list(im.size)
+            # Decode the full source, not an embedded thumbnail. PNG carries no
+            # EXIF orientation, so browser geometry agrees with detection's
+            # original pixel coordinate system. Cache across repeated opens.
+            stat = path.stat()
+            key = fingerprint(f'{path}:{stat.st_mtime_ns}:{stat.st_size}')
+            preview_path = self.preview_dir / (key + '.png')
+            if not preview_path.exists():
+                im.convert('RGB').save(preview_path, format='PNG', compress_level=1)
         located = self._source_content_for(path.name)
         state.update(image=path.name, image_path=str(path), image_size=size,
-                     image_url='gradio_api/file=' + quote(str(path), safe='/'),
+                     image_url='gradio_api/file=' + quote(str(preview_path), safe='/'),
                      source_content=deepcopy(located['record']), source_baseline=deepcopy(located['record']),
                      draft_content=deepcopy(located['record']), code=located['code'], current_step=2)
         saved = self.output / (path.stem + '.json')
@@ -215,7 +226,7 @@ class Workflow:
             if step == 1:
                 s['current_step'] = 2
             elif step == 2:
-                require(s, 'content_verified')
+                s = self.apply(s, 'save_content')
                 s['current_step'] = 3
             elif step == 3:
                 refresh_bbox_validation(s)

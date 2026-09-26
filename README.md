@@ -414,6 +414,7 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 ### Saving
 
 - **Save Content** updates the source JSON and adds/updates that image in the internal content registry. It does not download a file
+- **Next** on Content (Step 2) applies the currently displayed editor text and saves all draft content before entering Bounding Boxes (Step 3). If saving fails, it stays on Step 2 with the editor text preserved. Apply each edited section before switching sections; Next also includes those applied edits.
 - **Save Image** on Review commits bounding boxes, annotations, reading order and crop for that image
 - **Save All** creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
   - `text_annotations.json` for images committed with **Save Image**

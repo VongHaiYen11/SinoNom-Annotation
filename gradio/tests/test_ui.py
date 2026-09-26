@@ -105,6 +105,35 @@ class GradioCallbacks(unittest.TestCase):
                 self.assertEqual(rejected[0]['active']['draft_content'],ctx['active']['draft_content'])
             self.assertEqual([field['title'] for field in content_fields(record,'12305')],[titles[0]])
 
+    def test_next_saves_current_editor_and_stays_on_save_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve()
+            image=root/'12305.png';Image.new('RGB',(100,100),'white').save(image)
+            source=root/'source.json'
+            atomic_write(source,[{'noi_dung':[{'ky_hieu':'12305','chuyen_muc':[
+                {'tieu_de':'Nguyên văn chữ Hán Nôm','van_ban':'永'}]}]}])
+            options=parser().parse_args(['--image-dir',str(root),'--source-json',str(source),
+                                        '--output-dir',str(root/'out'),'--skip-detection'])
+            app=create_app(options)
+            functions=[f.fn for f in app.fns.values() if f.fn]
+            open_image=next(f for f in functions if f.__name__=='open_image')
+            advance_stream=next(f for f in functions if f.__name__=='next_with_progress')
+            def advance(*args):
+                return list(advance_stream(*args))[-1]
+            opened=open_image(dict(active=new_state(),drafts={}),str(image))
+            ctx=opened[0];path=opened[4]['choices'][0][1]
+            with patch('annotation.workflow.save_source_content',side_effect=OSError('write failed')), self.assertLogs('app',level='ERROR'):
+                failed=advance(ctx,path,'永\n寺')
+            self.assertEqual(failed[0]['active']['current_step'],2)
+            self.assertIn('write failed',failed[2]['value'])
+            self.assertEqual(content_fields(failed[0]['active']['draft_content'],'12305')[0]['value'],'永\n寺')
+            result=advance(failed[0],path,'永\n寺')
+            self.assertEqual(result[0]['active']['current_step'],3)
+            self.assertTrue(result[0]['active']['workflow']['content_verified'])
+            self.assertEqual(json.loads(source.read_text())[0]['noi_dung'][0]['chuyen_muc'][0]['van_ban'],'永\n寺')
+            saved=json.loads((root/'out/.state/content.json').read_text())
+            self.assertEqual(saved[0]['content']['Nguyên văn chữ Hán Nôm'],'永\n寺')
+
     def test_skip_detection_never_calls_model(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder).resolve()
@@ -119,6 +148,9 @@ class GradioCallbacks(unittest.TestCase):
             open_image=next(f for f in functions if f.__name__=='open_image')
             on_action=next(f for f in functions if f.__name__=='on_action')
             def action(name):
+                if name == 'next':
+                    stream=next(f for f in functions if f.__name__=='next_with_progress')
+                    return lambda ctx: list(stream(ctx))[-1]
                 return next(f for f in functions if f.__name__=='<lambda>' and f.__defaults__==(name,))
             ctx=open_image(dict(active=new_state(),drafts={}),str(image))[0]
             ctx=action('save_content')(ctx)[0]
@@ -158,11 +190,19 @@ class GradioCallbacks(unittest.TestCase):
             ctx=result[0];self.assertEqual(ctx['active']['current_step'],2)
             lambdas=[f for f in functions if f.__name__=='<lambda>']
             def action(name):
+                if name == 'next':
+                    stream=next(f for f in functions if f.__name__=='next_with_progress')
+                    return lambda ctx: list(stream(ctx))[-1]
                 return next(f for f in lambdas if f.__defaults__==(name,))
             ctx=action('save_content')(ctx)[0]
             self.assertTrue(ctx['active']['workflow']['content_verified'])
-            with self.assertLogs('app',level='ERROR'), patch('annotation.workflow.detect',side_effect=RuntimeError('fixture model unavailable')):
-                result=action('next')(ctx)
+            with self.assertLogs('app',level='ERROR'), patch('annotation.workflow.detect',side_effect=RuntimeError('fixture model unavailable')) as detector:
+                stream=next(f for f in functions if f.__name__=='next_with_progress')(ctx)
+                running=next(stream)
+                self.assertEqual(running[0]['active']['current_step'],3)
+                self.assertEqual(running[2]['value'],'Running detection…')
+                detector.assert_not_called()
+                result=next(stream)
             ctx=result[0];self.assertEqual(ctx['active']['current_step'],3)
             self.assertIn('fixture model unavailable',result[2]['value'])
             add=action('add')

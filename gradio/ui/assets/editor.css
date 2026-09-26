@@ -29,7 +29,7 @@ button:focus-visible { outline: 2px solid #ff7a1a; outline-offset: 3px; }
 /* Shared spacing hierarchy inside the isolated canvas component. */
 .workbench-board { display: flex; flex-direction: column; height: 100%; min-height: 100%; }
 .workspace-toolbar { padding: 16px 20px; gap: 16px; }
-.image-viewport { flex: 1 1 auto; height: auto; min-height: clamp(520px, calc(100dvh - 280px), 1200px); max-height: none; padding: 20px; }
+.image-viewport { flex: 1 1 auto; height: auto; min-height: clamp(520px, calc(100dvh - 280px), 1200px); max-height: none; padding: 20px; contain: size; }
 .source-preview { margin: 24px 20px 0; padding: 18px; }.source-preview p { margin-top: 12px; }
 .order-editor { margin-top: 28px; padding: 20px; }.order-heading { margin-bottom: 20px; }
 .cards { gap: 12px; padding: 4px; }.card { padding: 12px; min-width: 56px; height: 68px; }

@@ -158,6 +158,12 @@ class Integration(unittest.TestCase):
         e=self.engine;s=e.open_image(self.image);s=e.apply(s,'save_content');s=e.apply(s,'next')
         self.assertTrue(s['image_url'].startswith('gradio_api/file='))
         self.assertNotIn('base64',s['image_url'])
+        from urllib.parse import unquote
+        preview_path = unquote(s['image_url'].split('file=',1)[1])
+        with Image.open(preview_path) as preview_image:
+            self.assertEqual(preview_image.size,tuple(s['image_size']))
+            self.assertEqual(preview_image.format,'PNG')
+            self.assertEqual(preview_image.getpixel((0,0)),(255,255,255))
         detected={'image':self.image.name,
                   'bounding_boxes':{str(i+1):dict(bbox=[i*10,0,i*10+9,9],status='intact') for i in range(3)},
                   'reading_order':[1,2,3]}
@@ -226,7 +232,10 @@ class Integration(unittest.TestCase):
         s=self.engine.open_image(self.image);before=deepcopy(s)
         with self.assertRaises(ValueError):self.engine.apply(s,'select',{'id':'1','image':s['image'],'revision':99})
         self.assertEqual(s,before)
-        with self.assertRaises(ValueError):self.engine.apply(s,'next')
+        advanced=self.engine.apply(s,'next')
+        self.assertEqual(advanced['current_step'],3)
+        self.assertTrue(advanced['workflow']['content_verified'])
+        self.assertEqual(s,before)
 
     def test_duplicate_json(self):
         self.source.write_text('{"1":{},"1":{}}')

@@ -20,6 +20,7 @@ from ui.editor import snapshot, SCRIPT, CSS
 from ui.presentation import APP_CSS, header, panel_heading, panel_summary, footer, status_rows, SECTION_LABELS
 from ui.fonts import FONT_FILES, FONT_PICKER, FONT_PICKER_SCRIPT
 from ui.icons import WARNING
+from ui import image_preview
 
 log = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -88,6 +89,7 @@ def create_app(options):
     # Expose only the requested font assets, regardless of the working directory.
     gr.set_static_paths(paths=[path for path in FONT_FILES.values() if path.is_file()])
     engine=Workflow(options)
+    gr.set_static_paths(paths=[engine.preview_dir])
     skip_detection=getattr(options,'skip_detection',False)
     startup=''
     try:
@@ -111,6 +113,8 @@ def create_app(options):
                     with gr.Row(elem_classes='button-group'):
                         open_button=gr.Button('Open image', size='sm', min_width=0)
                         reset_button=gr.Button('Reset draft', size='sm', min_width=0)
+                    preview_modal=gr.HTML(value='', html_template=image_preview.MARKUP,
+                                          css_template=image_preview.CSS, js_on_load=image_preview.SCRIPT)
                 with gr.Group(visible=False, elem_classes='section') as content_actions:
                     gr.Markdown('### Content')
                     save_content=gr.Button('Save content',variant='primary')
@@ -175,6 +179,7 @@ def create_app(options):
         # Preserve callback output slots while removing the normalized-text component.
         normalized=gr.State(None)
         outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,order_group,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table]
+        outputs.append(preview_modal)
 
         def render(ctx, msg=''):
             s=ctx['active']; step=s['current_step']; has=bool(s.get('image'))
@@ -198,15 +203,15 @@ def create_app(options):
                     gr.update(visible=step==6),json.dumps(s.get('crop')),gr.update(visible=step==7),
                     panel_heading(s),panel_summary(s),footer(s),gr.update(visible=step==2 and has),
                     gr.update(interactive=has and step>1),gr.update(interactive=has and step<7,visible=step<7),
-                    status_rows(s)]
+                    status_rows(s),s.get('image_url','')]
 
-        def run(ctx, action, payload=None):
+        def run(ctx, action, payload=None, auto_detect=True):
             try:
                 updated=engine.apply(ctx['active'],action,payload)
                 ctx=dict(ctx,active=updated)
                 msg=''
                 if action in ('save','save_content'):gr.Info('Saved.')
-                if action=='next' and updated['current_step']==3 and not updated['detection_loaded'] and not skip_detection:
+                if auto_detect and action=='next' and updated['current_step']==3 and not updated['detection_loaded'] and not skip_detection:
                     try:
                         ctx=dict(ctx,active=engine.apply(updated,'detect'))
                     except Exception as exc:
@@ -268,8 +273,38 @@ def create_app(options):
             }""")
         open_button.click(open_image,[session,image_choice],**event_args)
         reset_button.click(lambda c,p:open_image(c,p,True),[session,image_choice],**event_args)
-        for button,action in [(back,'back'),(next_button,'next'),(save,'save'),(save_content,'save_content'),(undo,'undo'),(restore,'original')]:
+        for button,action in [(back,'back'),(save,'save'),(save_content,'save_content'),(undo,'undo'),(restore,'original')]:
             button.click(lambda c,a=action:run(c,a),[session],**event_args)
+        def next_step(ctx, path=None, value=None, auto_detect=True):
+            if ctx['active']['current_step'] == 2 and path is not None:
+                try:
+                    updated = engine.apply(ctx['active'], 'field',
+                                           dict(path=json.loads(path), value=value))
+                    ctx = dict(ctx, active=updated)
+                except Exception as exc:
+                    result = render(ctx, WARNING+' '+html.escape(str(exc)))
+                    result[4] = gr.skip()
+                    result[5] = gr.skip()
+                    return result
+            result = run(ctx, 'next', auto_detect=auto_detect)
+            if result[0]['active']['current_step'] == 2:
+                # Keep the current section and unsaved input visible on failure.
+                result[4] = gr.skip()
+                result[5] = gr.skip()
+            return result
+        def next_with_progress(ctx, path=None, value=None):
+            result = next_step(ctx, path, value, auto_detect=False)
+            state = result[0]['active']
+            needs_detection = (state['current_step'] == 3 and
+                               not state['detection_loaded'] and not skip_detection)
+            if needs_detection:
+                result[2] = gr.update(value='Running detection…', visible=True)
+                result[29] = gr.update(interactive=False)
+                result[28] = gr.update(interactive=False)
+            yield result
+            if needs_detection:
+                yield run(result[0], 'detect')
+        next_button.click(next_with_progress,[session,field,field_value],**event_args)
         def choose_field(ctx,path):
             if not path:return ''
             s=ctx['active']
