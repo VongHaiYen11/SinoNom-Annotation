@@ -378,6 +378,19 @@ def create_app(options):
                     result[4] = gr.skip()
                     result[5] = gr.skip()
                     return result
+            if ctx['active']['current_step'] == 3:
+                try:
+                    boxes = frontend_boxes(selection)
+                    active, selected = frontend_selection(selection)
+                    if boxes:
+                        updated = engine.apply(ctx['active'], 'commit_boxes', {
+                            'boxes': boxes,
+                            'active': active,
+                            'selected': selected,
+                        })
+                        ctx = dict(ctx, active=updated)
+                except Exception as exc:
+                    return render(ctx, WARNING+' '+html.escape(str(exc)))
             if (ctx['active']['current_step'] == 3
                     and not ctx['active']['workflow']['bbox_valid']
                     and not source_mismatch_confirmed(ctx['active'])
@@ -483,6 +496,17 @@ def create_app(options):
                 return statuses
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local box statuses are invalid.')
+        def frontend_boxes(value):
+            try:
+                parsed=json.loads(value or '{}')
+                boxes=parsed.get('boxes',{})
+                if (not isinstance(boxes,dict)
+                        or any(not isinstance(uid,str) or not isinstance(bbox,list)
+                               or len(bbox) != 4 for uid,bbox in boxes.items())):
+                    raise ValueError
+                return boxes
+            except (ValueError,TypeError,AttributeError):
+                raise gr.Error('The local bounding boxes are invalid.')
         def frontend_crop(value):
             try:
                 parsed=json.loads(value or '{}')

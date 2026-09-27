@@ -27,6 +27,9 @@ const syncExternalControls = () => {
     statuses: Object.fromEntries(Object.entries(localBoxes).map(
       ([id, box]) => [id, box.status]
     )),
+    boxes: Object.fromEntries(Object.entries(localBoxes).map(
+      ([id, box]) => [id, [...box.bbox]]
+    )),
     crop: localBoxes.crop?.bbox || null,
   }));
   const active = activeBoxId && localBoxes[activeBoxId];
@@ -322,12 +325,15 @@ element.addEventListener('pointerup', () => {
     return;
   }
   if(state.kind==='drag' && state.result){
-    syncExternalControls();
-    send('commit_boxes',{boxes:state.result,active:activeBoxId,selected:[...selectedIds]}); return;
+    Object.entries(state.result).forEach(([id,box]) => {
+      localBoxes[id].bbox=[...box];
+    });
+    syncExternalControls(); return;
   }
   if(state.kind==='resize' && state.result && state.result[2]>state.result[0] && state.result[3]>state.result[1]){
+    localBoxes[state.id].bbox=[...state.result];
     syncExternalControls();
-    send('commit_boxes',{boxes:{[state.id]:state.result},active:activeBoxId,selected:[...selectedIds]}); return;
+    return;
   }
   if(state.kind==='crop-new'){
     state.rect.remove();

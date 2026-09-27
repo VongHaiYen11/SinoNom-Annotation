@@ -22,10 +22,11 @@ from PIL import Image
 
 
 class GradioCallbacks(unittest.TestCase):
-    def test_canvas_script_keeps_selection_local_and_commits_geometry_once(self):
+    def test_canvas_script_keeps_selection_and_geometry_local_until_next(self):
         script=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
         self.assertNotIn("send('select'",script)
-        self.assertIn("send('commit_boxes'",script)
+        self.assertNotIn("send('commit_boxes'",script)
+        self.assertIn('boxes: Object.fromEntries',script)
         self.assertIn("kind:'marquee'",script)
         self.assertIn('selectedIds = new Set()',script)
 
