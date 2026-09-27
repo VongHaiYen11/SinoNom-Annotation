@@ -20,7 +20,9 @@ from annotation.text_alignment import count_annotation_characters
 from annotation.export import (collect_annotations, collect_content_documents,
                                collect_source_mismatches, save_export_archive)
 from ui.editor import snapshot, SCRIPT, CSS
-from ui.presentation import APP_CSS, header, panel_heading, panel_summary, footer, status_rows, SECTION_LABELS
+from ui.presentation import (APP_CSS, app_identity, workflow_progress,
+                             panel_heading, panel_summary, footer,
+                             status_rows, SECTION_LABELS)
 from ui.fonts import FONT_FILES, FONT_PICKER, FONT_PICKER_SCRIPT
 from ui.icons import WARNING
 from ui import image_preview
@@ -127,9 +129,12 @@ def create_app(options):
     initial=dict(active=new_state(), drafts={})
     with gr.Blocks(title='Sino-Nôm Annotation Tool', fill_width=True, analytics_enabled=False) as app:
         session=gr.State(initial)
-        with gr.Row(elem_id='header-row'):
-            progress=gr.HTML(header(initial['active']), elem_id='app-chrome')
-            save_all=gr.Button('Save all', variant='primary', scale=0, elem_id='save-all')
+        with gr.Column(elem_id='header-stack'):
+            with gr.Row(elem_id='topbar'):
+                progress=gr.HTML(app_identity(initial['active']), elem_id='app-chrome')
+                save_all=gr.Button('Save all', variant='primary', scale=0, elem_id='save-all')
+            workflow_chrome=gr.HTML(workflow_progress(initial['active']),
+                                    elem_id='workflow-chrome')
         download_payload=gr.Textbox(visible=False)
         # This remains mounted across every callback, so only one loading modal is shown.
         loading_modal=gr.HTML(value=LOADING_HIDDEN, elem_id='global-loading-host')
@@ -237,6 +242,7 @@ def create_app(options):
         normalized=gr.State(None)
         outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,order_group,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table,
                  mismatch_group,mismatch_type,mismatch_note,confirm_mismatch,clear_mismatch]
+        outputs.append(workflow_chrome)
         outputs.append(preview_modal)
         outputs.append(loading_modal)
 
@@ -257,7 +263,7 @@ def create_app(options):
             final=(final_source_mismatch_document(s) if mismatch else final_document(s)) if step==7 else None
             issue=s.get('source_mismatch') or {}
             counts_differ=bool(has and len(s['regions']) != count_annotation_characters(s['annotation_text']))
-            return [ctx,header(s),gr.update(value=msg,visible=bool(msg)),
+            return [ctx,app_identity(s),gr.update(value=msg,visible=bool(msg)),
                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
                     gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected),*box['bbox'],
                     gr.update(visible=step==4),gr.update(choices=region_ids,value=selected),box['status'],
@@ -269,7 +275,7 @@ def create_app(options):
                     gr.update(value=issue.get('issue_type')),
                     gr.update(value=issue.get('note','')),
                     gr.update(interactive=counts_differ),gr.update(visible=mismatch),
-                    s.get('image_url',''),LOADING_HIDDEN]
+                    workflow_progress(s),s.get('image_url',''),LOADING_HIDDEN]
 
         def run(ctx, action, payload=None, auto_detect=True):
             try:
@@ -293,7 +299,8 @@ def create_app(options):
                     'field': {0,2,6,7},
                 }.get(action)
                 if affected is not None:
-                    result = [value if i in affected | {1,25,len(result)-1} else gr.skip() for i,value in enumerate(result)]
+                    always={1,25,len(result)-3,len(result)-1}
+                    result = [value if i in affected | always else gr.skip() for i,value in enumerate(result)]
                 return result
             except Exception as exc:
                 log.exception('Action %s rejected',action)

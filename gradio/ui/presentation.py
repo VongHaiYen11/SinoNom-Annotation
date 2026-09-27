@@ -15,14 +15,21 @@ SECTION_LABELS = {
 }
 
 
-def header(state):
+def app_identity(state):
+    filename = html.escape(state['image'] or 'No image selected')
+    return f'''<header class="app-header">
+      <div class="brand-lockup"><span class="brand-mark" aria-hidden="true">文</span>
+        <div><h1>Sino-Nôm Annotation Tool</h1><div class="file-name">{filename}</div></div></div>
+    </header>'''
+
+
+def workflow_progress(state):
     step = state['current_step']; workflow = state['workflow']
     complete = [bool(state['image']), workflow['content_verified'],
                 workflow['content_verified'] and (workflow['bbox_valid'] or source_mismatch_confirmed(state)),
                 workflow['content_verified'] and workflow['status_valid'],
                 workflow['content_verified'] and workflow['reading_order_valid'],
                 state['crop_saved'], state['saved']]
-    filename = html.escape(state['image'] or 'No image selected')
     steps = []
     for index, label in enumerate(LABELS, 1):
         active = index == step; done = complete[index - 1]
@@ -31,10 +38,14 @@ def header(state):
         mark = CHECK if done and not active else str(index)
         steps.append(f'''<li class="stepper-item{cls}"{current}>
             <span class="stepper-dot">{mark}</span><span class="stepper-label">{label}</span></li>''')
-    return f'''<header class="app-header">
-      <div class="brand-lockup"><span class="brand-mark" aria-hidden="true">文</span>
-        <div><h1>Sino-Nôm Annotation Tool</h1><div class="file-name">{filename}</div></div></div>
-    </header><nav aria-label="Annotation workflow"><ol class="stepper">{''.join(steps)}</ol></nav>'''
+    return f'''<nav aria-label="Annotation workflow">
+      <ol class="stepper">{''.join(steps)}</ol>
+    </nav>'''
+
+
+def header(state):
+    """Combined markup retained for presentation-level tests and consumers."""
+    return app_identity(state) + workflow_progress(state)
 
 
 def panel_heading(state):

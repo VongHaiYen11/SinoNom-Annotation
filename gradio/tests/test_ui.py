@@ -43,8 +43,9 @@ class GradioCallbacks(unittest.TestCase):
 
     def test_sidebar_has_bounded_scroll_and_aligned_action_controls(self):
         css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
-        self.assertIn('#header-row::before',css)
-        self.assertIn('grid-template-rows: auto auto',css)
+        self.assertIn('#header-stack {',css)
+        self.assertIn('#topbar {',css)
+        self.assertIn('#workflow-chrome {',css)
         self.assertIn('grid-template-rows: minmax(0, 1fr)',css)
         self.assertIn('flex: 1 1 0',css)
         self.assertIn('overflow-y: auto',css)

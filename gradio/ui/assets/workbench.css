@@ -134,56 +134,50 @@ body,
 
 @keyframes global-loading-spin { to { transform: rotate(360deg); } }
 
-/* Identity/action and workflow are separate grid widgets without changing callbacks. */
-#header-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto auto;
-  align-items: stretch;
-  gap: var(--space-2) var(--space-4);
+/* Identity/action and workflow are separate Gradio widgets. */
+#header-stack {
+  display: flex !important;
+  flex: 0 0 auto;
+  flex-direction: column !important;
+  gap: var(--space-2) !important;
   width: 100%;
-  box-sizing: border-box;
+  min-width: 0;
   margin: 0;
   padding: 0;
-  overflow: visible;
   border: 0;
   background: transparent;
-  flex: 0 0 auto;
-  isolation: isolate;
 }
 
-#header-row::before {
-  grid-column: 1 / -1;
-  grid-row: 1;
-  z-index: 0;
+#topbar {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4) !important;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-panel);
-  content: '';
 }
 
-#app-chrome,
-#app-chrome > .prose { display: contents; }
+#app-chrome { min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; }
+#app-chrome > .prose { margin: 0; padding: 0; }
 
 .app-header {
   display: flex;
   align-items: center;
-  grid-column: 1;
-  grid-row: 1;
-  z-index: 1;
   min-width: 0;
-  padding: var(--space-3) 0 var(--space-3) var(--space-4);
+  padding: 0;
 }
 
 #save-all {
-  grid-column: 2;
-  grid-row: 1;
-  z-index: 1;
   width: auto;
   min-width: 96px;
   min-height: var(--button-height);
   align-self: center;
-  margin: 0 var(--space-4) 0 0;
+  margin: 0;
   padding: 0 var(--space-3);
   font-size: 12px;
   font-weight: 700;
@@ -191,15 +185,17 @@ body,
   white-space: nowrap;
 }
 
-#header-row nav {
-  grid-column: 1 / -1;
-  grid-row: 2;
+#workflow-chrome {
+  width: 100%;
   min-width: 0;
+  margin: 0;
   padding: 0 var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-panel);
 }
+#workflow-chrome > .prose { margin: 0; padding: 0; }
+#workflow-chrome nav { width: 100%; min-width: 0; }
 
 .brand-lockup { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .brand-lockup > div { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
@@ -442,11 +438,11 @@ button#next-button::after { transform: rotate(180deg); }
 @media (max-width: 700px) {
   .gradio-container { --page-padding: 12px; }
   .gradio-container .main { height: auto; overflow: visible; }
-  #header-row { grid-template-columns: minmax(0, 1fr) auto; }
-  .app-header { padding: var(--space-3) 0 var(--space-3) var(--space-3); }
+  #topbar { grid-template-columns: minmax(0, 1fr) auto; padding-inline: var(--space-3); }
+  .app-header { padding: 0; }
   .app-header h1 { font-size: 14px !important; }
   #save-all { min-width: 96px; }
-  #header-row nav { padding-inline: var(--space-3); }
+  #workflow-chrome { padding-inline: var(--space-3); }
   .stepper { align-items: flex-start; min-height: 44px; }
   .stepper-item { align-items: flex-start; white-space: normal; }
   .stepper-label { line-height: 1.2; }
