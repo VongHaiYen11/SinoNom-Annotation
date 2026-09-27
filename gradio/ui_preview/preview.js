@@ -1,4 +1,4 @@
-const steps = ['Image', 'Content', 'Bounding Boxes', 'Status', 'Reading Order', 'Crop', 'Review'];
+const steps = ['Image', 'Content', 'Bounding Boxes', 'Reading Order', 'Status', 'Crop', 'Review'];
 let current = 0;
 
 const controls = [

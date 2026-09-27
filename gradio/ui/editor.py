@@ -22,7 +22,7 @@ def snapshot(s):
         boxes = {'crop': dict(bbox=s['crop'], status='intact')}
         selected_id = 'crop'
         selected_ids = {'crop'}
-    elif step in (3, 4):
+    elif step == 3:
         boxes = s['regions']
         selected_id = s['selected_region_uid'] if s['selected_region_uid'] in boxes else next(iter(boxes), None)
         selected_ids = set(s.get('selected_region_uids', [])) or ({selected_id} if selected_id else set())
@@ -47,12 +47,14 @@ def snapshot(s):
     unit=max(w,h)/900
     for key,b in boxes.items():
         x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6; multi_selected=key in selected_ids
-        color='#ff7a1a' if step==6 else '#ef4444' if b['status']=='damaged' else '#22c55e'
-        public_box = step not in (3, 4, 6)
+        color=('#ff7a1a' if step==6 else '#f59e0b' if b['status']=='unknown'
+               else '#ef4444' if b['status']=='damaged' else '#22c55e')
+        public_box = step not in (3, 6)
         label=html.escape(key+' '+s['annotations'].get(key,'')) if public_box else ''
-        dashed=' stroke-dasharray="5 4"' if b['status']=='damaged' else ''
+        dashed=(' stroke-dasharray="5 4"' if b['status']=='damaged' else
+                ' stroke-dasharray="2 3"' if b['status']=='unknown' else '')
         identity_attr = (f'data-box-id="{key}" data-region-uid="{key}"'
-                         if step in (3, 4) else f'data-box-id="{key}"')
+                         if step == 3 else f'data-box-id="{key}"')
         group_classes=' '.join(filter(None,(
             'selected-region' if multi_selected else '',
             'active-region' if key==selected_id else '',
@@ -68,14 +70,14 @@ def snapshot(s):
         markup+='</g>'
     markup+='</svg></div>'
     if step in (3,4,5,7):
-        markup+='<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span></div>'
-    if step in (5,7):
+        markup+='<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown / MISS</span></div>'
+    if step in (4,7):
         source=html.escape(s['annotation_text'])
         verified=s['workflow']['content_verified']
         source_label=('Source text · mismatch confirmed' if source_mismatch else
                       'Verified annotation text' if verified else 'Unverified annotation text')
         markup+=f'<section class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></section>'
-        if step != 7:
+        if step == 4:
             chips=[]
             # Each chip owns a stable Box ID. Its DOM position mirrors the
             # reading-order array and is the only thing the client sorter moves.

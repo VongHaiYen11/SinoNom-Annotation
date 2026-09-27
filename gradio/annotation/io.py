@@ -61,14 +61,14 @@ def load_image_list(folder):
     return images
 
 
-def validate_document(doc, image, size):
+def validate_document(doc, image, size, allow_legacy_missing_status=False):
     if doc['image'] != image or not isinstance(doc['bounding_boxes'], dict):
         raise ValueError('Annotation does not belong to this image.')
     for key, box in doc['bounding_boxes'].items():
         if not key.isdecimal() or int(key) < 1 or str(int(key)) != key:
             raise ValueError('Box IDs must be canonical positive integers.')
         validate_coordinates(box['bbox'], size)
-        if box['status'] not in ('intact', 'damaged'):
+        if box['status'] not in ('intact', 'damaged', 'unknown'):
             raise ValueError('Invalid status.')
     expected_ids = {str(index) for index in range(1, len(doc['bounding_boxes']) + 1)}
     if set(doc['bounding_boxes']) != expected_ids:
@@ -81,6 +81,11 @@ def validate_document(doc, image, size):
         if any(not isinstance(c, str) or (c != MISSING_ANNOTATION and characters(c) != [c])
                for c in doc['annotations'].values()):
             raise ValueError('Each annotation must contain one valid character.')
+    for key, box in doc['bounding_boxes'].items():
+        missing = doc.get('annotations', {}).get(key) == MISSING_ANNOTATION
+        if ((missing and box['status'] != 'unknown' and not allow_legacy_missing_status)
+                or (not missing and box['status'] == 'unknown')):
+            raise ValueError('MISS boxes must be unknown; other boxes cannot be unknown.')
     resized_size = size
     if 'image_resize' in doc:
         from crop.crop import image_resize
@@ -122,7 +127,7 @@ def load_annotation(path, image, size):
     return doc
 
 
-def validate_source_mismatch_document(doc, image, size):
+def validate_source_mismatch_document(doc, image, size, allow_legacy_missing_status=False):
     required_keys = {
         'image', 'inscription_code', 'source_text', 'source_character_count',
         'bounding_box_count', 'issue_type', 'note', 'bounding_boxes',
@@ -159,12 +164,16 @@ def validate_source_mismatch_document(doc, image, size):
             raise ValueError('Missing-source annotations contain an invalid MISS count.')
     elif annotations is not None:
         raise ValueError('Only missing-source documents can contain annotations.')
-    validate_document(doc, image, size)
+    validate_document(doc, image, size, allow_legacy_missing_status)
     return doc
 
 
 def load_source_mismatch(path, image, size):
-    return validate_source_mismatch_document(read_json(path), image, size)
+    # Older exports predate the derived `unknown` status. Preserve their exact
+    # bytes/fingerprint on load; the workflow normalizes MISS statuses before
+    # the Reading Order screen is shown and all new exports are strict.
+    return validate_source_mismatch_document(
+        read_json(path), image, size, allow_legacy_missing_status=True)
 
 
 def final_document(state):

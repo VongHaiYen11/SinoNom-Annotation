@@ -15,7 +15,7 @@ from annotation.reading_order import update_reading_order, build_text_sequence, 
 from annotation.status import update_status, replace_statuses, confirm_status
 from annotation.io import (atomic_write, final_document,
                            final_source_mismatch_document, load_annotation,
-                           read_json, save_annotation)
+                           load_source_mismatch, read_json, save_annotation)
 from annotation.text_extraction import extract_source_content, save_source_content
 from annotation.workflow import Workflow
 from crop.crop import (auto_scale_crop, save_crop_coordinates, crop_document,
@@ -122,10 +122,22 @@ class Invariants(unittest.TestCase):
         self.assertEqual(s['annotations'],{
             '1':'永','4':'寺','2':'樂','3':'MISS','5':'MISS'})
         self.assertEqual(build_text_sequence(s),'永寺樂MISSMISS')
+        self.assertEqual(s['bounding_boxes']['3']['status'],'unknown')
+        self.assertEqual(s['bounding_boxes']['5']['status'],'unknown')
+        self.assertTrue(all(s['bounding_boxes'][key]['status'] != 'unknown'
+                            for key in ('1','2','4')))
+        with self.assertRaises(ValueError):
+            update_status(s,s['region_uid_by_box_id']['3'],'damaged')
         s['workflow']['reading_order_valid']=True
+        confirm_status(s)
         s['code']='12305'
         document=final_source_mismatch_document(s)
         self.assertEqual(document['annotations']['3'],'MISS')
+        legacy=deepcopy(document);legacy['bounding_boxes']['3']['status']='intact'
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'legacy.json';atomic_write(path,legacy)
+            loaded=load_source_mismatch(path,'12305.png',[100,100])
+        self.assertEqual(loaded['bounding_boxes']['3']['status'],'intact')
 
     def test_status_only(self):
         s=state();uid=list(s['regions'])[1];old=deepcopy(s);update_status(s,uid,'damaged')
@@ -185,7 +197,7 @@ class Invariants(unittest.TestCase):
     def test_save_guards(self):
         s=state()
         with self.assertRaises(ValueError):final_document(s)
-        confirm_status(s);initialize_alignment(s);update_reading_order(s,[1,3,2]);s['workflow']['reading_order_valid']=True
+        confirm_status(s);initialize_alignment(s);update_reading_order(s,[1,3,2]);s['workflow']['reading_order_valid']=True;confirm_status(s)
         self.assertEqual(final_document(s)['annotations']['2'],'樂')
         del s['annotations']['2']
         with self.assertRaises(ValueError):final_document(s)
@@ -230,13 +242,14 @@ class Integration(unittest.TestCase):
         with patch('annotation.workflow.detect',return_value=detected):
             s=e.apply(s,'detect')
         s=e.apply(s,'next');self.assertEqual(s['current_step'],4)
-        self.assertFalse(s['workflow']['alignment_valid'])
-        damaged_uid=list(s['regions'])[1]
-        s=e.apply(s,'status',{'uid':damaged_uid,'status':'damaged'})
-        s=e.apply(s,'next');self.assertEqual(s['current_step'],5)
         self.assertTrue(s['workflow']['alignment_valid'])
+        damaged_uid=list(s['regions'])[1]
         mapping=deepcopy(s['annotations'])
         s=e.apply(s,'reorder',{'order':[1,3,2]});s=e.apply(s,'next')
+        self.assertEqual(s['current_step'],5)
+        damaged_box_id=s['box_id_by_region'][damaged_uid]
+        s=e.apply(s,'status',{'id':damaged_box_id,'status':'damaged'})
+        s=e.apply(s,'next')
         self.assertEqual(s['current_step'],6)
         self.assertNotEqual(s['annotations'],mapping)
         self.assertEqual(s['annotations'],{'1':'永','3':'寺','2':'樂'})
@@ -268,7 +281,7 @@ class Integration(unittest.TestCase):
         self.assertEqual(s['annotations'],{})
         self.assertFalse(s['workflow']['reading_order_valid'])
         s=e.apply(s,'next');self.assertEqual(s['current_step'],4)
-        s=e.apply(s,'next');self.assertEqual(s['annotations'],{'1':'永','2':'樂','3':'寺','4':'文'})
+        self.assertEqual(s['annotations'],{'1':'永','2':'樂','3':'寺','4':'文'})
 
     def test_seven_step_gates_and_crop_independence(self):
         e=self.engine;s=e.open_image(self.image)
@@ -277,9 +290,10 @@ class Integration(unittest.TestCase):
         with self.assertRaises(ValueError):e.apply(s,'next')
         s=e.apply(s,'add',{'bbox':[40,0,50,10]})
         s=e.apply(s,'next');self.assertEqual(s['current_step'],4)
-        with self.assertRaises(ValueError):e.apply(s,'reorder',{'order':[1,3,2]})
-        s=e.apply(s,'next');self.assertEqual(s['current_step'],5)
+        s=e.apply(s,'reorder',{'order':[1,3,2]})
         with self.assertRaises(ValueError):e.apply(s,'reorder',{'order':[1,1,2]})
+        s=e.apply(s,'next');self.assertEqual(s['current_step'],5)
+        with self.assertRaises(ValueError):e.apply(s,'reorder',{'order':[1,2,3]})
         s=e.apply(s,'next');self.assertEqual(s['current_step'],6)
         with self.assertRaises(ValueError):e.apply(s,'save')
         with self.assertRaises(ValueError):e.apply(s,'crop',{'bbox':[0,0,101,100]})
@@ -324,8 +338,8 @@ class Integration(unittest.TestCase):
                 'issue_type':'missing_source_characters','note':''})
         s=e.apply(s,'confirm_source_mismatch',{
             'issue_type':'wrong_source_content','note':'PDF source does not match the image'})
-        s=e.apply(s,'next');s=e.apply(s,'next')
-        self.assertEqual(s['current_step'],5)
+        s=e.apply(s,'next')
+        self.assertEqual(s['current_step'],4)
         self.assertEqual(s['annotations'],{})
         s=e.apply(s,'reorder',{'order':[2,1]})
         s=e.apply(s,'next');s=e.apply(s,'next')
@@ -334,6 +348,7 @@ class Integration(unittest.TestCase):
         self.assertEqual(document['source_character_count'],3)
         self.assertEqual(document['bounding_box_count'],2)
         self.assertEqual(document['reading_order'],[2,1])
+        s=e.apply(s,'next')
         s=e.apply(s,'save')
         mismatch_path=self.root/'out/source_mismatches/12305.json'
         self.assertTrue(mismatch_path.exists())

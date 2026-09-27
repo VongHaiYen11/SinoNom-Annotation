@@ -412,20 +412,20 @@ Open the local URL printed by Gradio (normally `http://127.0.0.1:7860`; a later 
 1. **🖼️ Image** — Select an image from the configured folder
 2. **📝 Content** — Verify and save the five configured sections: original Hán/Nôm, Sino-Vietnamese transcription, translation, summary and notes
 3. **🔲 Bounding Boxes** — Detect regions, use Alt/Option-drag to add one, move/resize locally, or delete selected regions; compare box/character counts and record a source mismatch only when the extracted source is known to be wrong
-4. **🏷️ Status** — Select regions and mark them `intact` or `damaged`; canvas colors update immediately and Next commits all current statuses
-5. **🔢 Reading Order** — Spatially order the regions, assign Box IDs `1..n`, align verified text and allow drag-and-drop reordering
+4. **🔢 Reading Order** — Spatially order the regions, assign Box IDs `1..n`, align verified text and allow drag-and-drop reordering
+5. **🏷️ Status** — Review the final box/character mapping and mark ordinary boxes `intact` or `damaged`; `MISS` boxes are automatically `unknown`
 6. **✂️ Crop** — Adjust the orange crop frame on the original image; when its longest side exceeds 4096 pixels, export scales it down proportionally and records the scale factors
 7. **✅ Review** — Inspect the annotated canvas, final text/JSON and save the image object
 
 The browser keeps transient geometry, selection, reading-order and crop edits for responsive interaction; Next validates and commits the relevant local snapshot to the authoritative Python state. Before Reading Order, every editable region has a hidden `region_uid`, so edits do not depend on unstable public Box IDs. Entering Reading Order spatially sorts the committed regions and assigns contiguous Box IDs from `1` to `n`. The editor renders the current order as compact, horizontally flowing chips that wrap across rows. Dragging moves the stable Box ID chip through that sequence and reflows nearby chips locally; no Python callback runs during pointer movement. Dropping synchronizes the resulting ID array to the Gradio bridge. **Apply Changes** commits the mapping and redraws the canvas, while Next also commits the visible local mapping before continuing. Source characters are reassigned by reading-order position: the first character goes to the first ordered Box ID, the second character to the second ordered Box ID, and so on.
 
-The normal path requires exactly one source character per box. When there are more boxes than source characters, selecting `missing_source_characters` creates enough `MISS` tags to make the tag count equal the box count; those tags can be reordered with normal characters and are written to `annotations`. Other problems can be recorded as `wrong_source_content` or `other` without inventing a character mapping. Selecting a mismatch type is sufficient for Next to confirm it automatically; the explicit Confirm button remains available. Changing source text or adding, deleting, or detecting boxes clears the confirmation.
+The normal path requires exactly one source character per box. When there are more boxes than source characters, selecting `missing_source_characters` creates enough `MISS` tags to make the tag count equal the box count; those tags can be reordered with normal characters and are written to `annotations`. A box currently assigned `MISS` is always given the derived status `unknown` and rendered yellow. Moving `MISS` transfers that derived status to its new box; ordinary boxes remain editable as `intact` or `damaged`. Other problems can be recorded as `wrong_source_content` or `other` without inventing a character mapping. Selecting a mismatch type is sufficient for Next to confirm it automatically; the explicit Confirm button remains available. Changing source text or adding, deleting, or detecting boxes clears the confirmation.
 
 If a region is added, deleted, moved or resized before alignment, Next commits the final geometry and builds the Box ID mapping, annotations and reading order. Status remains attached to each surviving region. Hidden `region_uid` values are never written to output JSON.
 
 Bounding-box manipulation is frontend-first. Selection, Ctrl/Cmd multi-selection, selection rectangles, dragging, resizing, group movement and deselection update the SVG immediately. Repeated drag/resize operations stay local—even after pointer-up—and Next submits one validated geometry snapshot. Alt/Option-drag creates a new region immediately; **Delete selected**, detection, and manually entered coordinates via **Update coordinates** also commit immediately. There is no separate Add Box button.
 
-Changing `intact`/`damaged` immediately switches the selected box between a solid green and dashed red outline and persists that edit to the Python session. Next atomically reconciles the complete canonical status map before Reading Order; there is no Update Status button.
+After Reading Order is fixed, changing `intact`/`damaged` immediately switches the selected ordinary box between a solid green and dashed red outline and persists that edit to the Python session. A `MISS` box shows a disabled `unknown` status and a dotted yellow outline. Next atomically reconciles the complete canonical status map before Crop; there is no Update Status button.
 
 Crop dragging follows the same model: moving, resizing, or drawing the orange frame updates only local state and never opens a loading modal. Next commits the current frame. The coordinate textbox mirrors the local frame, while **Apply crop** remains available for explicit coordinate entry. The desktop and mobile layouts use normal page scrolling rather than clipping long content into a fixed-height application shell.
 
@@ -436,7 +436,8 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 - **Save Content** updates the source JSON and adds/updates that image in the internal content registry. It does not download a file
 - **Next** on Content (Step 2) applies the currently displayed editor text and saves all draft content before entering Bounding Boxes (Step 3). If saving fails, it stays on Step 2 with the editor text preserved. Apply each edited section before switching sections; Next also includes those applied edits.
 - **Next** on Bounding Boxes commits the final locally dragged/resized geometry, validates the box/character relationship and auto-confirms the selected mismatch type when needed
-- **Next** on Status commits the complete local status map before assigning public Box IDs and entering Reading Order
+- **Next** on Reading Order commits the stable Box ID sequence before Status review
+- **Next** on Status commits the complete canonical status map before entering Crop
 - **Next** on Crop commits the current local orange frame; oversized crops are scaled only when the output document is built
 - **Save Image** on Review commits either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image
 - **Save All** creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
@@ -528,7 +529,7 @@ For example, four boxes aligned against three source characters may contain:
 }
 ```
 
-Moving the `MISS` card changes `reading_order`, identifying where the absent source character belongs without shifting subsequent characters onto the wrong boxes. A `wrong_source_content` or `other` record deliberately omits `annotations`, as shown below.
+Moving the `MISS` chip changes `reading_order`, identifying where the absent source character belongs without shifting subsequent characters onto the wrong boxes. Its destination box is saved with `"status": "unknown"` and rendered yellow. A `wrong_source_content` or `other` record deliberately omits `annotations`, as shown below.
 
 ```json
 [

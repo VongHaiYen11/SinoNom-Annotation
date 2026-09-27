@@ -42,7 +42,7 @@ const syncExternalControls = () => {
       (selector, index) => setInputValue(selector, active.bbox[index])
     );
   }
-  if (props.value.step === 4) {
+  if (props.value.step === 5) {
     const status = root.querySelector(`#status-radio input[value="${active.status}"]`);
     if (status && !status.checked) {
       syncingStatusControl = true;
@@ -58,14 +58,17 @@ const renderLocalStatus = (id, status) => {
   const group = groupFor(id);
   if (!box || !group) return;
   box.status = status;
-  const color = status === 'damaged' ? '#ef4444' : '#22c55e';
+  const color = status === 'unknown' ? '#f59e0b' : status === 'damaged' ? '#ef4444' : '#22c55e';
   const rect = group.querySelector('rect:not([data-image-resize-handle])');
   if (rect) {
     rect.setAttribute('fill', color);
     rect.setAttribute('stroke', color);
     if (status === 'damaged') rect.setAttribute('stroke-dasharray', '5 4');
+    else if (status === 'unknown') rect.setAttribute('stroke-dasharray', '2 3');
     else rect.removeAttribute('stroke-dasharray');
   }
+  const label = group.querySelector('text');
+  if (label) label.setAttribute('fill', color);
 };
 const renderSelection = (sync=true) => {
   element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
@@ -111,12 +114,18 @@ const renderLocalAnnotations = () => {
       item => item.dataset.boxId === String(boxId));
     if(!card)return;
     const label=labels[index] ?? '';
-    const status=localBoxes[String(boxId)]?.status || 'intact';
+    const box=localBoxes[String(boxId)];
+    const status=label==='MISS'?'unknown':box?.status==='unknown'?'intact':box?.status || 'intact';
+    if(box)box.status=status;
     const text=card.querySelector('.tile-character');
     if(text)text.textContent=label;
     card.classList.toggle('missing',label==='MISS');
+    card.classList.toggle('intact',status==='intact');
+    card.classList.toggle('damaged',status==='damaged');
+    card.classList.toggle('unknown',status==='unknown');
     card.setAttribute('aria-label',`Reading position ${index+1}, Box ${boxId}: ${label}, ${status}`);
     card.title=`Box ${boxId} · ${status}`;
+    renderLocalStatus(String(boxId),status);
   });
 };
 
@@ -159,7 +168,7 @@ resizeObserver.observe(element);
 
 root.addEventListener('change', event => {
   const input = event.target.closest('#status-radio input');
-  if (!input || props.value.step !== 4 || !activeBoxId) return;
+  if (!input || props.value.step !== 5 || !activeBoxId) return;
   renderLocalStatus(activeBoxId, input.value);
   syncExternalControls();
   // Status is canonical annotation data, so persist each user edit instead of
@@ -317,7 +326,7 @@ const finishOrderDrag = (commit=true) => {
 element.addEventListener('pointerdown', event => {
   if (pending || event.button !== 0) return;
   const chip=event.target.closest('[data-order-chip]');
-  if(chip && props.value.step===5){
+  if(chip && props.value.step===4){
     orderDrag={chip,container:chip.closest('.order-chips'),pointerId:event.pointerId,
       startX:event.clientX,startY:event.clientY,started:false};
     chip.setPointerCapture(event.pointerId);event.preventDefault();return;

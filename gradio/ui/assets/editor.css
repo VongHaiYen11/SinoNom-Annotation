@@ -89,6 +89,7 @@
 .status-legend span::before { width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
 .status-legend .intact { color: #22c55e; }
 .status-legend .damaged { color: #ef4444; }
+.status-legend .unknown { color: #f59e0b; }
 
 .source-preview { display: flex; flex-direction: column; gap: var(--space-3, 12px); margin: 0; padding: var(--space-6, 24px); border: 0; border-top: 1px solid var(--color-border, #303237); }
 .eyebrow { color: var(--color-muted, #a1a1aa); font-size: 9px; letter-spacing: 1px; }
@@ -140,6 +141,7 @@
 .order-chip.missing .tile-character { font-family: Arial, Helvetica, sans-serif !important; font-size: 11px; font-weight: 700; }
 .order-chip.intact { border-color: #22c55e; }
 .order-chip.damaged { border-color: #ef4444; border-style: dashed; }
+.order-chip.unknown { border-color: #f59e0b; border-style: dotted; background: #302116; }
 .order-chip.active,
 .order-chip:hover { border-color: var(--color-accent, #ff7a1a); background: #302116; }
 .order-chip.active { outline: 2px solid currentColor; outline-offset: 2px; }

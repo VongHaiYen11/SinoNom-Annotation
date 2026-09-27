@@ -211,7 +211,7 @@ def create_app(options):
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section']) as order_group:
                     gr.Markdown('### Reading order')
-                    gr.Markdown('Drag labels between fixed Box ID slots, then apply the change.',
+                    gr.Markdown('Drag stable Box ID chips into sequence, then apply the change.',
                                 elem_classes='sidebar-help')
                     apply_order=gr.Button('Apply Changes',variant='primary',
                                           elem_id='apply-reading-order')
@@ -267,17 +267,25 @@ def create_app(options):
                 ensure_ascii=False, indent=2,
             )
             region_ids=list(s['regions'])
-            selected=s['selected_region_uid'] if s['selected_region_uid'] in region_ids else (region_ids[0] if region_ids else None)
-            box=s['regions'].get(selected,dict(bbox=[0,0,1,1],status='intact'))
+            selected_region=(s['selected_region_uid'] if s['selected_region_uid'] in region_ids
+                             else (region_ids[0] if region_ids else None))
+            region_box=s['regions'].get(selected_region,dict(bbox=[0,0,1,1],status='intact'))
+            box_ids=list(s['bounding_boxes'])
+            selected_box=(s['selected_box_id'] if s['selected_box_id'] in box_ids
+                          else (box_ids[0] if box_ids else None))
+            status_box=s['bounding_boxes'].get(selected_box,dict(status='intact'))
+            missing=s['annotations'].get(selected_box)=='MISS'
+            status_choices=['unknown'] if missing else ['intact','damaged']
             mismatch=source_mismatch_confirmed(s)
             final=(final_source_mismatch_document(s) if mismatch else final_document(s)) if step==7 else None
             issue=s.get('source_mismatch') or {}
             counts_differ=bool(has and len(s['regions']) != count_annotation_characters(s['annotation_text']))
             return [ctx,app_identity(s),gr.update(value=msg,visible=bool(msg)),
                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
-                    gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected),*box['bbox'],
-                    gr.update(visible=step==4),gr.update(choices=region_ids,value=selected),box['status'],
-                    gr.update(visible=step==5),json.dumps(s['reading_order']),gr.update(value=final,visible=step==7),
+                    gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected_region),*region_box['bbox'],
+                    gr.update(visible=step==5),gr.update(choices=box_ids,value=selected_box),
+                    gr.update(choices=status_choices,value=status_box['status'],interactive=not missing),
+                    gr.update(visible=step==4),json.dumps(s['reading_order']),gr.update(value=final,visible=step==7),
                     gr.update(visible=step==6),json.dumps(s.get('crop')),gr.update(visible=step==7),
                     panel_heading(s),panel_summary(s),footer(s),gr.update(visible=step==2 and has),
                     gr.update(interactive=has and step>1),gr.update(interactive=has and step<7,visible=step<7),
@@ -410,7 +418,7 @@ def create_app(options):
                     ctx = dict(ctx, active=updated)
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
-            if ctx['active']['current_step'] == 4:
+            if ctx['active']['current_step'] == 5:
                 try:
                     active, _ = frontend_selection(selection)
                     statuses = {
@@ -421,7 +429,9 @@ def create_app(options):
                     # freshest value when its bridge update and the click
                     # happen in the same browser tick.
                     if active:
-                        statuses[active] = status_value
+                        region_uid=ctx['active']['region_uid_by_box_id'].get(str(active))
+                        if region_uid:
+                            statuses[region_uid] = status_value
                     # Every earlier radio edit is already persisted. Reconcile
                     # the full canonical map atomically, using only the active
                     # radio as a last-tick fallback; a stale browser bridge must
@@ -432,7 +442,7 @@ def create_app(options):
                     ctx = dict(ctx, active=updated)
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
-            if ctx['active']['current_step'] == 5:
+            if ctx['active']['current_step'] == 4:
                 try:
                     local_order = frontend_reading_order(selection)
                     if local_order is not None and local_order != ctx['active']['reading_order']:

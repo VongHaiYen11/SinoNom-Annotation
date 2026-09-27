@@ -13,15 +13,35 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from app import create_app, parser, resolve_app_paths
 import gradio as gr
-from annotation.state import new_state
+from annotation.state import (new_state, set_verified_content,
+                              refresh_bbox_validation, initialize_alignment)
+from annotation.bbox import add_bbox
+from annotation.status import confirm_status
 from annotation.io import atomic_write
 from annotation.text_extraction import content_fields
 from annotation.workflow import Workflow
 from ui.presentation import SECTION_LABELS, header
+from ui.editor import snapshot
 from PIL import Image
 
 
 class GradioCallbacks(unittest.TestCase):
+    def test_miss_box_is_derived_unknown_and_rendered_yellow(self):
+        state=new_state();state.update(image='12305.png',image_size=[100,100],
+                                      image_url='image.jpg',current_step=4)
+        set_verified_content(state,{},'永寺')
+        for x in (0,20,40):add_bbox(state,[x,0,x+10,10])
+        state['source_mismatch']={
+            'source_text':state['annotation_text'],'source_character_count':2,
+            'bounding_box_count':3,'issue_type':'missing_source_characters','note':''}
+        refresh_bbox_validation(state);confirm_status(state);initialize_alignment(state)
+        missing_id=next(key for key,value in state['annotations'].items() if value=='MISS')
+        self.assertEqual(state['bounding_boxes'][missing_id]['status'],'unknown')
+        markup=snapshot(state)['markup']
+        self.assertIn(f'<title>{missing_id} MISS · unknown</title>',markup)
+        self.assertIn('stroke="#f59e0b"',markup)
+        self.assertIn('Unknown / MISS',markup)
+
     def test_canvas_script_keeps_selection_and_geometry_local_until_next(self):
         script=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
         self.assertNotIn("send('select'",script)
@@ -48,7 +68,7 @@ class GradioCallbacks(unittest.TestCase):
         self.assertEqual(markup.count('class="stepper-item'),7)
         self.assertEqual(markup.count('class="stepper-label"'),7)
         self.assertIn('aria-current="step"',markup)
-        for label in ('Image','Content','Bounding Boxes','Status','Reading Order','Crop','Review'):
+        for label in ('Image','Content','Bounding Boxes','Reading Order','Status','Crop','Review'):
             self.assertIn(f'>{label}</span>',markup)
 
     def test_sidebar_has_bounded_scroll_and_aligned_action_controls(self):
@@ -218,7 +238,7 @@ class GradioCallbacks(unittest.TestCase):
                                           'image':active['image']})))[0]
                 ctx=action('next')(ctx)[0]
                 self.assertEqual(ctx['active']['current_step'],4)
-                self.assertEqual(ctx['active']['annotations'],{})
+                self.assertEqual(ctx['active']['annotations'],{'1':'永'})
                 ctx=action('next')(ctx)[0]
                 self.assertEqual(ctx['active']['annotations'],{'1':'永'})
                 detector.assert_not_called()
@@ -274,33 +294,15 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(ctx['active']['regions'][first_uid]['bbox'],[2,2,12,12])
             result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],4)
-            self.assertTrue(result[15]['visible'])
-            self.assertNotIn('source-preview',result[8]['value']['markup'])
-            self.assertNotIn('data-card',result[8]['value']['markup'])
-            self.assertNotIn('永',result[8]['value']['markup'])
+            self.assertTrue(result[18]['visible'])
+            self.assertIn('source-preview',result[8]['value']['markup'])
+            self.assertIn('永',result[8]['value']['markup'])
             self.assertIn('data-box-id',result[8]['value']['markup'])
-            self.assertIn('data-region-uid',result[8]['value']['markup'])
+            self.assertNotIn('data-region-uid',result[8]['value']['markup'])
             region_uids=list(ctx['active']['regions'])
             first_damaged_uid,damaged_uid=region_uids[:2]
-            # Each completed radio edit is persisted before moving to another
-            # region. A lagging bridge must not be allowed to undo it on Next.
-            ctx=board_action(ctx,'status',{
-                'id':first_damaged_uid,'status':'damaged',
-            })[0]
-            local_selection=json.dumps({
-                'active':damaged_uid,'selected':[damaged_uid],
-                # Simulate a bridge update arriving one tick behind the radio.
-                'statuses':{uid:'intact' for uid in region_uids},
-            })
-            advance=next(f for f in functions if f.__name__=='next_with_progress')
-            result=list(advance(ctx,None,None,None,'',local_selection,'damaged'))[-1]
-            ctx=result[0]
-            self.assertEqual(ctx['active']['regions'][first_damaged_uid]['status'],'damaged')
-            self.assertEqual(ctx['active']['regions'][damaged_uid]['status'],'damaged')
-            self.assertEqual(ctx['active']['current_step'],5)
-            # Reading order is edited on fixed Box ID slots and explicitly
+            # Reading order is edited with stable Box ID chips and explicitly
             # committed with Apply Changes (or implicitly by Next).
-            self.assertTrue(result[18]['visible'])
             self.assertIn('class="order-chip',result[8]['value']['markup'])
             self.assertIn('class="order-chips"',result[8]['value']['markup'])
             self.assertIn('draggable="false"',result[8]['value']['markup'])
@@ -325,6 +327,24 @@ class GradioCallbacks(unittest.TestCase):
             self.assertIn('Box 2: 樂',reordered_markup)
             self.assertIn('Box 3: 寺',reordered_markup)
             result=action('next')(ctx);ctx=result[0]
+            self.assertEqual(ctx['active']['current_step'],5)
+            self.assertTrue(result[15]['visible'])
+            first_damaged_box_id=ctx['active']['box_id_by_region'][first_damaged_uid]
+            damaged_box_id=ctx['active']['box_id_by_region'][damaged_uid]
+            # Each completed radio edit is persisted before moving to another
+            # box. A lagging bridge must not undo it on Next.
+            ctx=board_action(ctx,'status',{
+                'id':first_damaged_box_id,'status':'damaged',
+            })[0]
+            local_selection=json.dumps({
+                'active':damaged_box_id,'selected':[damaged_box_id],
+                'statuses':{uid:'intact' for uid in region_uids},
+            })
+            advance=next(f for f in functions if f.__name__=='next_with_progress')
+            result=list(advance(ctx,None,None,None,'',local_selection,'damaged'))[-1]
+            ctx=result[0]
+            self.assertEqual(ctx['active']['regions'][first_damaged_uid]['status'],'damaged')
+            self.assertEqual(ctx['active']['regions'][damaged_uid]['status'],'damaged')
             self.assertEqual(ctx['active']['current_step'],6)
             self.assertTrue(result[21]['visible'])
             self.assertNotIn('data-image-resize-handle',result[8]['value']['markup'])
@@ -333,8 +353,6 @@ class GradioCallbacks(unittest.TestCase):
             result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],7)
             self.assertEqual(ctx['active']['reading_order'],[1,3,2])
-            damaged_box_id=ctx['active']['box_id_by_region'][damaged_uid]
-            first_damaged_box_id=ctx['active']['box_id_by_region'][first_damaged_uid]
             self.assertEqual(ctx['active']['bounding_boxes'][first_damaged_box_id]['status'],'damaged')
             self.assertEqual(ctx['active']['bounding_boxes'][damaged_box_id]['status'],'damaged')
             damaged_annotation=ctx['active']['annotations'][damaged_box_id]
@@ -408,10 +426,9 @@ class GradioCallbacks(unittest.TestCase):
             ctx=result[0]
             self.assertTrue(result[35]['visible'])
             self.assertIn('Source mismatch confirmed',result[25])
-            ctx=action('next')(ctx)[0]
             result=action('next')(ctx);ctx=result[0]
             self.assertIn('mismatch confirmed',result[8]['value']['markup'])
-            ctx=action('next')(ctx)[0];ctx=action('next')(ctx)[0]
+            ctx=action('next')(ctx)[0];ctx=action('next')(ctx)[0];ctx=action('next')(ctx)[0]
             self.assertEqual(ctx['active']['current_step'],7)
             self.assertEqual(ctx['active']['annotations'],{})
             ctx=action('save')(ctx)[0]

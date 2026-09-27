@@ -102,6 +102,8 @@ def initialize_alignment(state):
         state['annotations'] = {}
     state['reading_order'] = ids
     state['selected_box_id'] = state['box_id_by_region'].get(state['selected_region_uid'])
+    from .status import synchronize_missing_statuses
+    synchronize_missing_statuses(state)
     state['workflow']['alignment_valid'] = True
     state['workflow']['reading_order_valid'] = False
 

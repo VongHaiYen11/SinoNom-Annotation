@@ -12,7 +12,6 @@ def validate_reading_order(state):
 
 def update_reading_order(state, order):
     require(state, 'alignment_valid')
-    require(state, 'status_valid')
     candidate = dict(state, reading_order=order)
     if (not (validate_bbox_text_count(state) or source_mismatch_confirmed(state))
             or not validate_reading_order(candidate)):
@@ -26,6 +25,9 @@ def update_reading_order(state, order):
     elif (source_mismatch_confirmed(state)
           and state['source_mismatch']['issue_type'] == 'missing_source_characters'):
         state['annotations'] = align_text_with_missing(order, state['annotation_text'])
+    from .status import synchronize_missing_statuses
+    synchronize_missing_statuses(state)
+    state['workflow']['status_valid'] = False
     state['workflow']['reading_order_valid'] = False
     state['saved'] = False
 

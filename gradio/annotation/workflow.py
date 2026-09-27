@@ -16,7 +16,8 @@ from .text_extraction import (annotation_text, edit_content_field,
                               save_source_content, content_document, save_content_document)
 from .text_alignment import count_annotation_characters
 from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
-from .status import update_status, replace_statuses, confirm_status
+from .status import (update_status, replace_statuses, confirm_status,
+                     synchronize_missing_statuses)
 from .reading_order import update_reading_order, validate_reading_order
 from .io import (atomic_write, final_document,
                  final_source_mismatch_document, load_annotation,
@@ -215,6 +216,7 @@ class Workflow:
                 if 'issue_type' in document:
                     s['source_mismatch'] = _source_mismatch_from_document(document)
                 s['workflow'].update(bbox_valid=True, alignment_valid=True)
+                synchronize_missing_statuses(s)
             s.pop('loaded_document', None)
             s.pop('loaded_region_uid_by_box_id', None)
             refresh_bbox_validation(s)
@@ -287,7 +289,7 @@ class Workflow:
             s['source_mismatch'] = None
             invalidate(s, clear=True)
         elif action == 'select':
-            if step in (3, 4):
+            if step == 3:
                 uid = payload.get('uid') or payload.get('id')
                 if uid not in s['regions']:
                     raise ValueError('Region does not exist.')
@@ -310,16 +312,17 @@ class Workflow:
                 s['selected_box_id'] = key
                 s['selected_region_uid'] = s['region_uid_by_box_id'].get(key)
         elif action == 'status':
-            if step != 4:
-                raise ValueError('Edit status in Step 4.')
-            update_status(s, payload.get('uid') or payload.get('id') or s['selected_region_uid'], payload['status'])
+            if step != 5:
+                raise ValueError('Edit status in Step 5.')
+            box_id = str(payload.get('id') or s['selected_box_id'])
+            update_status(s, s['region_uid_by_box_id'].get(box_id), payload['status'])
         elif action == 'statuses':
-            if step != 4:
-                raise ValueError('Edit statuses in Step 4.')
+            if step != 5:
+                raise ValueError('Edit statuses in Step 5.')
             replace_statuses(s, payload.get('statuses'))
         elif action == 'reorder':
-            if step != 5:
-                raise ValueError('Edit reading order in Step 5.')
+            if step != 4:
+                raise ValueError('Edit reading order in Step 4.')
             update_reading_order(s, payload['order'])
         elif action == 'next':
             if step == 1:
@@ -331,18 +334,19 @@ class Workflow:
                 refresh_bbox_validation(s)
                 if not (s['workflow']['bbox_valid'] or source_mismatch_confirmed(s)):
                     raise ValueError('Match the box and character counts or confirm a source mismatch.')
-                s['current_step'] = 4
-            elif step == 4:
-                confirm_status(s)
                 if not s['workflow']['alignment_valid']:
                     initialize_alignment(s)
-                s['current_step'] = 5
-            elif step == 5:
-                require(s, 'status_valid')
+                s['current_step'] = 4
+            elif step == 4:
                 require(s, 'alignment_valid')
                 if not validate_reading_order(s):
                     raise ValueError('Invalid reading order.')
                 s['workflow']['reading_order_valid'] = True
+                s['current_step'] = 5
+            elif step == 5:
+                require(s, 'alignment_valid')
+                require(s, 'reading_order_valid')
+                confirm_status(s)
                 (final_source_mismatch_document(s) if source_mismatch_confirmed(s)
                  else final_document(s))
                 s['current_step'] = 6
