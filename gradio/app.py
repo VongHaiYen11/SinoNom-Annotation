@@ -11,11 +11,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # This directory deliberately is NOT a Python package named gradio.
 import gradio as gr
-from annotation.state import new_state
+from annotation.state import new_state, source_mismatch_confirmed
 from annotation.workflow import Workflow
-from annotation.io import load_image_list, final_document, read_json
+from annotation.io import (final_document, final_source_mismatch_document,
+                           load_image_list, read_json)
 from annotation.text_extraction import content_fields, annotation_text
-from annotation.export import collect_annotations, collect_content_documents, save_export_archive
+from annotation.text_alignment import count_annotation_characters
+from annotation.export import (collect_annotations, collect_content_documents,
+                               collect_source_mismatches, save_export_archive)
 from ui.editor import snapshot, SCRIPT, CSS
 from ui.presentation import APP_CSS, header, panel_heading, panel_summary, footer, status_rows, SECTION_LABELS
 from ui.fonts import FONT_FILES, FONT_PICKER, FONT_PICKER_SCRIPT
@@ -165,6 +168,19 @@ def create_app(options):
                     with gr.Accordion('Detection', open=False, elem_classes='section'):
                         rerun_confirm=gr.Checkbox(label='Replace all existing boxes')
                         detect=gr.Button('Run detection', interactive=not skip_detection)
+                    with gr.Group(elem_classes='section') as mismatch_group:
+                        gr.Markdown('### Source mismatch')
+                        gr.Markdown('Use this only when the source text is wrong and the box count cannot be matched without creating a false annotation.')
+                        mismatch_type=gr.Radio([
+                            ('Missing characters in source','missing_source_characters'),
+                            ('Extra characters in source','extra_source_characters'),
+                            ('Wrong source content','wrong_source_content'),
+                            ('Other','other'),
+                        ],label='Issue type')
+                        mismatch_note=gr.Textbox(label='Note (optional)',lines=3)
+                        with gr.Row(elem_classes='button-group'):
+                            confirm_mismatch=gr.Button('Confirm source mismatch',min_width=0)
+                            clear_mismatch=gr.Button('Clear mismatch',visible=False,min_width=0)
                 with gr.Group(visible=False, elem_classes='section') as status_group:
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
@@ -204,7 +220,8 @@ def create_app(options):
             next_button=gr.Button('Next',variant='primary',interactive=False, scale=0, elem_id='next-button')
         # Preserve callback output slots while removing the normalized-text component.
         normalized=gr.State(None)
-        outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,order_group,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table]
+        outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,order_group,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table,
+                 mismatch_group,mismatch_type,mismatch_note,confirm_mismatch,clear_mismatch]
         outputs.append(preview_modal)
         outputs.append(loading_modal)
 
@@ -221,7 +238,10 @@ def create_app(options):
             region_ids=list(s['regions'])
             selected=s['selected_region_uid'] if s['selected_region_uid'] in region_ids else (region_ids[0] if region_ids else None)
             box=s['regions'].get(selected,dict(bbox=[0,0,1,1],status='intact'))
-            final=final_document(s) if step==7 else None
+            mismatch=source_mismatch_confirmed(s)
+            final=(final_source_mismatch_document(s) if mismatch else final_document(s)) if step==7 else None
+            issue=s.get('source_mismatch') or {}
+            counts_differ=bool(has and len(s['regions']) != count_annotation_characters(s['annotation_text']))
             return [ctx,header(s),gr.update(value=msg,visible=bool(msg)),
                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
                     gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected),*box['bbox'],
@@ -230,7 +250,11 @@ def create_app(options):
                     gr.update(visible=step==6),json.dumps(s.get('crop')),gr.update(visible=step==7),
                     panel_heading(s),panel_summary(s),footer(s),gr.update(visible=step==2 and has),
                     gr.update(interactive=has and step>1),gr.update(interactive=has and step<7,visible=step<7),
-                    status_rows(s),s.get('image_url',''),LOADING_HIDDEN]
+                    status_rows(s),gr.update(visible=step==3 and has),
+                    gr.update(value=issue.get('issue_type')),
+                    gr.update(value=issue.get('note','')),
+                    gr.update(interactive=counts_differ),gr.update(visible=mismatch),
+                    s.get('image_url',''),LOADING_HIDDEN]
 
         def run(ctx, action, payload=None, auto_detect=True):
             try:
@@ -291,7 +315,8 @@ def create_app(options):
             try:
                 annotations=collect_annotations(images,options.output_dir,allow_empty=True)
                 content=collect_content_documents(images,options.output_dir,allow_empty=True)
-                archive=save_export_archive(annotations,content,options.output_dir)
+                mismatches=collect_source_mismatches(images,options.output_dir,allow_empty=True)
+                archive=save_export_archive(annotations,content,options.output_dir,mismatches)
                 return json.dumps({'name':archive.name,
                                    'content':base64.b64encode(archive.read_bytes()).decode('ascii')})
             except (ValueError,OSError,KeyError,TypeError) as exc:
@@ -368,6 +393,14 @@ def create_app(options):
             clear_loading_when_done(button.click(lambda c,i,a,b,d,e,op=action:run(c,op,dict(id=i,bbox=[a,b,d,e])),[session,box_id,x1,y1,x2,y2],**event_args))
         clear_loading_when_done(delete.click(lambda c:run(c,'delete',dict(ids=c['active'].get('selected_region_uids', []))),[session],**event_args))
         clear_loading_when_done(detect.click(lambda c,ok:run(c,'detect') if ok or not c['active']['detection_loaded'] else render(c,'Confirm replacement of existing boxes.'),[session,rerun_confirm],**event_args))
+        def confirm_source_mismatch(ctx,issue_type,note):
+            return run(ctx,'confirm_source_mismatch',dict(issue_type=issue_type,note=note))
+        def clear_source_mismatch(ctx):
+            return run(ctx,'clear_source_mismatch')
+        clear_loading_when_done(confirm_mismatch.click(
+            confirm_source_mismatch,[session,mismatch_type,mismatch_note],**event_args))
+        clear_loading_when_done(clear_mismatch.click(
+            clear_source_mismatch,[session],**event_args))
         for selector in (box_id,status_id):
             clear_loading_when_done(selector.input(lambda c,i:run(c,'select',dict(id=i)),[session,selector],**event_args))
         clear_loading_when_done(set_status.click(lambda c,i,v:run(c,'status',dict(id=i,status=v)),[session,status_id,status],**event_args))

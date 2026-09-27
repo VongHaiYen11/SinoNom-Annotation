@@ -6,7 +6,7 @@ import zipfile
 
 from PIL import Image
 
-from .io import load_annotation, read_json
+from .io import load_annotation, load_source_mismatch, read_json
 from .text_extraction import validate_content_document
 from crop.crop import crop_document, crop_bbox, default_crop, image_resize
 
@@ -14,13 +14,15 @@ from crop.crop import crop_document, crop_bbox, default_crop, image_resize
 EXPORT_ARCHIVE_NAME = 'annotations.zip'
 
 
-def save_export_archive(annotations, content, output_dir):
+def save_export_archive(annotations, content, output_dir, source_mismatches=None):
     """Persist the Save-all payload as one ZIP and return its path."""
     documents = {}
     if annotations:
         documents['text_annotations.json'] = annotations
     if content:
         documents['inscription_content.json'] = content
+    if source_mismatches:
+        documents['source_mismatches.json'] = source_mismatches
     if not documents:
         raise ValueError('No image or content records have been saved yet.')
 
@@ -83,6 +85,40 @@ def collect_annotations(images, output_dir, allow_empty=False):
         raise ValueError('Cannot export the saved annotations:\n' + '\n'.join(errors))
     if not documents and not allow_empty:
         raise ValueError('No images have been saved from Review yet.')
+    return documents
+
+
+def collect_source_mismatches(images, output_dir, allow_empty=False):
+    if not images:
+        raise ValueError('The image folder is empty.')
+    output = Path(output_dir)
+    documents, errors = [], []
+    for image_path in images:
+        path = Path(image_path).resolve()
+        saved = output / 'source_mismatches' / (path.stem + '.json')
+        if not saved.exists():
+            continue
+        try:
+            if (output / (path.stem + '.json')).exists():
+                raise ValueError('Both a normal annotation and source mismatch are saved.')
+            with Image.open(path) as image:
+                size = list(image.size)
+            doc = load_source_mismatch(saved, path.name, size)
+            meta_path = output / '.state' / 'source_mismatches' / saved.name
+            if meta_path.exists():
+                meta = read_json(meta_path)
+                digest = hashlib.sha256(json.dumps(
+                    doc, sort_keys=True, ensure_ascii=False
+                ).encode('utf-8')).hexdigest()
+                if meta.get('document_hash') != digest:
+                    raise ValueError('Saved source mismatch was changed outside the Review save flow.')
+            documents.append(doc)
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            errors.append(f'{path.name}: {exc}')
+    if errors:
+        raise ValueError('Cannot export the saved source mismatches:\n' + '\n'.join(errors))
+    if not documents and not allow_empty:
+        raise ValueError('No source mismatches have been saved from Review yet.')
     return documents
 
 

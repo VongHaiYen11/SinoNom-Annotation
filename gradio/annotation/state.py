@@ -1,5 +1,6 @@
 from copy import deepcopy
-from .text_alignment import validate_bbox_text_count, temporary_align_text
+from .text_alignment import (count_annotation_characters, temporary_align_text,
+                             validate_bbox_text_count)
 
 
 def new_state():
@@ -10,6 +11,7 @@ def new_state():
                 box_id_by_region={}, region_uid_by_box_id={}, selected_box_id=None,
                 revision=0, current_step=1,
                 detection_loaded=False, crop=None, resized_image_size=None,
+                source_mismatch=None,
                 crop_saved=False, saved=False,
                 workflow=dict(content_verified=False, bbox_valid=False,
                               alignment_valid=False, status_valid=False, reading_order_valid=False))
@@ -31,6 +33,20 @@ def invalidate(state, clear=False):
 def refresh_bbox_validation(state):
     """Refresh count validation without assigning characters or public box IDs."""
     state['workflow']['bbox_valid'] = validate_bbox_text_count(state)
+
+
+def source_mismatch_confirmed(state):
+    """Return whether the recorded source exception matches current state."""
+    issue = state.get('source_mismatch')
+    box_count = len(state['regions'])
+    character_count = count_annotation_characters(state['annotation_text'])
+    return bool(
+        issue
+        and box_count != character_count
+        and issue.get('source_text') == state['annotation_text']
+        and issue.get('source_character_count') == character_count
+        and issue.get('bounding_box_count') == box_count
+    )
 
 
 def _spatial_region_order(state):
@@ -65,10 +81,11 @@ def _spatial_region_order(state):
 
 
 def initialize_alignment(state):
-    """Assign canonical 1..n box IDs and text after status verification."""
+    """Assign canonical IDs/order and text when a 1:1 alignment exists."""
     refresh_bbox_validation(state)
-    if not state['workflow']['content_verified'] or not state['workflow']['bbox_valid']:
-        raise ValueError('Bounding-box and character counts must match.')
+    if (not state['workflow']['content_verified']
+            or not (state['workflow']['bbox_valid'] or source_mismatch_confirmed(state))):
+        raise ValueError('Bounding-box and character counts must match or have a confirmed source mismatch.')
     ordered_uids = _spatial_region_order(state)
     ids = list(range(1, len(ordered_uids) + 1))
     state['box_id_by_region'] = {uid: str(box_id) for uid, box_id in zip(ordered_uids, ids)}
@@ -77,7 +94,8 @@ def initialize_alignment(state):
         str(box_id): deepcopy(state['regions'][uid])
         for uid, box_id in zip(ordered_uids, ids)
     }
-    state['annotations'] = temporary_align_text(ids, state['annotation_text'])
+    state['annotations'] = (temporary_align_text(ids, state['annotation_text'])
+                            if state['workflow']['bbox_valid'] else {})
     state['reading_order'] = ids
     state['selected_box_id'] = state['box_id_by_region'].get(state['selected_region_uid'])
     state['workflow']['alignment_valid'] = True

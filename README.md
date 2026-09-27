@@ -399,13 +399,15 @@ Open `http://127.0.0.1:7860`. For a remote environment:
 
 1. **🖼️ Image** — Select an image from the configured folder
 2. **📝 Content** — Verify and save the five configured sections: original Hán/Nôm, Sino-Vietnamese transcription, translation, summary and notes
-3. **🔲 Bounding Boxes** — Detect, add, move, resize or delete regions; public Box IDs are not assigned yet
+3. **🔲 Bounding Boxes** — Detect, add, move, resize or delete regions; compare the box/character counts and, only when the extracted source is known to be wrong, confirm a structured source mismatch
 4. **🏷️ Status** — Select regions on the canvas and mark each one as `intact` or `damaged`
 5. **🔢 Reading Order** — Spatially order the regions, assign Box IDs `1..n`, align verified text and allow drag-and-drop reordering
 6. **✂️ Crop** — Optionally resize the source image with the blue corner handle, then adjust the independent crop frame; no crop side can exceed 4096 pixels
 7. **✅ Review** — Inspect the final table/text/JSON and save the image object
 
 The Python state is authoritative. Before Reading Order, every editable region has a hidden `region_uid`; this allows selection, resize and status changes without exposing unstable Box IDs. Entering Reading Order spatially sorts the current regions, assigns contiguous public Box IDs from `1` to `n`, and aligns the verified Hán/Nôm text. Drag-and-drop then changes only `reading_order`, keeping each character attached to its Box ID.
+
+The normal path still requires exactly one source character per box. A confirmed source mismatch records the issue type and optional note, then allows status, reading order, crop and review to be completed without creating false character annotations. Changing the source text or adding/deleting/detecting boxes clears that confirmation; it must be confirmed again if the counts still differ. `missing_source_characters` is valid when there are more boxes than source characters, while `extra_source_characters` is valid in the opposite direction.
 
 If a region is added, deleted, moved or resized after alignment, the Box ID mapping, annotations and reading order are invalidated and rebuilt on the next Reading Order entry. Status remains attached to each surviving region. Hidden `region_uid` values are never written to output JSON.
 
@@ -415,10 +417,11 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 
 - **Save Content** updates the source JSON and adds/updates that image in the internal content registry. It does not download a file
 - **Next** on Content (Step 2) applies the currently displayed editor text and saves all draft content before entering Bounding Boxes (Step 3). If saving fails, it stays on Step 2 with the editor text preserved. Apply each edited section before switching sections; Next also includes those applied edits.
-- **Save Image** on Review commits bounding boxes, annotations, reading order, source-image resize metadata and crop for that image
+- **Save Image** on Review commits either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image
 - **Save All** creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
   - `text_annotations.json` for images committed with **Save Image**
   - `inscription_content.json` for images committed with **Save Content**
+  - `source_mismatches.json` for images explicitly confirmed as source errors
 
 > **Note**
 >
@@ -431,7 +434,8 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 ```text
 annotations.zip
 ├── text_annotations.json
-└── inscription_content.json
+├── inscription_content.json
+└── source_mismatches.json
 ```
 
 Each file is a UTF-8 JSON array with one object per committed image. If no image has been committed for one category, its corresponding file is omitted from the ZIP.
@@ -482,6 +486,41 @@ This file contains only images committed with **Save Image** on the Review step.
 
 The final text is built by following `reading_order`. In this example, `[1, 3, 2]` produces `永樂寺`.
 
+#### `source_mismatches.json`
+
+This optional file contains completed images whose source-character count cannot validly be aligned to the bounding boxes. These records retain the source text, boxes, statuses, reading order, resize and crop, but deliberately omit `annotations`.
+
+```json
+[
+  {
+    "image": "12306.jpg",
+    "inscription_code": "12306",
+    "source_text": "永寺樂",
+    "source_character_count": 3,
+    "bounding_box_count": 2,
+    "issue_type": "extra_source_characters",
+    "note": "One source character is not visible on the inscription face.",
+    "bounding_boxes": {
+      "1": {"bbox": [120, 350, 180, 420], "status": "intact"},
+      "2": {"bbox": [120, 450, 180, 520], "status": "damaged"}
+    },
+    "reading_order": [1, 2],
+    "image_resize": {
+      "source_size": [1000, 1800],
+      "output_size": [1000, 1800],
+      "scale_x": 1.0,
+      "scale_y": 1.0
+    },
+    "crop": {
+      "top_left": [0, 0],
+      "top_right": [1000, 0],
+      "bottom_right": [1000, 1800],
+      "bottom_left": [0, 1800]
+    }
+  }
+]
+```
+
 #### `inscription_content.json`
 
 This file contains only images committed with **Save Content**. It stores the image name, matching inscription/face code and the five supported content sections. A section absent from the extracted source is represented by `null`.
@@ -509,9 +548,13 @@ This file contains only images committed with **Save Content**. It stores the im
 ```text
 annotations/
 ├── 12305.json          # Boxes, statuses, annotations, reading order and crop
+├── source_mismatches/
+│   └── 12306.json      # Source issue plus boxes/status/order; no annotations
 ├── annotations.zip     # Save All archive, also downloaded by the browser
 └── .state/
     ├── 12305.json      # Text/document fingerprints used to verify committed data
+    ├── source_mismatches/
+    │   └── 12306.json  # Source-mismatch document fingerprint
     └── content.json    # Internal Save-all content registry
 ```
 In this example, `12305` is the number of the corresponding inscription

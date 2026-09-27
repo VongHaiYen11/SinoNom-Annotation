@@ -10,20 +10,32 @@ from uuid import uuid4
 from urllib.parse import quote
 from PIL import Image
 from .state import (new_state, set_verified_content, refresh_bbox_validation,
-                    initialize_alignment, require, invalidate)
+                    initialize_alignment, require, invalidate,
+                    source_mismatch_confirmed)
 from .text_extraction import (annotation_text, edit_content_field,
                               save_source_content, content_document, save_content_document)
 from .text_alignment import count_annotation_characters
 from .bbox import add_bbox, update_bbox, delete_bbox
 from .status import update_status, confirm_status
 from .reading_order import update_reading_order, validate_reading_order
-from .io import load_annotation, validate_document, read_json, atomic_write, save_annotation, final_document
+from .io import (atomic_write, final_document,
+                 final_source_mismatch_document, load_annotation,
+                 load_source_mismatch, read_json, save_annotation,
+                 save_source_mismatch, validate_document,
+                 validate_source_mismatch_type)
 from .detection_adapter import detect
 from crop.crop import (save_crop_coordinates, crop_bbox, default_crop,
                        validate_crop_coordinates, validate_resized_image_size,
                        constrain_crop)
 
 log = logging.getLogger(__name__)
+
+
+def _source_mismatch_from_document(document):
+    return {key: deepcopy(document[key]) for key in (
+        'source_text', 'source_character_count', 'bounding_box_count',
+        'issue_type', 'note',
+    )}
 
 
 def fingerprint(text):
@@ -104,18 +116,27 @@ class Workflow:
                      source_content=deepcopy(located['record']), source_baseline=deepcopy(located['record']),
                      draft_content=deepcopy(located['record']), code=located['code'], current_step=2)
         saved = self.output / (path.stem + '.json')
+        mismatch_saved = self.output / 'source_mismatches' / (path.stem + '.json')
+        if saved.exists() and mismatch_saved.exists():
+            raise ValueError('Both a normal annotation and source mismatch exist for this image.')
         saved_crop = None
-        if saved.exists():
-            doc = load_annotation(saved, path.name, size)
+        persisted = saved if saved.exists() else mismatch_saved if mismatch_saved.exists() else None
+        if persisted:
+            is_mismatch = persisted == mismatch_saved
+            doc = (load_source_mismatch(persisted, path.name, size) if is_mismatch
+                   else load_annotation(persisted, path.name, size))
             saved_crop = doc.get('crop')
             if doc.get('image_resize'):
                 state['resized_image_size'] = validate_resized_image_size(
                     doc['image_resize']['output_size'])
             _load_regions(state, doc)
+            if is_mismatch:
+                state['source_mismatch'] = _source_mismatch_from_document(doc)
             state['detection_loaded'] = True
-            state['loaded_document'] = {k: deepcopy(doc[k]) for k in ('image', 'bounding_boxes', 'reading_order', 'annotations')}
+            state['loaded_document'] = deepcopy(doc)
             state['loaded_region_uid_by_box_id'] = deepcopy(state['region_uid_by_box_id'])
-            meta = self.output / '.state' / (path.stem + '.json')
+            meta = (self.output / '.state' /
+                    ('source_mismatches' if is_mismatch else '') / (path.stem + '.json'))
             if meta.exists():
                 sidecar = read_json(meta)
                 if sidecar.get('document_hash') == fingerprint(json.dumps(doc, sort_keys=True, ensure_ascii=False)):
@@ -178,7 +199,10 @@ class Workflow:
             self._source_locations = None
             save_content_document(content_doc, self.output)
             loaded_mapping = deepcopy(s.get('loaded_region_uid_by_box_id', {}))
+            text_changed = text != s['annotation_text']
             set_verified_content(s, s['draft_content'], text)
+            if text_changed:
+                s['source_mismatch'] = None
             s['source_baseline'] = deepcopy(s['verified_content'])
             # Exact restore is allowed only with matching source AND document fingerprints.
             meta = s.pop('loaded_meta', None)
@@ -186,13 +210,17 @@ class Workflow:
                 document = deepcopy(s['loaded_document'])
                 s['bounding_boxes'] = document['bounding_boxes']
                 s['reading_order'] = document['reading_order']
-                s['annotations'] = document['annotations']
+                s['annotations'] = document.get('annotations', {})
                 s['region_uid_by_box_id'] = loaded_mapping
                 s['box_id_by_region'] = {uid: box_id for box_id, uid in loaded_mapping.items()}
+                if 'issue_type' in document:
+                    s['source_mismatch'] = _source_mismatch_from_document(document)
                 s['workflow'].update(bbox_valid=True, alignment_valid=True)
             s.pop('loaded_document', None)
             s.pop('loaded_region_uid_by_box_id', None)
             refresh_bbox_validation(s)
+            if s['workflow']['bbox_valid']:
+                s['source_mismatch'] = None
         elif action in ('add', 'update', 'delete', 'detect'):
             require(s, 'content_verified')
             if step != 3:
@@ -222,7 +250,41 @@ class Workflow:
                     delete_bbox(s, uid)
                 s['selected_region_uids'] = [uid for uid in s.get('selected_region_uids', []) if uid in s['regions']]
                 s['selected_region_uid'] = s['selected_region_uids'][-1] if s['selected_region_uids'] else next(iter(s['regions']), None)
+            if action in ('add', 'delete', 'detect'):
+                s['source_mismatch'] = None
             refresh_bbox_validation(s)
+            if s['workflow']['bbox_valid']:
+                s['source_mismatch'] = None
+        elif action == 'confirm_source_mismatch':
+            if step != 3:
+                raise ValueError('Confirm a source mismatch in Step 3.')
+            require(s, 'content_verified')
+            refresh_bbox_validation(s)
+            if s['workflow']['bbox_valid']:
+                raise ValueError('Source mismatch can only be confirmed when the counts differ.')
+            issue_type = payload.get('issue_type')
+            note = payload.get('note', '')
+            character_count = count_annotation_characters(s['annotation_text'])
+            box_count = len(s['regions'])
+            try:
+                validate_source_mismatch_type(issue_type, character_count, box_count)
+            except ValueError as exc:
+                raise ValueError('Select a source mismatch type that matches the count difference.') from exc
+            if not isinstance(note, str):
+                raise ValueError('Source mismatch note must be text.')
+            s['source_mismatch'] = {
+                'source_text': s['annotation_text'],
+                'source_character_count': character_count,
+                'bounding_box_count': box_count,
+                'issue_type': issue_type,
+                'note': note.strip(),
+            }
+            invalidate(s, clear=True)
+        elif action == 'clear_source_mismatch':
+            if step != 3:
+                raise ValueError('Clear a source mismatch in Step 3.')
+            s['source_mismatch'] = None
+            invalidate(s, clear=True)
         elif action == 'select':
             if step in (3, 4):
                 uid = payload.get('uid') or payload.get('id')
@@ -262,7 +324,8 @@ class Workflow:
                 s['current_step'] = 3
             elif step == 3:
                 refresh_bbox_validation(s)
-                require(s, 'bbox_valid')
+                if not (s['workflow']['bbox_valid'] or source_mismatch_confirmed(s)):
+                    raise ValueError('Match the box and character counts or confirm a source mismatch.')
                 s['current_step'] = 4
             elif step == 4:
                 confirm_status(s)
@@ -275,19 +338,27 @@ class Workflow:
                 if not validate_reading_order(s):
                     raise ValueError('Invalid reading order.')
                 s['workflow']['reading_order_valid'] = True
-                final_document(s)
+                (final_source_mismatch_document(s) if source_mismatch_confirmed(s)
+                 else final_document(s))
                 s['current_step'] = 6
             elif step == 6:
                 # Crop is independent. Review still requires a valid annotation.
-                final_document(s)
+                (final_source_mismatch_document(s) if source_mismatch_confirmed(s)
+                 else final_document(s))
                 s['current_step'] = 7
         elif action == 'save':
             if step != 7:
                 raise ValueError('Save the image in Step 7.')
-            path = save_annotation(s, self.output)
-            atomic_write(self.output / '.state' / path.name,
+            mismatch = source_mismatch_confirmed(s)
+            path = (save_source_mismatch(s, self.output) if mismatch
+                    else save_annotation(s, self.output))
+            document = (final_source_mismatch_document(s) if mismatch else final_document(s))
+            meta_root = self.output / '.state' / ('source_mismatches' if mismatch else '')
+            atomic_write(meta_root / path.name,
                          dict(text_hash=fingerprint(s['annotation_text']),
-                              document_hash=fingerprint(json.dumps(final_document(s), sort_keys=True, ensure_ascii=False))))
+                              document_hash=fingerprint(json.dumps(document, sort_keys=True, ensure_ascii=False))))
+            stale_meta = self.output / '.state' / ('' if mismatch else 'source_mismatches') / path.name
+            stale_meta.unlink(missing_ok=True)
             s['saved'] = True
             s['crop_saved'] = True
             log.info('Saved annotation %s', path)

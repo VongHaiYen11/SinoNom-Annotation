@@ -1,4 +1,4 @@
-from .state import require
+from .state import source_mismatch_confirmed
 
 
 def update_status(state, region_uid, status):
@@ -12,7 +12,8 @@ def update_status(state, region_uid, status):
 
 
 def confirm_status(state):
-    require(state, 'bbox_valid')
+    if not (state['workflow']['bbox_valid'] or source_mismatch_confirmed(state)):
+        raise ValueError('Bounding-box and character counts must match or have a confirmed source mismatch.')
     if any(b['status'] not in ('intact', 'damaged') for b in state['regions'].values()):
         raise ValueError('Every region must have a status.')
     state['workflow']['status_valid'] = True

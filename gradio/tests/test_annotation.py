@@ -13,7 +13,9 @@ from annotation.bbox import add_bbox, update_bbox, delete_bbox
 from annotation.text_alignment import count_annotation_characters, normalize_annotation_text
 from annotation.reading_order import update_reading_order, build_text_sequence, validate_reading_order
 from annotation.status import update_status, confirm_status
-from annotation.io import read_json, atomic_write, load_annotation, save_annotation, final_document
+from annotation.io import (atomic_write, final_document,
+                           final_source_mismatch_document, load_annotation,
+                           read_json, save_annotation)
 from annotation.text_extraction import extract_source_content, save_source_content
 from annotation.workflow import Workflow
 from crop.crop import (save_crop_coordinates, crop_document, default_crop,
@@ -256,6 +258,45 @@ class Integration(unittest.TestCase):
         self.assertEqual(s['crop'],[0,0,50,40])
         with self.assertRaises(ValueError):
             e.apply(s,'crop',{'bbox':[0,0,51,40]})
+
+    def test_source_mismatch_roundtrip_and_return_to_normal(self):
+        e=self.engine;s=e.open_image(self.image)
+        s=e.apply(s,'save_content');s=e.apply(s,'next')
+        for x in (0,20):
+            s=e.apply(s,'add',{'bbox':[x,0,x+10,10]})
+        with self.assertRaisesRegex(ValueError,'confirm a source mismatch'):
+            e.apply(s,'next')
+        with self.assertRaisesRegex(ValueError,'matches the count difference'):
+            e.apply(s,'confirm_source_mismatch',{
+                'issue_type':'missing_source_characters','note':''})
+        s=e.apply(s,'confirm_source_mismatch',{
+            'issue_type':'extra_source_characters','note':'PDF contains one extra character'})
+        s=e.apply(s,'next');s=e.apply(s,'next')
+        self.assertEqual(s['current_step'],5)
+        self.assertEqual(s['annotations'],{})
+        s=e.apply(s,'reorder',{'order':[2,1]})
+        s=e.apply(s,'next');s=e.apply(s,'next')
+        document=final_source_mismatch_document(s)
+        self.assertNotIn('annotations',document)
+        self.assertEqual(document['source_character_count'],3)
+        self.assertEqual(document['bounding_box_count'],2)
+        self.assertEqual(document['reading_order'],[2,1])
+        s=e.apply(s,'save')
+        mismatch_path=self.root/'out/source_mismatches/12305.json'
+        self.assertTrue(mismatch_path.exists())
+        self.assertFalse((self.root/'out/12305.json').exists())
+
+        reopened=e.open_image(self.image)
+        reopened=e.apply(reopened,'save_content');reopened=e.apply(reopened,'next')
+        self.assertEqual(reopened['source_mismatch']['issue_type'],'extra_source_characters')
+        reopened=e.apply(reopened,'add',{'bbox':[40,0,50,10]})
+        self.assertIsNone(reopened['source_mismatch'])
+        self.assertTrue(reopened['workflow']['bbox_valid'])
+        reopened=e.apply(reopened,'next');reopened=e.apply(reopened,'next')
+        reopened=e.apply(reopened,'next');reopened=e.apply(reopened,'next')
+        reopened=e.apply(reopened,'save')
+        self.assertFalse(mismatch_path.exists())
+        self.assertTrue((self.root/'out/12305.json').exists())
 
     def test_multiselect_then_delete_regions(self):
         e=self.engine

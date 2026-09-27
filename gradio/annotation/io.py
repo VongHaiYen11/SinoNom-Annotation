@@ -7,6 +7,23 @@ from .reading_order import validate_reading_order
 from .text_alignment import validate_bbox_text_count, characters
 
 
+SOURCE_MISMATCH_TYPES = {
+    'missing_source_characters',
+    'extra_source_characters',
+    'wrong_source_content',
+    'other',
+}
+
+
+def validate_source_mismatch_type(issue_type, character_count, box_count):
+    if issue_type not in SOURCE_MISMATCH_TYPES:
+        raise ValueError('Invalid source mismatch issue type.')
+    if issue_type == 'missing_source_characters' and character_count >= box_count:
+        raise ValueError('Missing source characters requires more boxes than source characters.')
+    if issue_type == 'extra_source_characters' and character_count <= box_count:
+        raise ValueError('Extra source characters requires more source characters than boxes.')
+
+
 def _unique(pairs):
     out = {}
     for k, v in pairs:
@@ -107,6 +124,42 @@ def load_annotation(path, image, size):
     return doc
 
 
+def validate_source_mismatch_document(doc, image, size):
+    expected_keys = {
+        'image', 'inscription_code', 'source_text', 'source_character_count',
+        'bounding_box_count', 'issue_type', 'note', 'bounding_boxes',
+        'reading_order', 'image_resize', 'crop',
+    }
+    if not isinstance(doc, dict) or set(doc) != expected_keys:
+        raise ValueError('Invalid source mismatch document.')
+    if doc['inscription_code'] != Path(image).stem:
+        raise ValueError('Source mismatch does not belong to this inscription.')
+    if not isinstance(doc['source_text'], str):
+        raise ValueError('Source mismatch text must be a string.')
+    if (type(doc['source_character_count']) is not int
+            or type(doc['bounding_box_count']) is not int
+            or doc['source_character_count'] < 0 or doc['bounding_box_count'] < 0):
+        raise ValueError('Source mismatch counts must be non-negative integers.')
+    if doc['source_character_count'] != len(characters(doc['source_text'])):
+        raise ValueError('Source mismatch character count is invalid.')
+    if doc['bounding_box_count'] != len(doc.get('bounding_boxes', {})):
+        raise ValueError('Source mismatch bounding-box count is invalid.')
+    if doc['source_character_count'] == doc['bounding_box_count']:
+        raise ValueError('Source mismatch counts must differ.')
+    validate_source_mismatch_type(
+        doc['issue_type'], doc['source_character_count'], doc['bounding_box_count'])
+    if not isinstance(doc['note'], str):
+        raise ValueError('Source mismatch note must be a string.')
+    if 'annotations' in doc:
+        raise ValueError('Source mismatch documents cannot contain annotations.')
+    validate_document(doc, image, size)
+    return doc
+
+
+def load_source_mismatch(path, image, size):
+    return validate_source_mismatch_document(read_json(path), image, size)
+
+
 def final_document(state):
     if not all(state['workflow'].values()) or not validate_bbox_text_count(state):
         raise ValueError('Complete all verification steps and match the box and character counts.')
@@ -122,8 +175,44 @@ def final_document(state):
     return doc
 
 
+def final_source_mismatch_document(state):
+    from .state import source_mismatch_confirmed
+    required = ('content_verified', 'alignment_valid', 'status_valid', 'reading_order_valid')
+    if not all(state['workflow'][key] for key in required) or not source_mismatch_confirmed(state):
+        raise ValueError('Complete all verification steps and confirm the source mismatch.')
+    issue = state['source_mismatch']
+    doc = {
+        'image': state['image'],
+        'inscription_code': str(state['code']),
+        'source_text': state['annotation_text'],
+        'source_character_count': issue['source_character_count'],
+        'bounding_box_count': issue['bounding_box_count'],
+        'issue_type': issue['issue_type'],
+        'note': issue['note'],
+        'bounding_boxes': state['bounding_boxes'],
+        'reading_order': state['reading_order'],
+    }
+    from crop.crop import crop_document, default_crop, image_resize
+    resized_size = state.get('resized_image_size') or state['image_size']
+    doc['image_resize'] = image_resize(state['image_size'], resized_size)
+    doc['crop'] = crop_document(
+        state['image'], state.get('crop') or default_crop(resized_size), resized_size
+    )['crop']
+    return validate_source_mismatch_document(doc, state['image'], state['image_size'])
+
+
 def save_annotation(state, output_dir):
     doc = final_document(state)
     path = Path(output_dir) / (Path(state['image']).stem + '.json')
     atomic_write(path, doc)
+    mismatch_path = Path(output_dir) / 'source_mismatches' / path.name
+    mismatch_path.unlink(missing_ok=True)
+    return path
+
+
+def save_source_mismatch(state, output_dir):
+    doc = final_source_mismatch_document(state)
+    path = Path(output_dir) / 'source_mismatches' / (Path(state['image']).stem + '.json')
+    atomic_write(path, doc)
+    (Path(output_dir) / (Path(state['image']).stem + '.json')).unlink(missing_ok=True)
     return path

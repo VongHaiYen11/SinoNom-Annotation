@@ -1,4 +1,4 @@
-from .state import require
+from .state import require, source_mismatch_confirmed
 from .text_alignment import validate_bbox_text_count
 
 
@@ -13,7 +13,8 @@ def update_reading_order(state, order):
     require(state, 'alignment_valid')
     require(state, 'status_valid')
     candidate = dict(state, reading_order=order)
-    if not validate_bbox_text_count(state) or not validate_reading_order(candidate):
+    if (not (validate_bbox_text_count(state) or source_mismatch_confirmed(state))
+            or not validate_reading_order(candidate)):
         raise ValueError('Reading order has missing, duplicate, or invalid IDs.')
     state['reading_order'] = list(order)
     state['workflow']['reading_order_valid'] = False

@@ -269,5 +269,51 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(reset['active']['current_step'],2)
             self.assertEqual(reset['active']['annotations'],{'1':'永','2':'寺','3':'樂'})
 
+    def test_ui_source_mismatch_flow(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve();image=root/'1.png'
+            Image.new('RGB',(100,100),'white').save(image)
+            source=root/'source.json'
+            atomic_write(source,[{'noi_dung':[{'ky_hieu':'1','chuyen_muc':[
+                {'tieu_de':'Nguyên văn chữ Hán Nôm','van_ban':'永寺'}]}]}])
+            options=parser().parse_args(['--image-dir',str(root),'--source-json',str(source),
+                                         '--output-dir',str(root/'out'),'--skip-detection'])
+            app=create_app(options)
+            functions=[f.fn for f in app.fns.values() if f.fn]
+            open_image=next(f for f in functions if f.__name__=='open_image')
+            confirm=next(f for f in functions if f.__name__=='confirm_source_mismatch')
+            lambdas=[f for f in functions if f.__name__=='<lambda>']
+            def action(name):
+                if name=='next':
+                    stream=next(f for f in functions if f.__name__=='next_with_progress')
+                    return lambda ctx:list(stream(ctx))[-1]
+                return next(f for f in lambdas if f.__defaults__==(name,))
+
+            ctx=open_image(dict(active=new_state(),drafts={}),str(image))[0]
+            ctx=action('save_content')(ctx)[0];ctx=action('next')(ctx)[0]
+            result=action('add')(ctx,None,0,0,10,10);ctx=result[0]
+            self.assertIn('Difference (boxes − characters)',result[25])
+            self.assertTrue(result[31]['visible'])
+            self.assertTrue(result[34]['interactive'])
+            result=confirm(ctx,'extra_source_characters','source has an extra character')
+            ctx=result[0]
+            self.assertTrue(result[35]['visible'])
+            self.assertIn('Source mismatch confirmed',result[25])
+            ctx=action('next')(ctx)[0]
+            result=action('next')(ctx);ctx=result[0]
+            self.assertIn('mismatch confirmed',result[8]['value']['markup'])
+            ctx=action('next')(ctx)[0];ctx=action('next')(ctx)[0]
+            self.assertEqual(ctx['active']['current_step'],7)
+            self.assertEqual(ctx['active']['annotations'],{})
+            ctx=action('save')(ctx)[0]
+            export=next(f for f in functions if f.__name__=='save_folder')
+            payload=json.loads(export())
+            with zipfile.ZipFile(BytesIO(base64.b64decode(payload['content']))) as bundle:
+                self.assertIn('source_mismatches.json',bundle.namelist())
+                self.assertNotIn('text_annotations.json',bundle.namelist())
+                mismatch=json.loads(bundle.read('source_mismatches.json'))[0]
+            self.assertNotIn('annotations',mismatch)
+            self.assertEqual(mismatch['bounding_box_count'],1)
+
 
 if __name__=='__main__':unittest.main()

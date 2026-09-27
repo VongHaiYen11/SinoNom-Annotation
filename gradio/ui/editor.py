@@ -2,6 +2,7 @@
 import html
 from pathlib import Path
 from annotation.reading_order import build_text_sequence
+from annotation.state import source_mismatch_confirmed
 from crop.crop import MAX_CROP_SIDE
 from .icons import ARROW_RIGHT, DOCUMENT
 
@@ -15,6 +16,7 @@ def snapshot(s):
             <h2>Select an image</h2></div>''',
             revision=s['revision'], image=None, step=1)
     step=s['current_step']; source_w,source_h=s['image_size']
+    source_mismatch=source_mismatch_confirmed(s)
     w,h=(s.get('resized_image_size') or s['image_size']) if step == 6 else s['image_size']
     if step == 6:
         boxes = {'crop': dict(bbox=s['crop'], status='intact')}
@@ -70,13 +72,14 @@ def snapshot(s):
     if step in (5,7):
         source=html.escape(s['annotation_text'])
         verified=s['workflow']['content_verified']
-        source_label='Verified annotation text' if verified else 'Unverified annotation text'
+        source_label=('Source text · mismatch confirmed' if source_mismatch else
+                      'Verified annotation text' if verified else 'Unverified annotation text')
         markup+=f'<section class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></section>'
         if step != 7:
             cards=[]
             for pos,key in enumerate(s['reading_order'],1):
                 key=str(key)
-                char=html.escape(s['annotations'].get(key,'?'))
+                char=html.escape(s['annotations'].get(key,'—'))
                 condition=s['bounding_boxes'][key]['status']
                 active=' active' if key==selected_id else ''
                 cards.append(f'''<button type="button" class="card{active} {condition}" data-card="1" data-box-id="{key}"
@@ -90,9 +93,20 @@ def snapshot(s):
             rows=[]
             for pos,key in enumerate(s['reading_order'],1):
                 box=s['bounding_boxes'][str(key)]
-                rows.append(f'<tr><td>{pos}</td><td>{key}</td><td>{box["bbox"]}</td><td><span class="table-status {box["status"]}">{box["status"]}</span></td><td class="table-character">{html.escape(s["annotations"][str(key)])}</td></tr>')
+                annotation=html.escape(s['annotations'].get(str(key),'—'))
+                rows.append(f'<tr><td>{pos}</td><td>{key}</td><td>{box["bbox"]}</td><td><span class="table-status {box["status"]}">{box["status"]}</span></td><td class="table-character">{annotation}</td></tr>')
             order_separator = ARROW_RIGHT
-            markup+='<section class="review-detail"><div class="review-text"><span class="eyebrow">FINAL TEXT</span><p>'+html.escape(build_text_sequence(s))+'</p></div><p class="order-sequence"><span>Reading order:</span> '+ order_separator.join(map(str,s['reading_order']))+'</p><div class="review-table-wrap"><table><thead><tr><th>Order</th><th>Box ID</th><th>BBox</th><th>Status</th><th>Annotation</th></tr></thead><tbody>'+''.join(rows)+'</tbody></table></div></section>'
+            if source_mismatch:
+                issue=s['source_mismatch']
+                note=(f'<small>Note: {html.escape(issue["note"])}</small>'
+                      if issue['note'] else '')
+                review=f'''<div class="review-text source-mismatch-review"><span class="eyebrow">SOURCE MISMATCH</span>
+                    <p>No character annotations will be generated for this image.</p>
+                    <small>{html.escape(issue['issue_type'])} · {issue['source_character_count']} characters · {issue['bounding_box_count']} boxes</small>
+                    {note}</div>'''
+            else:
+                review='<div class="review-text"><span class="eyebrow">FINAL TEXT</span><p>'+html.escape(build_text_sequence(s))+'</p></div>'
+            markup+='<section class="review-detail">'+review+'<p class="order-sequence"><span>Reading order:</span> '+ order_separator.join(map(str,s['reading_order']))+'</p><div class="review-table-wrap"><table><thead><tr><th>Order</th><th>Box ID</th><th>BBox</th><th>Status</th><th>Annotation</th></tr></thead><tbody>'+''.join(rows)+'</tbody></table></div></section>'
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=w,height=h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),

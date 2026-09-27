@@ -2,11 +2,13 @@
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PIL import Image
-from annotation.export import collect_annotations, collect_content_documents
+from annotation.export import (collect_annotations, collect_content_documents,
+                               collect_source_mismatches, save_export_archive)
 from annotation.io import atomic_write, read_json
 from annotation.text_extraction import CONTENT_TITLES, content_fields
 from annotation.workflow import Workflow
@@ -130,3 +132,28 @@ class FolderExport(unittest.TestCase):
         atomic_write(self.output / '1.json', doc)
         with self.assertRaises(ValueError):
             self.export()
+
+    def test_normal_annotations_and_source_mismatches_are_split(self):
+        normal=self.complete(self.images[1])
+        self.assertTrue(normal['saved'])
+
+        e=self.engine;s=e.open_image(self.images[0])
+        s=e.apply(s,'save_content');s=e.apply(s,'next')
+        s=e.apply(s,'add',{'bbox':[0,0,10,10]})
+        s=e.apply(s,'confirm_source_mismatch',{
+            'issue_type':'extra_source_characters','note':'one source character is not visible'})
+        for _ in range(4):
+            s=e.apply(s,'next')
+        s=e.apply(s,'save')
+
+        annotations=collect_annotations(self.images,self.output)
+        mismatches=collect_source_mismatches(self.images,self.output)
+        self.assertEqual([doc['image'] for doc in annotations],['2.png'])
+        self.assertEqual([doc['image'] for doc in mismatches],['1.png'])
+        self.assertNotIn('annotations',mismatches[0])
+        archive=save_export_archive(
+            annotations,collect_content_documents(self.images,self.output),
+            self.output,mismatches)
+        with zipfile.ZipFile(archive) as bundle:
+            self.assertEqual(set(bundle.namelist()),{
+                'text_annotations.json','inscription_content.json','source_mismatches.json'})
