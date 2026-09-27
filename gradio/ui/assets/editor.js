@@ -1,5 +1,6 @@
 // Python owns persisted data. Browser-local state owns direct manipulation.
-let pending = false, moving = null, dragged = null, syncingStatusControl = false;
+let pending = false, moving = null, orderDrag = null, suppressOrderClick = false;
+let syncingStatusControl = false;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null;
 let localReadingOrder = [];
@@ -79,9 +80,9 @@ const renderSelection = (sync=true) => {
       rect.setAttribute('stroke-width', active ? '2.5' : selected ? '2' : '1.5');
     }
   });
-  element.querySelectorAll('[data-card]').forEach(card => {
-    card.classList.toggle('active', card.dataset.boxId === activeBoxId);
-    card.setAttribute('aria-pressed', String(card.dataset.boxId === activeBoxId));
+  element.querySelectorAll('[data-order-chip]').forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.boxId === activeBoxId);
+    chip.setAttribute('aria-pressed', String(chip.dataset.boxId === activeBoxId));
   });
   if (sync) syncExternalControls();
 };
@@ -106,7 +107,7 @@ const hydrateLocalState = () => {
 const renderLocalAnnotations = () => {
   const labels=props.value.orderedAnnotations || [];
   localReadingOrder.forEach((boxId,index) => {
-    const card=[...element.querySelectorAll('[data-card]')].find(
+    const card=[...element.querySelectorAll('[data-order-chip]')].find(
       item => item.dataset.boxId === String(boxId));
     if(!card)return;
     const label=labels[index] ?? '';
@@ -114,8 +115,8 @@ const renderLocalAnnotations = () => {
     const text=card.querySelector('.tile-character');
     if(text)text.textContent=label;
     card.classList.toggle('missing',label==='MISS');
-    card.setAttribute('aria-label',`Box ${boxId}: ${label}, ${status}`);
-    card.title=`ID ${boxId} · ${status}`;
+    card.setAttribute('aria-label',`Reading position ${index+1}, Box ${boxId}: ${label}, ${status}`);
+    card.title=`Box ${boxId} · ${status}`;
   });
 };
 
@@ -141,7 +142,9 @@ const send = (action, payload={}) => {
   }});
 };
 watch('value', () => {
-  pending = false; moving = null; dragged = null;
+  pending = false; moving = null;
+  if (orderDrag?.ghost) orderDrag.ghost.remove();
+  orderDrag = null;
   element.setAttribute('aria-busy', 'false');
   if (image !== props.value.image) {
     imageTransform.zoom = 100;
@@ -227,8 +230,98 @@ const drawOverlayRect = (rect, box) => {
   rect.setAttribute('width',box[2]-box[0]); rect.setAttribute('height',box[3]-box[1]);
 };
 
+const orderFromDOM = container => [...container.querySelectorAll('[data-order-chip]')]
+  .map(chip => Number(chip.dataset.boxId));
+const orderRows = chips => {
+  const rows=[];
+  chips.forEach(chip => {
+    const rect=chip.getBoundingClientRect();
+    let row=rows.find(candidate => Math.abs(candidate.top-rect.top) < Math.max(8,rect.height/2));
+    if(!row){row={top:rect.top,bottom:rect.bottom,items:[]};rows.push(row);}
+    row.top=Math.min(row.top,rect.top);row.bottom=Math.max(row.bottom,rect.bottom);
+    row.items.push({chip,rect});
+  });
+  rows.sort((a,b)=>a.top-b.top);
+  rows.forEach(row=>row.items.sort((a,b)=>a.rect.left-b.rect.left));
+  return rows;
+};
+const insertionReference = (container, x, y) => {
+  const chips=[...container.querySelectorAll('[data-order-chip]')]
+    .filter(chip=>chip!==orderDrag.chip);
+  if(!chips.length)return null;
+  const rows=orderRows(chips);
+  let row=rows.find(candidate=>y>=candidate.top && y<=candidate.bottom);
+  if(!row)row=rows.reduce((best,candidate)=>{
+    const distance=Math.abs(y-(candidate.top+candidate.bottom)/2);
+    return !best || distance<best.distance?{row:candidate,distance}:best;
+  },null).row;
+  const before=row.items.find(item=>x<item.rect.left+item.rect.width/2);
+  if(before)return before.chip;
+  const flattened=rows.flatMap(candidate=>candidate.items.map(item=>item.chip));
+  const last=row.items.at(-1).chip;
+  return flattened[flattened.indexOf(last)+1] || null;
+};
+const animateChipReflow = (container, before) => {
+  container.querySelectorAll('[data-order-chip]').forEach(chip=>{
+    if(chip===orderDrag.chip)return;
+    const old=before.get(chip),now=chip.getBoundingClientRect();
+    if(!old)return;
+    const dx=old.left-now.left,dy=old.top-now.top;
+    if(dx||dy)chip.animate(
+      [{transform:`translate(${dx}px, ${dy}px)`},{transform:'translate(0, 0)'}],
+      {duration:150,easing:'cubic-bezier(.2,.8,.2,1)'});
+  });
+};
+const beginOrderDrag = event => {
+  const state=orderDrag,rect=state.chip.getBoundingClientRect();
+  state.started=true;state.offsetX=event.clientX-rect.left;state.offsetY=event.clientY-rect.top;
+  state.originalOrder=orderFromDOM(state.container);
+  state.ghost=state.chip.cloneNode(true);
+  state.ghost.classList.remove('active');state.ghost.classList.add('order-chip-ghost');
+  state.ghost.removeAttribute('data-order-chip');state.ghost.removeAttribute('id');
+  state.ghost.style.width=`${rect.width}px`;state.ghost.style.height=`${rect.height}px`;
+  document.body.appendChild(state.ghost);
+  state.container.classList.add('is-sorting');state.chip.classList.add('dragging');
+};
+const moveOrderGhost = event => {
+  orderDrag.ghost.style.left=`${event.clientX-orderDrag.offsetX}px`;
+  orderDrag.ghost.style.top=`${event.clientY-orderDrag.offsetY}px`;
+};
+const arrangeOrder = (container, order) => order.forEach(boxId=>{
+  const chip=[...container.querySelectorAll('[data-order-chip]')].find(
+    item=>item.dataset.boxId===String(boxId));
+  if(chip)container.appendChild(chip);
+});
+const finishOrderDrag = (commit=true) => {
+  if(!orderDrag)return;
+  const state=orderDrag;
+  if(state.started){
+    if(!commit)arrangeOrder(state.container,state.originalOrder);
+    state.ghost?.remove();state.chip.classList.remove('dragging');
+    state.container.classList.remove('is-sorting');
+    if(commit){
+      localReadingOrder=orderFromDOM(state.container);
+      renderLocalAnnotations();
+      syncExternalControls();
+    }
+    suppressOrderClick=true;
+    requestAnimationFrame(()=>{suppressOrderClick=false;});
+  }else if(commit){
+    setSelection([state.chip.dataset.boxId],state.chip.dataset.boxId);
+    suppressOrderClick=true;
+    requestAnimationFrame(()=>{suppressOrderClick=false;});
+  }
+  orderDrag=null;
+};
+
 element.addEventListener('pointerdown', event => {
   if (pending || event.button !== 0) return;
+  const chip=event.target.closest('[data-order-chip]');
+  if(chip && props.value.step===5){
+    orderDrag={chip,container:chip.closest('.order-chips'),pointerId:event.pointerId,
+      startX:event.clientX,startY:event.clientY,started:false};
+    chip.setPointerCapture(event.pointerId);event.preventDefault();return;
+  }
   const svg=event.target.closest('.annotation-canvas'); if(!svg) return;
   const mode=props.value.step;
   const group=event.target.closest('[data-box-id]');
@@ -280,6 +373,20 @@ element.addEventListener('pointerdown', event => {
 });
 
 element.addEventListener('pointermove', event => {
+  if(orderDrag && event.pointerId===orderDrag.pointerId){
+    if(!orderDrag.started && Math.hypot(event.clientX-orderDrag.startX,event.clientY-orderDrag.startY)<4)return;
+    if(!orderDrag.started)beginOrderDrag(event);
+    moveOrderGhost(event);
+    const container=orderDrag.container;
+    const beforeRects=new Map([...container.querySelectorAll('[data-order-chip]')]
+      .map(chip=>[chip,chip.getBoundingClientRect()]));
+    const reference=insertionReference(container,event.clientX,event.clientY);
+    if(reference!==orderDrag.chip.nextElementSibling){
+      if(reference)container.insertBefore(orderDrag.chip,reference);else container.appendChild(orderDrag.chip);
+      animateChipReflow(container,beforeRects);
+    }
+    event.preventDefault();return;
+  }
   if(!moving) return;
   if(moving.kind==='image'){
     const width=Math.max(1,Math.round(moving.size[0]+(event.clientX-moving.start[0])*moving.units[0]));
@@ -338,7 +445,8 @@ element.addEventListener('pointermove', event => {
   if(state.kind==='resize') drawLocalBox(state.id,box); else drawPreview(groupFor('crop'),box);
 });
 
-element.addEventListener('pointerup', () => {
+element.addEventListener('pointerup', event => {
+  if(orderDrag && event.pointerId===orderDrag.pointerId){finishOrderDrag(true);return;}
   if(!moving)return;
   const state=moving; moving=null;
   if(state.kind==='marquee'){
@@ -376,6 +484,7 @@ element.addEventListener('pointerup', () => {
 });
 
 element.addEventListener('pointercancel',()=>{
+  if(orderDrag){finishOrderDrag(false);return;}
   if (!moving) return;
   const state=moving; moving=null;
   if(state.kind==='drag') Object.entries(state.boxes).forEach(([id,box])=>drawLocalBox(id,box));
@@ -385,44 +494,6 @@ element.addEventListener('pointercancel',()=>{
   if(state.kind==='marquee') setSelection([...state.baseline],[...state.baseline].at(-1));
 });
 
-const clearDrag = () => {
-  element.querySelectorAll('.dragging,.drop-target').forEach(card=>card.classList.remove('dragging','drop-target'));
-  dragged=null;
-};
-element.addEventListener('dragstart',event=>{
-  const card=event.target.closest('[data-card]');
-  if(!card || pending || props.value.step!==5){event.preventDefault();return;}
-  dragged=card; card.classList.add('dragging'); event.dataTransfer.effectAllowed='move';
-  event.dataTransfer.setData('text/plain',card.dataset.boxId);
-});
-element.addEventListener('dragover',event=>{
-  const target=event.target.closest('[data-card]');
-  if(!target || !dragged || pending)return;
-  event.preventDefault(); event.dataTransfer.dropEffect='move';
-  element.querySelectorAll('.drop-target').forEach(card=>card.classList.remove('drop-target'));
-  target.classList.add('drop-target');
-});
-element.addEventListener('drop',event=>{
-  const target=event.target.closest('[data-card]');
-  if(!target || !dragged || pending || props.value.step!==5)return;
-  event.preventDefault();
-  if(target===dragged){clearDrag();return;}
-  // Cards are fixed physical Box ID slots. The movable item is the annotation
-  // currently assigned through readingOrder, so insertion must start from the
-  // persisted order rather than the visual DOM order.
-  const order=[...localReadingOrder];
-  const sourcePosition=order.indexOf(Number(dragged.dataset.boxId));
-  const targetPosition=order.indexOf(Number(target.dataset.boxId));
-  if(sourcePosition<0 || targetPosition<0){clearDrag();return;}
-  // To place the dragged annotation into a fixed target slot, move the target
-  // Box ID to the dragged annotation's source position. Re-alignment then
-  // shifts every intervening annotation while all physical slots stay put.
-  const [targetId]=order.splice(targetPosition,1);
-  order.splice(sourcePosition,0,targetId);
-  localReadingOrder=order;
-  clearDrag();renderLocalAnnotations();syncExternalControls();
-});
-element.addEventListener('dragend',clearDrag);
 element.addEventListener('click', event => {
   const control=event.target.closest('[data-zoom]');
   if(control){
@@ -430,6 +501,6 @@ element.addEventListener('click', event => {
       imageTransform.zoom+(control.dataset.zoom==='in'?25:-25)));
     applyZoom();return;
   }
-  const card=event.target.closest('[data-card]');
-  if(card && !pending)setSelection([card.dataset.boxId],card.dataset.boxId);
+  const chip=event.target.closest('[data-order-chip]');
+  if(chip && !pending && !suppressOrderClick)setSelection([chip.dataset.boxId],chip.dataset.boxId);
 });

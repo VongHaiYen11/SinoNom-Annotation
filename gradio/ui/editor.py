@@ -76,22 +76,25 @@ def snapshot(s):
                       'Verified annotation text' if verified else 'Unverified annotation text')
         markup+=f'<section class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></section>'
         if step != 7:
-            cards=[]
-            # Keep physical Box ID slots stable in the editor. Reading-order
-            # edits move the annotation assigned to a slot, not the slot,
-            # geometry, or status itself.
-            for key in sorted(s['bounding_boxes'], key=int):
+            chips=[]
+            # Each chip owns a stable Box ID. Its DOM position mirrors the
+            # reading-order array and is the only thing the client sorter moves.
+            for position, box_id in enumerate(s['reading_order'], 1):
+                key=str(box_id)
                 char=html.escape(s['annotations'].get(key,'—'))
                 condition=s['bounding_boxes'][key]['status']
                 active=' active' if key==selected_id else ''
                 missing=' missing' if s['annotations'].get(key) == MISSING_ANNOTATION else ''
-                cards.append(f'''<button type="button" class="card{active}{missing} {condition}" data-card="1" data-box-id="{key}"
-                    draggable="{str(step==5).lower()}" aria-pressed="{str(key==selected_id).lower()}" aria-label="Box {key}: {char}, {condition}" title="ID {key} · {condition}">
-                    <span class="tile-character">{char}</span><small>{key}</small></button>''')
+                chips.append(f'''<button type="button" class="order-chip{active}{missing} {condition}" data-order-chip="1" data-box-id="{key}"
+                    draggable="false" aria-pressed="{str(key==selected_id).lower()}" aria-label="Reading position {position}, Box {key}: {char}, {condition}" title="Box {key} · {condition}">
+                    <span class="chip-id">{key}</span><span class="chip-separator" aria-hidden="true">·</span>
+                    <span class="tile-character">{char}</span><span class="chip-grip" aria-hidden="true">⠿</span></button>''')
             title='Reading Order'
             markup+=f'''<section class="order-editor"><div class="order-heading"><div><span class="eyebrow">CHARACTER ANNOTATION</span><h2>{title}</h2></div>
 </div>
-                <div class="cards">{''.join(cards)}</div></section>'''
+                <p class="order-help">Drag a chip between other chips to change the sequence.</p>
+                <div class="order-chips" role="list" aria-label="Sortable reading order">{''.join(chips)}</div>
+                <p class="order-sync-note" aria-live="polite">Order changes stay local until you apply them or continue.</p></section>'''
         if step==7:
             order_separator = ARROW_RIGHT
             if source_mismatch:

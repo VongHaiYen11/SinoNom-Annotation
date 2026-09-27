@@ -30,6 +30,14 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('boxes: Object.fromEntries',script)
         self.assertIn("kind:'marquee'",script)
         self.assertIn('selectedIds = new Set()',script)
+        self.assertIn("event.target.closest('[data-order-chip]')",script)
+        self.assertIn('animateChipReflow',script)
+        self.assertIn('syncExternalControls();',script)
+        self.assertNotIn("addEventListener('dragover'",script)
+        editor_css=(Path(__file__).resolve().parents[1]/'ui/assets/editor.css').read_text()
+        self.assertIn('.order-chips {',editor_css)
+        self.assertIn('flex-wrap: wrap',editor_css)
+        self.assertIn('.order-chip-ghost {',editor_css)
 
     def test_compact_header_has_all_steps_and_no_draft_status(self):
         state=new_state();state.update(image='12305.jpg',current_step=2)
@@ -293,7 +301,9 @@ class GradioCallbacks(unittest.TestCase):
             # Reading order is edited on fixed Box ID slots and explicitly
             # committed with Apply Changes (or implicitly by Next).
             self.assertTrue(result[18]['visible'])
-            self.assertIn('draggable="true"',result[8]['value']['markup'])
+            self.assertIn('class="order-chip',result[8]['value']['markup'])
+            self.assertIn('class="order-chips"',result[8]['value']['markup'])
+            self.assertIn('draggable="false"',result[8]['value']['markup'])
             mapping=dict(ctx['active']['annotations'])
             with self.assertLogs('app',level='ERROR'):
                 rejected=board_action(ctx,'reorder',{'order':[1,3,3]})
@@ -306,13 +316,12 @@ class GradioCallbacks(unittest.TestCase):
             mapping=dict(ctx['active']['annotations'])
             self.assertEqual(mapping,{'1':'永','3':'寺','2':'樂'})
             reordered_markup=board_action(ctx,'select',{'id':1})[8]['value']['markup']
-            # Box slots remain in physical ID order even though their assigned
-            # annotations now follow reading order [1, 3, 2].
-            card_marker=lambda box_id:f'data-card="1" data-box-id="{box_id}"'
-            self.assertLess(reordered_markup.index(card_marker(1)),
-                            reordered_markup.index(card_marker(2)))
-            self.assertLess(reordered_markup.index(card_marker(2)),
-                            reordered_markup.index(card_marker(3)))
+            # Stable Box ID chips move into the persisted reading-order sequence.
+            chip_marker=lambda box_id:f'data-order-chip="1" data-box-id="{box_id}"'
+            self.assertLess(reordered_markup.index(chip_marker(1)),
+                            reordered_markup.index(chip_marker(3)))
+            self.assertLess(reordered_markup.index(chip_marker(3)),
+                            reordered_markup.index(chip_marker(2)))
             self.assertIn('Box 2: 樂',reordered_markup)
             self.assertIn('Box 3: 寺',reordered_markup)
             result=action('next')(ctx);ctx=result[0]

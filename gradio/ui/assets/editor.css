@@ -99,39 +99,70 @@
 .order-heading > div { display: flex; flex-direction: column; gap: var(--space-1, 4px); }
 .order-heading h2 { margin: 0; color: var(--color-text, #f4f4f5); font-size: 14px; }
 .order-heading > span { color: var(--color-muted, #a1a1aa); font-size: 10px; }
-.cards { display: flex; flex-wrap: wrap; align-content: start; gap: var(--space-3, 12px); padding: var(--space-1, 4px); overflow: auto; }
-
-.card {
+.order-help,
+.order-sync-note { margin: 0; color: var(--color-muted, #a1a1aa); font-size: 11px; line-height: 1.5; }
+.order-sync-note { font-size: 10px; }
+.order-chips {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: var(--space-2, 8px);
+  min-height: 52px;
+  padding: var(--space-3, 12px);
+  border: 1px solid var(--color-border, #303237);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-page, #0b0d0f);
+  box-sizing: border-box;
+}
+
+.order-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: var(--space-1, 4px);
-  min-width: 56px;
-  min-height: 64px;
-  padding: var(--space-3, 12px);
+  gap: 7px;
+  min-height: 36px;
+  padding: 6px 9px 6px 10px;
   border: 1px solid #42454c;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: 999px;
   background: var(--color-panel, #17191c);
   color: var(--color-text, #f4f4f5);
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
+  will-change: transform;
 }
-.card.missing { border-color: #f59e0b; background: #302116; color: #fbbf24; }
-.card.missing .tile-character { font-family: Arial, Helvetica, sans-serif !important; font-size: 12px; font-weight: 700; }
-
-.card[draggable="true"] { cursor: grab; }
-.card[draggable="true"]:active { cursor: grabbing; }
-.card.intact { border-color: #22c55e; }
-.card.damaged { border-color: #ef4444; border-style: dashed; }
-.card.active,
-.card:hover,
-.card.drop-target { border-color: var(--color-accent, #ff7a1a); background: #302116; }
-.card.active { outline: 2px solid currentColor; outline-offset: var(--space-1, 4px); }
-.card.dragging { opacity: 40%; }
-.card.drop-target { box-shadow: -4px 0 var(--color-accent, #ff7a1a); }
-.tile-character { font-size: 24px; line-height: 1.1; }
-.card small { color: var(--color-muted, #a1a1aa); font-size: 9px; }
+.order-chip:active,
+.order-chips.is-sorting { cursor: grabbing; }
+.order-chip.missing { border-color: #f59e0b; background: #302116; color: #fbbf24; }
+.order-chip.missing .tile-character { font-family: Arial, Helvetica, sans-serif !important; font-size: 11px; font-weight: 700; }
+.order-chip.intact { border-color: #22c55e; }
+.order-chip.damaged { border-color: #ef4444; border-style: dashed; }
+.order-chip.active,
+.order-chip:hover { border-color: var(--color-accent, #ff7a1a); background: #302116; }
+.order-chip.active { outline: 2px solid currentColor; outline-offset: 2px; }
+.order-chip.dragging {
+  border: 2px dashed var(--color-accent, #ff7a1a);
+  background: rgb(255 122 26 / 14%);
+  opacity: 35%;
+}
+.order-chip-ghost {
+  position: fixed;
+  z-index: 10000;
+  margin: 0;
+  border-color: var(--color-accent, #ff7a1a);
+  background: #302116;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 45%);
+  opacity: .96;
+  pointer-events: none;
+  transform: rotate(1deg) scale(1.03);
+}
+.chip-id { min-width: 1ch; color: var(--color-muted, #a1a1aa); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chip-separator { color: #5d616a; }
+.order-chip .tile-character { font-size: 18px; line-height: 1; }
+.chip-grip { margin-left: 1px; color: #777b84; font-size: 14px; line-height: 1; }
 
 .review-detail { display: flex; flex-direction: column; gap: var(--space-6, 24px); padding: var(--space-6, 24px); border-top: 1px solid var(--color-border, #303237); }
 .review-text { display: flex; flex-direction: column; gap: var(--space-3, 12px); padding: var(--space-4, 16px); border: 1px solid var(--color-border, #303237); border-radius: var(--radius-sm, 4px); background: var(--color-page, #0b0d0f); }
