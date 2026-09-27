@@ -1,4 +1,6 @@
-from .state import require, source_mismatch_confirmed
+from collections import Counter
+
+from .state import require, source_mismatch_confirmed, spatial_box_order
 from .text_alignment import (align_text_with_missing, temporary_align_text,
                              validate_bbox_text_count)
 
@@ -25,6 +27,27 @@ def update_reading_order(state, order):
     elif (source_mismatch_confirmed(state)
           and state['source_mismatch']['issue_type'] == 'missing_source_characters'):
         state['annotations'] = align_text_with_missing(order, state['annotation_text'])
+    from .status import synchronize_missing_statuses
+    synchronize_missing_statuses(state)
+    state['workflow']['status_valid'] = False
+    state['workflow']['reading_order_valid'] = False
+    state['saved'] = False
+
+
+def update_text_sequence(state, sequence):
+    """Assign a user-arranged text sequence to spatially ordered boxes."""
+    require(state, 'alignment_valid')
+    if (not isinstance(sequence, list)
+            or any(not isinstance(value, str) or not value for value in sequence)
+            or Counter(sequence) != Counter(state['annotations'].values())):
+        raise ValueError('Text sequence has missing, duplicate, or invalid items.')
+    order = spatial_box_order(state)
+    if len(order) != len(sequence):
+        raise ValueError('Text sequence and bounding-box counts do not match.')
+    state['reading_order'] = order
+    state['annotations'] = {
+        str(box_id): value for box_id, value in zip(order, sequence)
+    }
     from .status import synchronize_missing_statuses
     synchronize_missing_statuses(state)
     state['workflow']['status_valid'] = False

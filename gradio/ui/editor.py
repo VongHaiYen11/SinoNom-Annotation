@@ -83,22 +83,22 @@ def snapshot(s):
         markup+=f'<section class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></section>'
         if step == 4:
             chips=[]
-            # Each chip owns a stable Box ID. Its DOM position mirrors the
-            # reading-order array and is the only thing the client sorter moves.
-            for position, box_id in enumerate(s['reading_order'], 1):
+            card_entries = (enumerate(s['reading_order'], 1)
+                            if s['annotations'] else ())
+            for position, box_id in card_entries:
                 key=str(box_id)
                 char=html.escape(s['annotations'].get(key,'—'))
-                condition=s['bounding_boxes'][key]['status']
-                active=' active' if key==selected_id else ''
                 missing=' missing' if s['annotations'].get(key) == MISSING_ANNOTATION else ''
-                chips.append(f'''<button type="button" class="order-chip{active}{missing}" data-order-chip="1" data-box-id="{key}"
-                    draggable="false" aria-pressed="{str(key==selected_id).lower()}" aria-label="Reading position {position}, Box {key}: {char}, {condition}" title="Box {key} · {condition}">
-                    <span class="chip-id">{key}</span><span class="chip-separator" aria-hidden="true">·</span>
-                    <span class="tile-character">{char}</span><span class="chip-grip" aria-hidden="true">⠿</span></button>''')
+                attribute_char=html.escape(s['annotations'].get(key,'—'),quote=True)
+                chips.append(f'''<button type="button" class="order-chip{missing}" data-order-chip="1" data-token-id="{position}" data-character="{attribute_char}"
+                    draggable="false" aria-label="Reading position {position}: {char}" title="{char}">
+                    <span class="tile-character">{char}</span></button>''')
             title='Reading Order'
+            help_text=('Drag the text cards into the sequence that should be assigned to the spatially sorted boxes.'
+                       if chips else 'This confirmed source mismatch has no character mapping to arrange.')
             markup+=f'''<section class="order-editor"><div class="order-heading"><div><span class="eyebrow">CHARACTER ANNOTATION</span><h2>{title}</h2></div>
 </div>
-                <p class="order-help">Drag a chip between other chips to change the sequence.</p>
+                <p class="order-help">{help_text}</p>
                 <div class="order-chips" role="list" aria-label="Sortable reading order">{''.join(chips)}</div>
                 <p class="order-sync-note" aria-live="polite">Order changes stay local until you apply them or continue.</p></section>'''
         if step==7:
@@ -121,6 +121,7 @@ def snapshot(s):
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=w,height=h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
                 readingOrder=list(s['reading_order']),
-                orderedAnnotations=[s['annotations'].get(str(box_id),'')
-                                    for box_id in s['reading_order']],
+                orderedAnnotations=([s['annotations'][str(box_id)]
+                                     for box_id in s['reading_order']]
+                                    if s['annotations'] else []),
                 max_crop_side=max(w,h), image_handle_inset=0)

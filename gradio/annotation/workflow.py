@@ -18,7 +18,8 @@ from .text_alignment import count_annotation_characters
 from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
 from .status import (update_status, replace_statuses, confirm_status,
                      synchronize_missing_statuses)
-from .reading_order import update_reading_order, validate_reading_order
+from .reading_order import (update_reading_order, update_text_sequence,
+                            validate_reading_order)
 from .io import (atomic_write, final_document,
                  final_source_mismatch_document, load_annotation,
                  load_source_mismatch, read_json, save_annotation,
@@ -324,6 +325,10 @@ class Workflow:
             if step != 4:
                 raise ValueError('Edit reading order in Step 4.')
             update_reading_order(s, payload['order'])
+        elif action == 'reorder_text':
+            if step != 4:
+                raise ValueError('Edit reading order in Step 4.')
+            update_text_sequence(s, payload['sequence'])
         elif action == 'next':
             if step == 1:
                 s['current_step'] = 2

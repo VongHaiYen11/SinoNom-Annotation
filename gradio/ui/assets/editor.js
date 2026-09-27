@@ -1,9 +1,10 @@
 // Python owns persisted data. Browser-local state owns direct manipulation.
-let pending = false, moving = null, orderDrag = null, suppressOrderClick = false;
+let pending = false, moving = null, orderDrag = null;
 let syncingStatusControl = false;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null;
-let localReadingOrder = [];
+let localTextSequence = [];
+let annotationColor = '#f4f4f5';
 const chipReflowAnimations = new WeakMap();
 const imageTransform = {zoom: 100, width: props.value.width, height: props.value.height};
 
@@ -14,6 +15,21 @@ const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-bo
   group => group.dataset.boxId === String(id)
 );
 const root = element.closest('.gradio-container') || document;
+const applyAnnotationColor = () => {
+  if (![3,4].includes(props.value.step)) return;
+  element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group=>{
+    const rect=group.querySelector('rect:not([data-image-resize-handle])');
+    if(rect){rect.setAttribute('fill',annotationColor);rect.setAttribute('stroke',annotationColor);}
+    const label=group.querySelector('text');
+    if(label)label.setAttribute('fill',annotationColor);
+  });
+};
+const readAnnotationColor = () => {
+  const selected=root.querySelector('#bbox-color-palette input:checked');
+  if(selected && ['#f4f4f5','#22d3ee','#f59e0b','#a78bfa','#f472b6'].includes(selected.value)){
+    annotationColor=selected.value;
+  }
+};
 const setInputValue = (selector, value) => {
   const input = root.querySelector(`${selector} input, ${selector} textarea`);
   if (!input) return;
@@ -34,7 +50,7 @@ const syncExternalControls = () => {
       ([id, box]) => [id, [...box.bbox]]
     )),
     crop: localBoxes.crop?.bbox || null,
-    readingOrder: [...localReadingOrder],
+    textSequence: [...localTextSequence],
   }));
   const active = activeBoxId && localBoxes[activeBoxId];
   if (!active) return;
@@ -85,17 +101,13 @@ const renderSelection = (sync=true) => {
       rect.setAttribute('stroke-width', active ? '2.5' : selected ? '2' : '1.5');
     }
   });
-  element.querySelectorAll('[data-order-chip]').forEach(chip => {
-    chip.classList.toggle('active', chip.dataset.boxId === activeBoxId);
-    chip.setAttribute('aria-pressed', String(chip.dataset.boxId === activeBoxId));
-  });
   if (sync) syncExternalControls();
 };
 const hydrateLocalState = () => {
   const context = `${props.value.image || ''}:${props.value.step}`;
   const preserveSelection = context === localContext;
   localBoxes = cloneBoxes(props.value.boxes);
-  localReadingOrder = [...(props.value.readingOrder || [])].map(Number);
+  localTextSequence = [...(props.value.orderedAnnotations || [])].map(String);
   imageTransform.width = props.value.width;
   imageTransform.height = props.value.height;
   if (preserveSelection) {
@@ -107,28 +119,8 @@ const hydrateLocalState = () => {
     localContext = context;
   }
   renderSelection();
-};
-
-const renderLocalAnnotations = () => {
-  const labels=props.value.orderedAnnotations || [];
-  localReadingOrder.forEach((boxId,index) => {
-    const card=[...element.querySelectorAll('[data-order-chip]')].find(
-      item => item.dataset.boxId === String(boxId));
-    if(!card)return;
-    const label=labels[index] ?? '';
-    const box=localBoxes[String(boxId)];
-    const status=label==='MISS'?'unknown':box?.status==='unknown'?'intact':box?.status || 'intact';
-    if(box)box.status=status;
-    const text=card.querySelector('.tile-character');
-    if(text)text.textContent=label;
-    card.classList.toggle('missing',label==='MISS');
-    card.classList.toggle('intact',props.value.step>=5 && status==='intact');
-    card.classList.toggle('damaged',props.value.step>=5 && status==='damaged');
-    card.classList.toggle('unknown',props.value.step>=5 && status==='unknown');
-    card.setAttribute('aria-label',`Reading position ${index+1}, Box ${boxId}: ${label}, ${status}`);
-    card.title=`Box ${boxId} · ${status}`;
-    renderLocalStatus(String(boxId),status);
-  });
+  readAnnotationColor();
+  applyAnnotationColor();
 };
 
 const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => {
@@ -169,6 +161,12 @@ const resizeObserver = new ResizeObserver(() => requestAnimationFrame(applyZoom)
 resizeObserver.observe(element);
 
 root.addEventListener('change', event => {
+  const color=event.target.closest('#bbox-color-palette input');
+  if(color){
+    readAnnotationColor();
+    applyAnnotationColor();
+    return;
+  }
   const input = event.target.closest('#status-radio input');
   if (!input || props.value.step !== 5 || !activeBoxId) return;
   renderLocalStatus(activeBoxId, input.value);
@@ -241,8 +239,10 @@ const drawOverlayRect = (rect, box) => {
   rect.setAttribute('width',box[2]-box[0]); rect.setAttribute('height',box[3]-box[1]);
 };
 
-const orderFromDOM = container => [...container.querySelectorAll('[data-order-chip]')]
-  .map(chip => Number(chip.dataset.boxId));
+const tokenOrderFromDOM = container => [...container.querySelectorAll('[data-order-chip]')]
+  .map(chip => chip.dataset.tokenId);
+const textSequenceFromDOM = container => [...container.querySelectorAll('[data-order-chip]')]
+  .map(chip => chip.dataset.character);
 const orderRows = chips => {
   const rows=[];
   chips.forEach(chip => {
@@ -308,7 +308,7 @@ const animateChipReflow = (container, first) => {
 const beginOrderDrag = event => {
   const state=orderDrag,rect=state.chip.getBoundingClientRect();
   state.started=true;state.offsetX=event.clientX-rect.left;state.offsetY=event.clientY-rect.top;
-  state.originalOrder=orderFromDOM(state.container);
+  state.originalOrder=tokenOrderFromDOM(state.container);
   state.ghost=state.chip.cloneNode(true);
   state.ghost.classList.remove('active');state.ghost.classList.add('order-chip-ghost');
   state.ghost.removeAttribute('data-order-chip');state.ghost.removeAttribute('id');
@@ -322,9 +322,9 @@ const moveOrderGhost = event => {
   // transition, so there is no perceived lag behind surrounding-chip motion.
   orderDrag.ghost.style.transform=`translate3d(${x}px, ${y}px, 0) rotate(1deg) scale(1.03)`;
 };
-const arrangeOrder = (container, order) => order.forEach(boxId=>{
+const arrangeOrder = (container, order) => order.forEach(tokenId=>{
   const chip=[...container.querySelectorAll('[data-order-chip]')].find(
-    item=>item.dataset.boxId===String(boxId));
+    item=>item.dataset.tokenId===String(tokenId));
   if(chip)container.appendChild(chip);
 });
 const finishOrderDrag = (commit=true) => {
@@ -339,16 +339,9 @@ const finishOrderDrag = (commit=true) => {
     state.ghost?.remove();state.chip.classList.remove('dragging');
     state.container.classList.remove('is-sorting');
     if(commit){
-      localReadingOrder=orderFromDOM(state.container);
-      renderLocalAnnotations();
+      localTextSequence=textSequenceFromDOM(state.container);
       syncExternalControls();
     }
-    suppressOrderClick=true;
-    requestAnimationFrame(()=>{suppressOrderClick=false;});
-  }else if(commit){
-    setSelection([state.chip.dataset.boxId],state.chip.dataset.boxId);
-    suppressOrderClick=true;
-    requestAnimationFrame(()=>{suppressOrderClick=false;});
   }
   orderDrag=null;
 };
@@ -539,6 +532,4 @@ element.addEventListener('click', event => {
       imageTransform.zoom+(control.dataset.zoom==='in'?25:-25)));
     applyZoom();return;
   }
-  const chip=event.target.closest('[data-order-chip]');
-  if(chip && !pending && !suppressOrderClick)setSelection([chip.dataset.boxId],chip.dataset.boxId);
 });

@@ -80,6 +80,15 @@ def _spatial_region_order(state):
     return ordered_uids
 
 
+def spatial_box_order(state):
+    """Return public Box IDs in the detector's canonical spatial order."""
+    ordered_uids = _spatial_region_order(state)
+    try:
+        return [int(state['box_id_by_region'][uid]) for uid in ordered_uids]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError('Every spatial region must have a numeric Box ID.') from exc
+
+
 def initialize_alignment(state):
     """Assign canonical IDs/order and text when a 1:1 alignment exists."""
     refresh_bbox_validation(state)

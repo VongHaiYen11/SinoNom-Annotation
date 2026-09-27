@@ -11,7 +11,8 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from annotation.state import new_state, set_verified_content, refresh_bbox_validation, initialize_alignment
 from annotation.bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
 from annotation.text_alignment import count_annotation_characters, normalize_annotation_text
-from annotation.reading_order import update_reading_order, build_text_sequence, validate_reading_order
+from annotation.reading_order import (update_reading_order, update_text_sequence,
+                                      build_text_sequence, validate_reading_order)
 from annotation.status import update_status, replace_statuses, confirm_status
 from annotation.io import (atomic_write, final_document,
                            final_source_mismatch_document, load_annotation,
@@ -111,6 +112,19 @@ class Invariants(unittest.TestCase):
         for order in ([1,3],[1,3,3],[1,3,5],['1',2,3],[True,2,3]):
             with self.assertRaises(ValueError):update_reading_order(s,order)
 
+    def test_text_sequence_is_assigned_to_spatially_sorted_boxes(self):
+        s=aligned_state()
+        statuses={key:box['status'] for key,box in s['bounding_boxes'].items()}
+        update_text_sequence(s,['永','樂','寺'])
+        self.assertEqual(s['reading_order'],[1,2,3])
+        self.assertEqual(s['annotations'],{'1':'永','2':'樂','3':'寺'})
+        self.assertEqual(build_text_sequence(s),'永樂寺')
+        self.assertEqual(
+            {key:box['status'] for key,box in s['bounding_boxes'].items()},
+            statuses)
+        for sequence in (['永','樂'],['永','樂','樂'],['永','樂',3],None):
+            with self.assertRaises(ValueError):update_text_sequence(s,sequence)
+
     def test_missing_source_alignment_adds_reorderable_miss_tags(self):
         s=state(n=5)
         s['source_mismatch']={
@@ -128,12 +142,19 @@ class Invariants(unittest.TestCase):
                             for key in ('1','2','4')))
         with self.assertRaises(ValueError):
             update_status(s,s['region_uid_by_box_id']['3'],'damaged')
+        update_text_sequence(s,['永','MISS','寺','樂','MISS'])
+        self.assertEqual(s['reading_order'],[1,2,3,4,5])
+        self.assertEqual(s['annotations']['2'],'MISS')
+        self.assertEqual(s['annotations']['5'],'MISS')
+        self.assertEqual(s['bounding_boxes']['2']['status'],'unknown')
+        self.assertEqual(s['bounding_boxes']['5']['status'],'unknown')
+        self.assertEqual(s['bounding_boxes']['3']['status'],'intact')
         s['workflow']['reading_order_valid']=True
         confirm_status(s)
         s['code']='12305'
         document=final_source_mismatch_document(s)
-        self.assertEqual(document['annotations']['3'],'MISS')
-        legacy=deepcopy(document);legacy['bounding_boxes']['3']['status']='intact'
+        self.assertEqual(document['annotations']['2'],'MISS')
+        legacy=deepcopy(document);legacy['bounding_boxes']['2']['status']='intact'
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'legacy.json';atomic_write(path,legacy)
             loaded=load_source_mismatch(path,'12305.png',[100,100])

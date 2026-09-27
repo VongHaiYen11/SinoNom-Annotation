@@ -122,7 +122,7 @@
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  min-width: 44px;
   min-height: 36px;
   padding: 6px 9px 6px 10px;
   border: 1px solid #d4d4d8;
@@ -142,9 +142,7 @@
 .order-chip.intact { border-color: #22c55e; }
 .order-chip.damaged { border-color: #ef4444; border-style: dashed; }
 .order-chip.unknown { border-color: #f59e0b; border-style: dotted; background: #302116; }
-.order-chip.active,
 .order-chip:hover { border-color: var(--color-accent, #ff7a1a); background: #302116; }
-.order-chip.active { outline: 2px solid currentColor; outline-offset: 2px; }
 .order-chip.dragging {
   border: 2px dashed var(--color-accent, #ff7a1a);
   background: rgb(255 122 26 / 14%);
@@ -165,10 +163,7 @@
   transform-origin: center;
   will-change: transform;
 }
-.chip-id { min-width: 1ch; color: var(--color-muted, #a1a1aa); font-size: 11px; font-variant-numeric: tabular-nums; }
-.chip-separator { color: #5d616a; }
 .order-chip .tile-character { font-size: 18px; line-height: 1; }
-.chip-grip { margin-left: 1px; color: #777b84; font-size: 14px; line-height: 1; }
 
 .review-detail { display: flex; flex-direction: column; gap: var(--space-6, 24px); padding: var(--space-6, 24px); border-top: 1px solid var(--color-border, #303237); }
 .review-text { display: flex; flex-direction: column; gap: var(--space-3, 12px); padding: var(--space-4, 16px); border: 1px solid var(--color-border, #303237); border-radius: var(--radius-sm, 4px); background: var(--color-page, #0b0d0f); }

@@ -201,6 +201,17 @@ def create_app(options):
                                 'Clear mismatch', visible=False, min_width=0,
                                 elem_id='clear-source-mismatch')
                 with gr.Group(visible=False,
+                              elem_classes=['section','sidebar-section']) as box_color_group:
+                    gr.Markdown('### Box color')
+                    gr.Markdown('Display only; annotation statuses are unchanged.',
+                                elem_classes='sidebar-help')
+                    box_color=gr.Radio([
+                        ('White','#f4f4f5'), ('Cyan','#22d3ee'),
+                        ('Amber','#f59e0b'), ('Violet','#a78bfa'),
+                        ('Pink','#f472b6'),
+                    ],value='#f4f4f5',label='Outline color',
+                       elem_id='bbox-color-palette')
+                with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','selection-section']) as status_group:
                     gr.Markdown('### Selected region')
                     status_id=gr.Dropdown(visible=False)
@@ -211,7 +222,7 @@ def create_app(options):
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section']) as order_group:
                     gr.Markdown('### Reading order')
-                    gr.Markdown('Drag stable Box ID chips into sequence, then apply the change.',
+                    gr.Markdown('Drag the text cards into sequence. Apply assigns them to boxes in detector-sorted spatial order.',
                                 elem_classes='sidebar-help')
                     apply_order=gr.Button('Apply Changes',variant='primary',
                                           elem_id='apply-reading-order')
@@ -252,6 +263,7 @@ def create_app(options):
         normalized=gr.State(None)
         outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,order_group,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table,
                  mismatch_group,mismatch_type,mismatch_note,confirm_mismatch,clear_mismatch]
+        outputs.append(box_color_group)
         outputs.append(workflow_chrome)
         outputs.append(preview_modal)
         outputs.append(loading_modal)
@@ -293,6 +305,7 @@ def create_app(options):
                     gr.update(value=issue.get('issue_type')),
                     gr.update(value=issue.get('note','')),
                     gr.update(interactive=counts_differ),gr.update(visible=mismatch),
+                    gr.update(visible=has and step in (3,4)),
                     workflow_progress(s),s.get('image_url',''),LOADING_HIDDEN]
 
         def run(ctx, action, payload=None, auto_detect=True):
@@ -444,10 +457,10 @@ def create_app(options):
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if ctx['active']['current_step'] == 4:
                 try:
-                    local_order = frontend_reading_order(selection)
-                    if local_order is not None and local_order != ctx['active']['reading_order']:
-                        updated = engine.apply(ctx['active'], 'reorder', {
-                            'order': local_order,
+                    text_sequence = frontend_text_sequence(selection)
+                    if text_sequence:
+                        updated = engine.apply(ctx['active'], 'reorder_text', {
+                            'sequence': text_sequence,
                         })
                         ctx = dict(ctx, active=updated)
                 except Exception as exc:
@@ -540,17 +553,17 @@ def create_app(options):
                 return crop_value
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local crop frame is invalid.')
-        def frontend_reading_order(value):
+        def frontend_text_sequence(value):
             try:
                 parsed=json.loads(value or '{}')
-                order=parsed.get('readingOrder')
-                if order is not None and (
-                        not isinstance(order,list)
-                        or any(type(box_id) is not int for box_id in order)):
+                sequence=parsed.get('textSequence')
+                if sequence is not None and (
+                        not isinstance(sequence,list)
+                        or any(not isinstance(item,str) or not item for item in sequence)):
                     raise ValueError
-                return order
+                return sequence
             except (ValueError,TypeError,AttributeError):
-                raise gr.Error('The local reading order is invalid.')
+                raise gr.Error('The local text sequence is invalid.')
         def update_coordinates(ctx,selection,a,b,d,e):
             active,_=frontend_selection(selection)
             if not active:raise gr.Error('Select a bounding box first.')
@@ -576,10 +589,12 @@ def create_app(options):
             except ValueError as exc:return render(c,'Invalid JSON: '+str(exc))
         clear_loading_when_done(apply_crop.click(lambda c,v:parse_action(c,'crop','bbox',v),[session,crop_coords],**event_args))
         def apply_reading_order(ctx,selection):
-            order=frontend_reading_order(selection)
-            if order is None:
+            sequence=frontend_text_sequence(selection)
+            if sequence is None:
                 raise gr.Error('No reading-order change is available.')
-            return run(ctx,'reorder',{'order':order})
+            if not sequence and not ctx['active']['annotations']:
+                return render(ctx)
+            return run(ctx,'reorder_text',{'sequence':sequence})
         clear_loading_when_done(apply_order.click(
             apply_reading_order,[session,selection_bridge],**event_args))
         def on_action(ctx,evt:gr.EventData):
