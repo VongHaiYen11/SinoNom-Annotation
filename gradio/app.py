@@ -136,44 +136,51 @@ def create_app(options):
         with gr.Row(elem_id='workspace'):
             with gr.Column(elem_id='control-panel', min_width=0, elem_classes='panel'):
                 heading=gr.HTML(panel_heading(initial['active']))
-                with gr.Group(elem_classes='section'):
+                with gr.Group(elem_classes=['section','sidebar-section','source-section']):
+                    gr.Markdown('### Source image')
                     image_choice=gr.Dropdown(choices=[(p.name,str(p.resolve())) for p in images],label='Image')
-                    with gr.Row(elem_classes='button-group'):
-                        open_button=gr.Button('Open image', size='sm', min_width=0)
-                        reset_button=gr.Button('Reset draft', size='sm', min_width=0)
+                    with gr.Row(elem_classes=['button-group','sidebar-action-row']):
+                        open_button=gr.Button('Open image', variant='primary', size='sm', min_width=0)
+                        reset_button=gr.Button('Reset draft', size='sm', min_width=0,
+                                               elem_id='reset-draft')
+                with gr.Group(visible=False,
+                              elem_classes=['section','sidebar-section','content-tools']) as content_actions:
+                    gr.Markdown('### Content actions')
+                    with gr.Row(elem_classes=['button-group','sidebar-action-row']):
+                        save_content=gr.Button('Save content',variant='primary',min_width=0)
+                        undo=gr.Button('Undo changes',min_width=0)
                     preview_modal=gr.HTML(value='', html_template=image_preview.MARKUP,
-                                          css_template=image_preview.CSS, js_on_load=image_preview.SCRIPT)
-                with gr.Group(visible=False, elem_classes='section') as content_actions:
-                    gr.Markdown('### Content')
-                    save_content=gr.Button('Save content',variant='primary')
-                    with gr.Column(elem_classes='button-group'):
-                        undo=gr.Button('Undo changes')
-                        restore=gr.Button('Restore original content')
-                with gr.Group(visible=False, elem_classes='section') as box_group:
-                    with gr.Group(elem_classes='section'):
-                        gr.Markdown('### Selected Region')
-                        box_id=gr.Dropdown(visible=False)
-                        selection_bridge=gr.Textbox(value='{}',show_label=False,
-                                                    elem_id='selection-bridge',
-                                                    elem_classes='frontend-bridge')
-                    with gr.Group(elem_classes='section'):
-                        gr.Markdown('### Coordinates')
+                                          css_template=image_preview.CSS, js_on_load=image_preview.SCRIPT,
+                                          elem_id='content-image-preview')
+                    with gr.Accordion('More actions', open=False,
+                                      elem_classes=['sidebar-disclosure','compact-disclosure']):
+                        restore=gr.Button('Restore original content',elem_id='restore-content')
+                with gr.Group(visible=False, elem_classes=['section','sidebar-step-stack']) as box_group:
+                    box_id=gr.Dropdown(visible=False)
+                    selection_bridge=gr.Textbox(value='{}',show_label=False,
+                                                elem_id='selection-bridge',
+                                                elem_classes='frontend-bridge')
+                    with gr.Group(elem_classes=['section','sidebar-section','selection-section']):
+                        gr.Markdown('### Selected region')
                         with gr.Row(elem_classes=['coordinate-row','field-group']):
                             x1=gr.Number(label='x1', min_width=0,elem_id='bbox-x1');y1=gr.Number(label='y1', min_width=0,elem_id='bbox-y1')
                         with gr.Row(elem_classes=['coordinate-row','field-group']):
                             x2=gr.Number(label='x2', min_width=0,elem_id='bbox-x2');y2=gr.Number(label='y2', min_width=0,elem_id='bbox-y2')
-                        update=gr.Button('Update coordinates')
-                    with gr.Group(elem_classes='section'):
+                        update=gr.Button('Update coordinates',variant='primary')
+                    with gr.Group(elem_classes=['section','sidebar-section']):
                         gr.Markdown('### Box Actions')
-                        gr.Markdown('Click to select, Ctrl/Cmd-click for multi-selection, drag empty space for a selection rectangle, and drag selected boxes to move them together. Alt/Option-drag empty space draws a new box.')
-                        with gr.Row(elem_classes='button-group'):
+                        gr.Markdown('Click or drag to select. Ctrl/Cmd adds to selection; Alt/Option-drag creates a box.',
+                                    elem_classes='sidebar-help')
+                        with gr.Row(elem_classes=['button-group','sidebar-action-row']):
                             add=gr.Button('Add box', min_width=0);delete=gr.Button('Delete selected', elem_id='delete-box', min_width=0)
-                    with gr.Accordion('Detection', open=False, elem_classes='section'):
+                    with gr.Accordion('Detection', open=False,
+                                      elem_classes=['section','sidebar-section','sidebar-disclosure']):
                         rerun_confirm=gr.Checkbox(label='Replace all existing boxes')
                         detect=gr.Button('Run detection', interactive=not skip_detection)
-                    with gr.Group(elem_classes='section') as mismatch_group:
-                        gr.Markdown('### Source mismatch')
-                        gr.Markdown('Use this only when the source text is wrong and the box count cannot be matched without creating a false annotation.')
+                    with gr.Accordion('Source mismatch', open=False,
+                                      elem_classes=['section','sidebar-section','sidebar-disclosure']) as mismatch_group:
+                        gr.Markdown('Use only when the source text is wrong and matching the counts would create a false annotation.',
+                                    elem_classes='sidebar-help')
                         mismatch_type=gr.Radio([
                             ('Missing characters in source','missing_source_characters'),
                             ('Extra characters in source','extra_source_characters'),
@@ -181,10 +188,12 @@ def create_app(options):
                             ('Other','other'),
                         ],label='Issue type')
                         mismatch_note=gr.Textbox(label='Note (optional)',lines=3)
-                        with gr.Row(elem_classes='button-group'):
+                        with gr.Row(elem_classes=['button-group','sidebar-action-row']):
                             confirm_mismatch=gr.Button('Confirm source mismatch',min_width=0)
                             clear_mismatch=gr.Button('Clear mismatch',visible=False,min_width=0)
-                with gr.Group(visible=False, elem_classes='section') as status_group:
+                with gr.Group(visible=False,
+                              elem_classes=['section','sidebar-section','selection-section']) as status_group:
+                    gr.Markdown('### Selected region')
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
                     set_status=gr.Button('Update status', variant='primary',elem_id='set-status')
@@ -193,13 +202,16 @@ def create_app(options):
                 status_table=gr.State([])
                 order_group=gr.State(None)
                 order_text=gr.State('[]')
-                with gr.Group(visible=False, elem_classes='section') as crop_group:
+                with gr.Group(visible=False, elem_classes=['section','sidebar-section']) as crop_group:
                     gr.Markdown('### Crop')
-                    gr.Markdown('Drag the blue square to resize the source image. Drag the orange crop handles separately to adjust the crop frame.')
+                    gr.Markdown('Blue handle resizes the image. Orange handles adjust the crop frame.',
+                                elem_classes='sidebar-help')
                     crop_coords=gr.Textbox(label='Coordinates [x1, y1, x2, y2]')
-                    apply_crop=gr.Button('Apply crop')
+                    apply_crop=gr.Button('Apply crop',variant='primary')
                 summary=gr.HTML(panel_summary(initial['active']))
-                gr.HTML(FONT_PICKER, js_on_load=FONT_PICKER_SCRIPT, elem_id='font-control')
+                with gr.Accordion('Display font', open=False,
+                                  elem_classes=['section','sidebar-section','sidebar-disclosure']):
+                    gr.HTML(FONT_PICKER, js_on_load=FONT_PICKER_SCRIPT, elem_id='font-control')
             with gr.Column(elem_id='main-workspace', min_width=0, scale=1, elem_classes='panel'):
                 with gr.Column(elem_id='workspace-body'):
                     with gr.Group(visible=False, elem_id='content-editor',elem_classes='section') as content_group:

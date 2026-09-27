@@ -38,7 +38,10 @@ def header(state):
 
 
 def panel_heading(state):
-    return f'<div class="panel-heading"><h2>{LABELS[state["current_step"]-1]}</h2></div>'
+    return f'''<div class="panel-heading">
+      <span class="panel-eyebrow">Inspector</span>
+      <h2>{LABELS[state["current_step"]-1]}</h2>
+    </div>'''
 
 
 def panel_summary(state):
@@ -52,7 +55,7 @@ def panel_summary(state):
              if not state['workflow']['content_verified'] else 'Source mismatch confirmed'
              if mismatch else 'Count mismatch')
     delta = len(boxes) - count
-    return f'''<section class="section panel-summary"><h3>Validation</h3>
+    return f'''<section class="section sidebar-section panel-summary"><h3>Validation</h3>
       <div class="validation-badge">{CHECK if matched or mismatch else ALERT}<span>{label}</span></div>
       <dl><div><dt>Bounding boxes</dt><dd>{len(boxes)}</dd></div>
       <div><dt>Characters</dt><dd>{count}</dd></div>

@@ -208,6 +208,8 @@ class GradioCallbacks(unittest.TestCase):
                 return on_action(ctx,event)
             result=open_image(dict(active=new_state(),drafts={}),str(path))
             ctx=result[0];self.assertEqual(ctx['active']['current_step'],2)
+            self.assertTrue(result[27]['visible'])
+            self.assertEqual(result[-2],ctx['active']['image_url'])
             lambdas=[f for f in functions if f.__name__=='<lambda>']
             def action(name):
                 if name == 'next':
@@ -224,6 +226,7 @@ class GradioCallbacks(unittest.TestCase):
                 detector.assert_not_called()
                 result=next(stream)
             ctx=result[0];self.assertEqual(ctx['active']['current_step'],3)
+            self.assertFalse(result[27]['visible'])
             self.assertIn('fixture model unavailable',result[2]['value'])
             add=action('add')
             for x in (0,20,40):ctx=add(ctx,None,x,0,x+10,10)[0]
