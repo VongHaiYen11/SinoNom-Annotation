@@ -34,6 +34,7 @@ class GradioCallbacks(unittest.TestCase):
         markup=header(state)
         self.assertNotIn('Draft',markup)
         self.assertNotIn('save-indicator',markup)
+        self.assertIn('<span class="brand-mark" aria-hidden="true">文</span>',markup)
         self.assertEqual(markup.count('class="stepper-item'),7)
         self.assertEqual(markup.count('class="stepper-label"'),7)
         self.assertIn('aria-current="step"',markup)
@@ -42,6 +43,8 @@ class GradioCallbacks(unittest.TestCase):
 
     def test_sidebar_has_bounded_scroll_and_aligned_action_controls(self):
         css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
+        self.assertIn('#header-row::before',css)
+        self.assertIn('grid-template-rows: auto auto',css)
         self.assertIn('grid-template-rows: minmax(0, 1fr)',css)
         self.assertIn('flex: 1 1 0',css)
         self.assertIn('overflow-y: auto',css)

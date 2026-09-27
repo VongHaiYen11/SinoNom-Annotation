@@ -4,7 +4,7 @@ from pathlib import Path
 from annotation.text_alignment import count_annotation_characters
 from annotation.state import source_mismatch_confirmed
 from .fonts import FONT_CSS
-from .icons import ALERT, CHECK, DOCUMENT
+from .icons import ALERT, CHECK
 
 APP_CSS = FONT_CSS + (Path(__file__).parent / 'assets/workbench.css').read_text()
 LABELS = ('Image', 'Content', 'Bounding Boxes', 'Status', 'Reading Order', 'Crop', 'Review')
@@ -32,7 +32,7 @@ def header(state):
         steps.append(f'''<li class="stepper-item{cls}"{current}>
             <span class="stepper-dot">{mark}</span><span class="stepper-label">{label}</span></li>''')
     return f'''<header class="app-header">
-      <div class="brand-lockup"><span class="brand-mark" aria-hidden="true">{DOCUMENT}</span>
+      <div class="brand-lockup"><span class="brand-mark" aria-hidden="true">文</span>
         <div><h1>Sino-Nôm Annotation Tool</h1><div class="file-name">{filename}</div></div></div>
     </header><nav aria-label="Annotation workflow"><ol class="stepper">{''.join(steps)}</ol></nav>'''
 

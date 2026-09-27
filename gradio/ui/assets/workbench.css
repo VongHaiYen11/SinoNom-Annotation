@@ -7,11 +7,11 @@ body,
 
 .gradio-container {
   --page-max-width: 1600px;
-  --page-padding: 24px;
-  --section-gap: 24px;
+  --page-padding: 16px;
+  --section-gap: 16px;
   --card-padding: 16px;
   --sidebar-section-padding: 12px;
-  --panel-gap: 24px;
+  --panel-gap: 16px;
   --sidebar-width: 320px;
   --input-height: 40px;
   --button-height: 40px;
@@ -134,21 +134,32 @@ body,
 
 @keyframes global-loading-spin { to { transform: rotate(360deg); } }
 
-/* Header children participate in one parent grid; no overlay positioning. */
+/* Identity/action and workflow are separate grid widgets without changing callbacks. */
 #header-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   align-items: stretch;
-  gap: 0 var(--space-4);
+  gap: var(--space-2) var(--space-4);
   width: 100%;
   box-sizing: border-box;
   margin: 0;
-  padding: 0 var(--space-4);
-  overflow: hidden;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  flex: 0 0 auto;
+  isolation: isolate;
+}
+
+#header-row::before {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  z-index: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-panel);
-  flex: 0 0 auto;
+  content: '';
 }
 
 #app-chrome,
@@ -157,38 +168,48 @@ body,
 .app-header {
   display: flex;
   align-items: center;
+  grid-column: 1;
+  grid-row: 1;
+  z-index: 1;
   min-width: 0;
-  min-height: 56px;
-  padding: var(--space-3) 0;
+  padding: var(--space-3) 0 var(--space-3) var(--space-4);
 }
 
 #save-all {
   grid-column: 2;
   grid-row: 1;
+  z-index: 1;
   width: auto;
-  min-width: 104px;
+  min-width: 96px;
   min-height: var(--button-height);
   align-self: center;
-  margin: 0;
-  padding-inline: var(--space-4);
+  margin: 0 var(--space-4) 0 0;
+  padding: 0 var(--space-3);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 #header-row nav {
   grid-column: 1 / -1;
   grid-row: 2;
   min-width: 0;
-  border-top: 1px solid var(--color-border);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-panel);
 }
 
 .brand-lockup { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .brand-lockup > div { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .ui-icon { display: inline-block; flex: 0 0 auto; width: 16px; height: 16px; vertical-align: middle; }
-.brand-mark { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border: 1px solid #54321b; border-radius: var(--radius-md); color: var(--color-accent); background: #302116; }
+.brand-mark { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border: 1px solid #54321b; border-radius: var(--radius-md); color: var(--color-accent); background: #302116; font-size: 20px; }
 .brand-mark .ui-icon { width: 20px; height: 20px; }
 .app-header h1 { margin: 0 !important; color: var(--color-text); font-size: 17px !important; line-height: 1.2; }
 .file-name { overflow-wrap: anywhere; color: var(--color-muted); font-size: 12px; line-height: 1.2; }
 
-.stepper { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 48px; margin: 0 !important; padding: var(--space-2) 0 !important; overflow: visible; list-style: none !important; }
+.stepper { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 44px; margin: 0 !important; padding: var(--space-2) 0 !important; overflow: visible; list-style: none !important; }
 .stepper-item { display: flex; align-items: center; flex: 1 1 auto; gap: var(--space-2); min-width: 0; color: #8f939c; font-size: 12px; white-space: nowrap; }
 .stepper-item:not(:last-child)::after { flex: 1 1 32px; min-width: var(--space-2); height: 1px; background: var(--color-border); content: ''; }
 .stepper-label { flex: 0 1 auto; min-width: 0; }
@@ -322,11 +343,21 @@ button#next-button::after { transform: rotate(180deg); }
 }
 #control-panel input[type="text"],
 #control-panel input[type="number"],
-#control-panel select { min-height: var(--input-height); }
+#control-panel select { min-height: var(--input-height); font-size: 12px; }
 .gradio-container .block-label { padding-bottom: var(--space-2) !important; font-size: 12px; }
 .gradio-container label > span { margin-bottom: var(--space-2); }
 #control-panel button,
-#workflow-footer button { min-height: var(--button-height); font-size: 12px; }
+#workflow-footer button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--button-height);
+  padding-inline: var(--space-3);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
 
 #control-panel button.secondary,
 #workflow-footer button.secondary { border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-panel); color: var(--color-text); }
@@ -411,11 +442,12 @@ button#next-button::after { transform: rotate(180deg); }
 @media (max-width: 700px) {
   .gradio-container { --page-padding: 12px; }
   .gradio-container .main { height: auto; overflow: visible; }
-  #header-row { grid-template-columns: minmax(0, 1fr) auto; padding-inline: var(--space-3); }
-  .app-header { min-height: 56px; padding: var(--space-3) 0; }
-  .app-header h1 { font-size: 12px !important; }
+  #header-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .app-header { padding: var(--space-3) 0 var(--space-3) var(--space-3); }
+  .app-header h1 { font-size: 14px !important; }
   #save-all { min-width: 96px; }
-  .stepper { align-items: flex-start; min-height: 48px; }
+  #header-row nav { padding-inline: var(--space-3); }
+  .stepper { align-items: flex-start; min-height: 44px; }
   .stepper-item { align-items: flex-start; white-space: normal; }
   .stepper-label { line-height: 1.2; }
   #workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; overflow: visible; }

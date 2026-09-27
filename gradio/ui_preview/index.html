@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sino-Nôm Annotation Tool — UI Preview</title>
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <main class="app-shell">
+    <div class="header-stack">
+      <header class="topbar widget">
+        <div class="identity">
+          <span class="app-mark" aria-hidden="true">文</span>
+          <div><h1>Sino-Nôm Annotation Tool</h1><p>12305.jpg · UI preview</p></div>
+        </div>
+        <button class="button primary save-all" data-demo>Save all</button>
+      </header>
+      <nav class="workflow-widget widget" aria-label="Annotation workflow">
+        <ol class="stepper" id="stepper"></ol>
+      </nav>
+    </div>
+
+    <section class="workspace">
+      <aside class="sidebar" aria-label="Inspector">
+        <div class="inspector-heading"><span>Inspector</span><h2 id="step-title">Image</h2></div>
+
+        <section class="panel-section">
+          <h3>Source image</h3>
+          <label>Image<select><option>12305.jpg</option><option>12306.jpg</option></select></label>
+          <div class="action-grid"><button class="button primary" data-demo>Open image</button><button class="button danger" data-demo>Reset draft</button></div>
+        </section>
+
+        <div id="step-controls"></div>
+
+        <details class="panel-section disclosure">
+          <summary>Display font</summary>
+          <label>Han/Nom font<select><option>NomNaTong</option><option>DengXian</option><option>PMingLiU</option></select></label>
+          <p class="font-sample">永樂寺 · 𨴦 · 喃</p>
+        </details>
+      </aside>
+
+      <section class="canvas-panel">
+        <div class="canvas-toolbar"><strong id="canvas-title">Image</strong><span>Static sample · no data is saved</span></div>
+        <div class="canvas" id="canvas">
+          <div class="document">
+            <div class="inscription">永<br>樂<br>寺<br>碑</div>
+            <span class="box b1"></span><span class="box b2"></span><span class="box b3"></span><span class="box b4"></span>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <footer class="workflow-footer">
+      <button class="button" id="back">Back</button>
+      <span id="step-count">Image / 1 of 7</span>
+      <button class="button primary" id="next">Next</button>
+    </footer>
+  </main>
+
+  <dialog id="image-dialog">
+    <header><strong>Image preview</strong><button class="button" id="close-preview">Close</button></header>
+    <div class="dialog-image"><span>永 樂 寺 碑</span></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="preview.js"></script>
+</body>
+</html>
