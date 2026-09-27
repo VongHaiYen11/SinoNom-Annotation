@@ -49,6 +49,20 @@ SHOW_LOADING_JS = """(...args) => {
     document.getElementById('global-loading')?.classList.add('is-visible');
     return args;
 }"""
+def snapshot_text_sequence_js(selection_index):
+    """Build a click preprocessor that submits the cards exactly as displayed."""
+    return f"""(...args) => {{
+        document.getElementById('global-loading')?.classList.add('is-visible');
+        const cards = document.querySelector('#annotation-board .order-chips');
+        if (cards) {{
+            let snapshot = {{}};
+            try {{ snapshot = JSON.parse(args[{selection_index}] || '{{}}'); }} catch (_) {{}}
+            snapshot.textSequence = [...cards.querySelectorAll('[data-order-chip]')]
+                .map(card => card.dataset.character);
+            args[{selection_index}] = JSON.stringify(snapshot);
+        }}
+        return args;
+    }}"""
 HIDE_LOADING_JS = """() => {
     document.getElementById('global-loading')?.classList.remove('is-visible');
 }"""
@@ -205,11 +219,9 @@ def create_app(options):
                     gr.Markdown('### Box color')
                     gr.Markdown('Display only; annotation statuses are unchanged.',
                                 elem_classes='sidebar-help')
-                    box_color=gr.Radio([
-                        ('White','#f4f4f5'), ('Cyan','#22d3ee'),
-                        ('Amber','#f59e0b'), ('Violet','#a78bfa'),
-                        ('Pink','#f472b6'),
-                    ],value='#f4f4f5',label='Outline color',
+                    box_color=gr.Radio(
+                        ['White','Cyan','Amber','Violet','Pink'],
+                        value='White',label='Outline color',
                        elem_id='bbox-color-palette')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','selection-section']) as status_group:
@@ -503,7 +515,7 @@ def create_app(options):
             next_with_progress,
             [session,field,field_value,mismatch_type,mismatch_note,
              selection_bridge,status],
-            **event_args))
+            **dict(event_args,js=snapshot_text_sequence_js(5))))
         def choose_field(ctx,path):
             if not path:return ''
             s=ctx['active']
@@ -596,7 +608,8 @@ def create_app(options):
                 return render(ctx)
             return run(ctx,'reorder_text',{'sequence':sequence})
         clear_loading_when_done(apply_order.click(
-            apply_reading_order,[session,selection_bridge],**event_args))
+            apply_reading_order,[session,selection_bridge],
+            **dict(event_args,js=snapshot_text_sequence_js(1))))
         def on_action(ctx,evt:gr.EventData):
             return run(ctx,evt._data['action'],evt._data['payload'])
         board.action(on_action,[session],outputs=outputs,concurrency_id='annotation-actions',

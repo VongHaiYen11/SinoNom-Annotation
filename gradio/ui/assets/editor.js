@@ -5,6 +5,10 @@ let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null;
 let localTextSequence = [];
 let annotationColor = '#f4f4f5';
+const annotationColors = {
+  White:'#f4f4f5', Cyan:'#22d3ee', Amber:'#f59e0b',
+  Violet:'#a78bfa', Pink:'#f472b6',
+};
 const chipReflowAnimations = new WeakMap();
 const imageTransform = {zoom: 100, width: props.value.width, height: props.value.height};
 
@@ -26,9 +30,7 @@ const applyAnnotationColor = () => {
 };
 const readAnnotationColor = () => {
   const selected=root.querySelector('#bbox-color-palette input:checked');
-  if(selected && ['#f4f4f5','#22d3ee','#f59e0b','#a78bfa','#f472b6'].includes(selected.value)){
-    annotationColor=selected.value;
-  }
+  if(selected && annotationColors[selected.value]) annotationColor=annotationColors[selected.value];
 };
 const setInputValue = (selector, value) => {
   const input = root.querySelector(`${selector} input, ${selector} textarea`);
@@ -163,7 +165,7 @@ resizeObserver.observe(element);
 root.addEventListener('change', event => {
   const color=event.target.closest('#bbox-color-palette input');
   if(color){
-    readAnnotationColor();
+    if(annotationColors[color.value]) annotationColor=annotationColors[color.value];
     applyAnnotationColor();
     return;
   }

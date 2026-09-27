@@ -65,7 +65,7 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('duration:180',script)
         self.assertIn("easing:'cubic-bezier(.22, 1, .36, 1)'",script)
         self.assertIn('chipReflowAnimations.get(chip)?.cancel()',script)
-        self.assertIn("'#f4f4f5','#22d3ee','#f59e0b','#a78bfa','#f472b6'",script)
+        self.assertIn("White:'#f4f4f5', Cyan:'#22d3ee', Amber:'#f59e0b'",script)
         self.assertIn("#bbox-color-palette input:checked",script)
         self.assertIn('applyAnnotationColor',script)
         self.assertIn('syncExternalControls();',script)
@@ -75,7 +75,15 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('flex-wrap: wrap',editor_css)
         self.assertIn('.order-chip-ghost {',editor_css)
         workbench_css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
-        self.assertEqual(workbench_css.count('--box-swatch:'),5)
+        self.assertNotIn('#bbox-color-palette label::after',workbench_css)
+        self.assertNotIn('--box-swatch',workbench_css)
+
+    def test_apply_and_next_snapshot_visible_text_cards(self):
+        source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
+        self.assertIn("document.querySelector('#annotation-board .order-chips')",source)
+        self.assertIn("snapshot.textSequence = [...cards.querySelectorAll('[data-order-chip]')]",source)
+        self.assertIn('snapshot_text_sequence_js(5)',source)
+        self.assertIn('snapshot_text_sequence_js(1)',source)
 
     def test_compact_header_has_all_steps_and_no_draft_status(self):
         state=new_state();state.update(image='12305.jpg',current_step=2)

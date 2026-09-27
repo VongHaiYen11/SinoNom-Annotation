@@ -455,23 +455,9 @@ button#confirm-source-mismatch:hover { background: #e96c0d !important; }
   background: var(--color-page) !important;
   font-size: 11px !important;
 }
-#bbox-color-palette label::after {
-  width: 14px;
-  height: 14px;
-  margin-left: auto;
-  border: 1px solid rgb(255 255 255 / 28%);
-  border-radius: 50%;
-  background: var(--box-swatch);
-  content: '';
-}
-#bbox-color-palette label:has(input[value="#f4f4f5"]) { --box-swatch: #f4f4f5; }
-#bbox-color-palette label:has(input[value="#22d3ee"]) { --box-swatch: #22d3ee; }
-#bbox-color-palette label:has(input[value="#f59e0b"]) { --box-swatch: #f59e0b; }
-#bbox-color-palette label:has(input[value="#a78bfa"]) { --box-swatch: #a78bfa; }
-#bbox-color-palette label:has(input[value="#f472b6"]) { --box-swatch: #f472b6; }
 #bbox-color-palette label:has(input:checked) {
-  border-color: var(--box-swatch) !important;
-  box-shadow: 0 0 0 1px var(--box-swatch);
+  border-color: var(--color-accent) !important;
+  background: #302116 !important;
 }
 
 .gradio-container button:focus-visible,
