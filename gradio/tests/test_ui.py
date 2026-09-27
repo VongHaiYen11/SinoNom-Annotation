@@ -53,6 +53,8 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('grid-template-columns: repeat(2, minmax(0, 1fr))',css)
         self.assertIn('#content-image-preview .preview-open {',css)
         self.assertIn('white-space: nowrap',css)
+        self.assertIn('#confirm-source-mismatch',css)
+        self.assertIn('justify-content: center',css)
 
     def test_cli_paths_override_config_and_missing_paths_use_config(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -219,7 +221,6 @@ class GradioCallbacks(unittest.TestCase):
             open_image=next(f for f in functions if f.__name__=='open_image')
             on_action=next(f for f in functions if f.__name__=='on_action')
             update_coordinates=next(f for f in functions if f.__name__=='update_coordinates')
-            apply_status=next(f for f in functions if f.__name__=='apply_status')
             def board_action(ctx,name,payload):
                 s=ctx['active']
                 event=gr.EventData(None,dict(action=name,payload=dict(payload,revision=s['revision'],image=s['image'])))
@@ -267,9 +268,10 @@ class GradioCallbacks(unittest.TestCase):
             self.assertIn('data-region-uid',result[8]['value']['markup'])
             damaged_uid=list(ctx['active']['regions'])[1]
             local_selection=json.dumps({'active':damaged_uid,'selected':[damaged_uid]})
-            ctx=apply_status(ctx,local_selection,'damaged')[0]
+            advance=next(f for f in functions if f.__name__=='next_with_progress')
+            result=list(advance(ctx,None,None,None,'',local_selection,'damaged'))[-1]
+            ctx=result[0]
             self.assertEqual(ctx['active']['regions'][damaged_uid]['status'],'damaged')
-            result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],5)
             # Reading order is edited directly on the draggable cards; the
             # redundant raw Box IDs control is intentionally not rendered.
@@ -284,9 +286,7 @@ class GradioCallbacks(unittest.TestCase):
             result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],6)
             self.assertTrue(result[21]['visible'])
-            self.assertIn('data-image-resize-handle',result[8]['value']['markup'])
-            ctx=board_action(ctx,'resize_image',{'size':[120,80]})[0]
-            self.assertEqual(ctx['active']['resized_image_size'],[120,80])
+            self.assertNotIn('data-image-resize-handle',result[8]['value']['markup'])
             ctx=board_action(ctx,'crop',{'bbox':[5,10,95,70]})[0]
             self.assertEqual(ctx['active']['annotations'],mapping)
             ctx=action('next')(ctx)[0]
@@ -300,8 +300,8 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(saved['reading_order'],[1,3,2])
             self.assertEqual(saved['crop']['top_left'],[5,10])
             self.assertEqual(saved['image_resize'],{
-                'source_size':[100,100], 'output_size':[120,80],
-                'scale_x':1.2, 'scale_y':0.8,
+                'source_size':[100,100], 'output_size':[100,100],
+                'scale_x':1.0, 'scale_y':1.0,
             })
             export=next(f for f in functions if f.__name__=='save_folder')
             payload=json.loads(export())
@@ -346,7 +346,7 @@ class GradioCallbacks(unittest.TestCase):
             self.assertIn('Difference (boxes − characters)',result[25])
             self.assertTrue(result[31]['visible'])
             self.assertTrue(result[34]['interactive'])
-            result=confirm(ctx,'extra_source_characters','source has an extra character')
+            result=confirm(ctx,'wrong_source_content','source does not match the image')
             ctx=result[0]
             self.assertTrue(result[35]['visible'])
             self.assertIn('Source mismatch confirmed',result[25])

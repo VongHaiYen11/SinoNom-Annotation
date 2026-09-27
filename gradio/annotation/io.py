@@ -9,7 +9,6 @@ from .text_alignment import MISSING_ANNOTATION, validate_bbox_text_count, charac
 
 SOURCE_MISMATCH_TYPES = {
     'missing_source_characters',
-    'extra_source_characters',
     'wrong_source_content',
     'other',
 }
@@ -20,8 +19,6 @@ def validate_source_mismatch_type(issue_type, character_count, box_count):
         raise ValueError('Invalid source mismatch issue type.')
     if issue_type == 'missing_source_characters' and character_count >= box_count:
         raise ValueError('Missing source characters requires more boxes than source characters.')
-    if issue_type == 'extra_source_characters' and character_count <= box_count:
-        raise ValueError('Extra source characters requires more source characters than boxes.')
 
 
 def _unique(pairs):
@@ -174,11 +171,11 @@ def final_document(state):
     if not all(state['workflow'].values()) or not validate_bbox_text_count(state):
         raise ValueError('Complete all verification steps and match the box and character counts.')
     doc = {k: state[k] for k in ('image', 'bounding_boxes', 'reading_order', 'annotations')}
-    from crop.crop import crop_document, default_crop, image_resize
-    resized_size = state.get('resized_image_size') or state['image_size']
+    from crop.crop import auto_scale_crop, crop_document, default_crop, image_resize
+    source_crop = state.get('crop') or default_crop(state['image_size'])
+    scaled_crop, resized_size = auto_scale_crop(source_crop, state['image_size'])
     doc['crop'] = crop_document(
-        state['image'], state.get('crop') or default_crop(resized_size),
-        resized_size
+        state['image'], scaled_crop, resized_size
     )['crop']
     doc['image_resize'] = image_resize(state['image_size'], resized_size)
     validate_document(doc, state['image'], state['image_size'])
@@ -204,11 +201,12 @@ def final_source_mismatch_document(state):
     }
     if issue['issue_type'] == 'missing_source_characters':
         doc['annotations'] = state['annotations']
-    from crop.crop import crop_document, default_crop, image_resize
-    resized_size = state.get('resized_image_size') or state['image_size']
+    from crop.crop import auto_scale_crop, crop_document, default_crop, image_resize
+    source_crop = state.get('crop') or default_crop(state['image_size'])
+    scaled_crop, resized_size = auto_scale_crop(source_crop, state['image_size'])
     doc['image_resize'] = image_resize(state['image_size'], resized_size)
     doc['crop'] = crop_document(
-        state['image'], state.get('crop') or default_crop(resized_size), resized_size
+        state['image'], scaled_crop, resized_size
     )['crop']
     return validate_source_mismatch_document(doc, state['image'], state['image_size'])
 

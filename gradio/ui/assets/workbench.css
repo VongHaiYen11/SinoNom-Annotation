@@ -327,6 +327,28 @@ button#next-button::after { transform: rotate(180deg); }
   line-height: 1.2;
   white-space: nowrap;
 }
+#control-panel .mismatch-action-row {
+  display: flex !important;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+#control-panel .mismatch-action-row > * {
+  width: auto !important;
+  min-width: 0 !important;
+}
+#confirm-source-mismatch,
+#confirm-source-mismatch button,
+button#confirm-source-mismatch {
+  width: auto !important;
+  border-color: var(--color-accent) !important;
+  background: var(--color-accent) !important;
+  color: var(--color-page) !important;
+  font-size: 11px !important;
+}
+#confirm-source-mismatch:hover,
+#confirm-source-mismatch button:hover,
+button#confirm-source-mismatch:hover { background: #e96c0d !important; }
 #content-image-preview {
   min-height: 0;
   margin: 0;

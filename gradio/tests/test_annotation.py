@@ -18,8 +18,8 @@ from annotation.io import (atomic_write, final_document,
                            read_json, save_annotation)
 from annotation.text_extraction import extract_source_content, save_source_content
 from annotation.workflow import Workflow
-from crop.crop import (save_crop_coordinates, crop_document, default_crop,
-                       MAX_CROP_SIDE)
+from crop.crop import (auto_scale_crop, save_crop_coordinates, crop_document,
+                       default_crop, MAX_CROP_SIDE)
 from PIL import Image
 
 
@@ -131,20 +131,20 @@ class Invariants(unittest.TestCase):
             with self.assertRaises(ValueError):update_bbox(candidate,uid,coords)
 
     def test_crop_dimensions_are_limited_to_4096(self):
-        self.assertEqual(default_crop([5000, 3000]), [0, 0, MAX_CROP_SIDE, 3000])
-        self.assertEqual(default_crop([3000, 5000]), [0, 0, 3000, MAX_CROP_SIDE])
+        self.assertEqual(default_crop([5000, 3000]), [0, 0, 5000, 3000])
         valid = crop_document('scan.png', [500, 600, 4596, 4696], [6000, 6000])
         self.assertEqual(valid['crop']['bottom_right'], [4596, 4696])
-        with self.assertRaisesRegex(ValueError, 'cannot exceed 4096'):
-            crop_document('scan.png', [0, 0, 4097, 100], [6000, 6000])
-        with self.assertRaisesRegex(ValueError, 'cannot exceed 4096'):
-            crop_document('scan.png', [0, 0, 100, 4097], [6000, 6000])
+        scaled, size = auto_scale_crop([0,0,5000,3000],[5000,3000])
+        self.assertEqual(max(scaled[2]-scaled[0],scaled[3]-scaled[1]),MAX_CROP_SIDE)
+        self.assertEqual(size,[4096,2458])
 
         s = aligned_state()
         s['image_size'] = [5000, 6000]
+        s['crop'] = default_crop(s['image_size'])
         s['workflow']['reading_order_valid'] = True
-        self.assertEqual(final_document(s)['crop']['bottom_right'],
-                         [MAX_CROP_SIDE, MAX_CROP_SIDE])
+        document=final_document(s)
+        self.assertEqual(max(document['crop']['bottom_right']),MAX_CROP_SIDE)
+        self.assertEqual(document['image_resize']['output_size'],[3413,4096])
 
     def test_unicode(self):
         self.assertEqual(count_annotation_characters(' 永、樂。寺\n(𨴦) '),4)
@@ -258,7 +258,7 @@ class Integration(unittest.TestCase):
         s=e.apply(s,'save');self.assertTrue(s['saved'])
         self.assertEqual(e.apply(s,'next')['current_step'],7)
 
-    def test_source_resize_and_crop_frame_are_independent(self):
+    def test_crop_frame_preserves_annotations_and_scales_automatically(self):
         e=self.engine;s=e.open_image(self.image)
         s=e.apply(s,'save_content');s=e.apply(s,'next')
         for x in (0,20,40):s=e.apply(s,'add',{'bbox':[x,0,x+10,10]})
@@ -266,26 +266,20 @@ class Integration(unittest.TestCase):
         self.assertEqual(s['current_step'],6)
         regions=deepcopy(s['regions']);annotations=deepcopy(s['annotations'])
 
-        s=e.apply(s,'resize_image',{'size':[120,80]})
-        self.assertEqual(s['resized_image_size'],[120,80])
-        self.assertEqual(s['crop'],[0,0,100,80])
-        s=e.apply(s,'crop',{'bbox':[5,10,115,70]})
-        self.assertEqual(s['crop'],[5,10,115,70])
+        s=e.apply(s,'crop',{'bbox':[5,10,95,70]})
+        self.assertEqual(s['crop'],[5,10,95,70])
         self.assertEqual(s['regions'],regions)
         self.assertEqual(s['annotations'],annotations)
 
         document=final_document(s)
         self.assertEqual(document['image_resize'],{
-            'source_size':[100,100], 'output_size':[120,80],
-            'scale_x':1.2, 'scale_y':0.8,
+            'source_size':[100,100], 'output_size':[100,100],
+            'scale_x':1.0, 'scale_y':1.0,
         })
         self.assertEqual(document['crop']['top_left'],[5,10])
-        self.assertEqual(document['crop']['bottom_right'],[115,70])
-
-        s=e.apply(s,'resize_image',{'size':[50,40]})
-        self.assertEqual(s['crop'],[0,0,50,40])
+        self.assertEqual(document['crop']['bottom_right'],[95,70])
         with self.assertRaises(ValueError):
-            e.apply(s,'crop',{'bbox':[0,0,51,40]})
+            e.apply(s,'crop',{'bbox':[0,0,101,40]})
 
     def test_source_mismatch_roundtrip_and_return_to_normal(self):
         e=self.engine;s=e.open_image(self.image)
@@ -298,7 +292,7 @@ class Integration(unittest.TestCase):
             e.apply(s,'confirm_source_mismatch',{
                 'issue_type':'missing_source_characters','note':''})
         s=e.apply(s,'confirm_source_mismatch',{
-            'issue_type':'extra_source_characters','note':'PDF contains one extra character'})
+            'issue_type':'wrong_source_content','note':'PDF source does not match the image'})
         s=e.apply(s,'next');s=e.apply(s,'next')
         self.assertEqual(s['current_step'],5)
         self.assertEqual(s['annotations'],{})
@@ -316,7 +310,7 @@ class Integration(unittest.TestCase):
 
         reopened=e.open_image(self.image)
         reopened=e.apply(reopened,'save_content');reopened=e.apply(reopened,'next')
-        self.assertEqual(reopened['source_mismatch']['issue_type'],'extra_source_characters')
+        self.assertEqual(reopened['source_mismatch']['issue_type'],'wrong_source_content')
         reopened=e.apply(reopened,'add',{'bbox':[40,0,50,10]})
         self.assertIsNone(reopened['source_mismatch'])
         self.assertTrue(reopened['workflow']['bbox_valid'])

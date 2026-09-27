@@ -175,16 +175,6 @@ element.addEventListener('pointerdown', event => {
   if (pending || event.button !== 0) return;
   const svg=event.target.closest('.annotation-canvas'); if(!svg) return;
   const mode=props.value.step;
-  const imageHandle=event.target.closest('[data-image-resize-handle]');
-  if(imageHandle && mode===6){
-    const bounds=svg.getBoundingClientRect();
-    moving={kind:'image',svg,handle:imageHandle,start:[event.clientX,event.clientY],
-      size:[props.value.width,props.value.height],box:[...localBoxes.crop.bbox],
-      units:[props.value.width/bounds.width,props.value.height/bounds.height],
-      inset:props.value.image_handle_inset};
-    svg.setPointerCapture(event.pointerId); event.preventDefault(); return;
-  }
-
   const group=event.target.closest('[data-box-id]');
   const id=group?.dataset.boxId;
   const toggle=event.ctrlKey || event.metaKey;
@@ -244,11 +234,6 @@ element.addEventListener('pointermove', event => {
   const width=props.value.width,height=props.value.height;
   if(state.kind==='marquee' || state.kind==='add' || state.kind==='crop-new'){
     const box=normalizedRect(state.p,p);
-    if(state.kind==='crop-new'){
-      const limit=props.value.max_crop_side;
-      if(box[2]-box[0]>limit){if(p.x<state.p.x)box[0]=box[2]-limit;else box[2]=box[0]+limit;}
-      if(box[3]-box[1]>limit){if(p.y<state.p.y)box[1]=box[3]-limit;else box[3]=box[1]+limit;}
-    }
     state.result=box; drawOverlayRect(state.rect,box);
     if(state.kind==='marquee'){
       const hits=Object.entries(localBoxes).filter(([,candidate])=>{
@@ -293,12 +278,6 @@ element.addEventListener('pointermove', event => {
     if(corner===0||corner===3)box[0]=Math.min(box[0],box[2]-1);else box[2]=Math.max(box[2],box[0]+1);
     if(corner===0||corner===1)box[1]=Math.min(box[1],box[3]-1);else box[3]=Math.max(box[3],box[1]+1);
   }
-  if(state.kind==='crop'){
-    const limit=props.value.max_crop_side;
-    const corner=Number(state.corner);
-    if(box[2]-box[0]>limit){if(corner===0||corner===3)box[0]=box[2]-limit;else box[2]=box[0]+limit;}
-    if(box[3]-box[1]>limit){if(corner===0||corner===1)box[1]=box[3]-limit;else box[3]=box[1]+limit;}
-  }
   state.result=box;
   if(state.kind==='resize') drawLocalBox(state.id,box); else drawPreview(groupFor('crop'),box);
 });
@@ -306,10 +285,6 @@ element.addEventListener('pointermove', event => {
 element.addEventListener('pointerup', () => {
   if(!moving)return;
   const state=moving; moving=null;
-  if(state.kind==='image'){
-    if(state.result) send('resize_image',{size:state.result});
-    return;
-  }
   if(state.kind==='marquee'){
     state.rect.remove(); syncExternalControls(); return;
   }
@@ -337,8 +312,7 @@ element.addEventListener('pointerup', () => {
 element.addEventListener('pointercancel',()=>{
   if (!moving) return;
   const state=moving; moving=null;
-  if(state.kind==='image') drawImageResizePreview(state,state.size);
-  else if(state.kind==='drag') Object.entries(state.boxes).forEach(([id,box])=>drawLocalBox(id,box));
+  if(state.kind==='drag') Object.entries(state.boxes).forEach(([id,box])=>drawLocalBox(id,box));
   else if(state.kind==='resize') drawLocalBox(state.id,state.box);
   else if(state.kind==='crop') drawPreview(groupFor('crop'),state.box);
   else state.rect?.remove();

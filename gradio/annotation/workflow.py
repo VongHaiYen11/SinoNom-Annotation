@@ -25,8 +25,7 @@ from .io import (atomic_write, final_document,
                  validate_source_mismatch_type)
 from .detection_adapter import detect
 from crop.crop import (save_crop_coordinates, crop_bbox, default_crop,
-                       validate_crop_coordinates, validate_resized_image_size,
-                       constrain_crop)
+                       validate_crop_coordinates, validate_resized_image_size)
 
 log = logging.getLogger(__name__)
 
@@ -367,15 +366,7 @@ class Workflow:
         elif action == 'crop':
             if step != 6:
                 raise ValueError('Edit crop in Step 6.')
-            s['crop'] = validate_crop_coordinates(payload['bbox'], s['resized_image_size'])
-            s['crop_saved'] = False
-            s['saved'] = False
-        elif action == 'resize_image':
-            if step != 6:
-                raise ValueError('Resize the source image in Step 6.')
-            size = validate_resized_image_size(payload['size'])
-            s['resized_image_size'] = size
-            s['crop'] = constrain_crop(s['crop'], size)
+            s['crop'] = validate_crop_coordinates(payload['bbox'], s['image_size'])
             s['crop_saved'] = False
             s['saved'] = False
         elif action == 'save_crop':

@@ -189,20 +189,22 @@ def create_app(options):
                                     elem_classes='sidebar-help')
                         mismatch_type=gr.Radio([
                             ('Missing characters in source','missing_source_characters'),
-                            ('Extra characters in source','extra_source_characters'),
                             ('Wrong source content','wrong_source_content'),
                             ('Other','other'),
                         ],label='Issue type')
                         mismatch_note=gr.Textbox(label='Note (optional)',lines=3)
-                        with gr.Row(elem_classes=['button-group','sidebar-action-row']):
-                            confirm_mismatch=gr.Button('Confirm source mismatch',min_width=0)
-                            clear_mismatch=gr.Button('Clear mismatch',visible=False,min_width=0)
+                        with gr.Row(elem_classes=['button-group','sidebar-action-row','mismatch-action-row']):
+                            confirm_mismatch=gr.Button(
+                                'Confirm source mismatch', min_width=0,
+                                elem_id='confirm-source-mismatch')
+                            clear_mismatch=gr.Button(
+                                'Clear mismatch', visible=False, min_width=0,
+                                elem_id='clear-source-mismatch')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','selection-section']) as status_group:
                     gr.Markdown('### Selected region')
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
-                    set_status=gr.Button('Update status', variant='primary',elem_id='set-status')
                 # Preserve callback slots without rendering the redundant region
                 # table or raw reading-order JSON in the control panel.
                 status_table=gr.State([])
@@ -210,7 +212,7 @@ def create_app(options):
                 order_text=gr.State('[]')
                 with gr.Group(visible=False, elem_classes=['section','sidebar-section']) as crop_group:
                     gr.Markdown('### Crop')
-                    gr.Markdown('Blue handle resizes the image. Orange handles adjust the crop frame.',
+                    gr.Markdown('Adjust the orange crop frame. Oversized crops are scaled automatically on export.',
                                 elem_classes='sidebar-help')
                     crop_coords=gr.Textbox(label='Coordinates [x1, y1, x2, y2]')
                     apply_crop=gr.Button('Apply crop',variant='primary')
@@ -362,7 +364,9 @@ def create_app(options):
         clear_loading_when_done(reset_button.click(lambda c,p:open_image(c,p,True),[session,image_choice],**event_args))
         for button,action in [(back,'back'),(save,'save'),(save_content,'save_content'),(undo,'undo'),(restore,'original')]:
             clear_loading_when_done(button.click(lambda c,a=action:run(c,a),[session],**event_args))
-        def next_step(ctx, path=None, value=None, auto_detect=True):
+        def next_step(ctx, path=None, value=None, auto_detect=True,
+                      issue_type=None, mismatch_note_value='', selection='{}',
+                      status_value='intact'):
             if ctx['active']['current_step'] == 2 and path is not None:
                 try:
                     updated = engine.apply(ctx['active'], 'field',
@@ -373,14 +377,42 @@ def create_app(options):
                     result[4] = gr.skip()
                     result[5] = gr.skip()
                     return result
+            if (ctx['active']['current_step'] == 3
+                    and not ctx['active']['workflow']['bbox_valid']
+                    and not source_mismatch_confirmed(ctx['active'])
+                    and issue_type):
+                try:
+                    updated = engine.apply(ctx['active'], 'confirm_source_mismatch', {
+                        'issue_type': issue_type,
+                        'note': mismatch_note_value or '',
+                    })
+                    ctx = dict(ctx, active=updated)
+                except Exception as exc:
+                    return render(ctx, WARNING+' '+html.escape(str(exc)))
+            if ctx['active']['current_step'] == 4:
+                try:
+                    active, _ = frontend_selection(selection)
+                    if active:
+                        updated = engine.apply(ctx['active'], 'status', {
+                            'id': active,
+                            'status': status_value,
+                        })
+                        ctx = dict(ctx, active=updated)
+                except Exception as exc:
+                    return render(ctx, WARNING+' '+html.escape(str(exc)))
             result = run(ctx, 'next', auto_detect=auto_detect)
             if result[0]['active']['current_step'] == 2:
                 # Keep the current section and unsaved input visible on failure.
                 result[4] = gr.skip()
                 result[5] = gr.skip()
             return result
-        def next_with_progress(ctx, path=None, value=None):
-            result = next_step(ctx, path, value, auto_detect=False)
+        def next_with_progress(ctx, path=None, value=None, issue_type=None,
+                               mismatch_note_value='', selection='{}',
+                               status_value='intact'):
+            result = next_step(
+                ctx, path, value, auto_detect=False, issue_type=issue_type,
+                mismatch_note_value=mismatch_note_value, selection=selection,
+                status_value=status_value)
             state = result[0]['active']
             needs_detection = (state['current_step'] == 3 and
                                not state['detection_loaded'] and not skip_detection)
@@ -392,7 +424,11 @@ def create_app(options):
             yield result
             if needs_detection:
                 yield run(result[0], 'detect')
-        clear_loading_when_done(next_button.click(next_with_progress,[session,field,field_value],**event_args))
+        clear_loading_when_done(next_button.click(
+            next_with_progress,
+            [session,field,field_value,mismatch_type,mismatch_note,
+             selection_bridge,status],
+            **event_args))
         def choose_field(ctx,path):
             if not path:return ''
             s=ctx['active']
@@ -444,12 +480,6 @@ def create_app(options):
             clear_source_mismatch,[session],**event_args))
         for selector in (box_id,status_id):
             clear_loading_when_done(selector.input(lambda c,i:run(c,'select',dict(id=i)),[session,selector],**event_args))
-        def apply_status(ctx,selection,value):
-            active,_=frontend_selection(selection)
-            if not active:raise gr.Error('Select a bounding box first.')
-            return run(ctx,'status',dict(id=active,status=value))
-        clear_loading_when_done(set_status.click(
-            apply_status,[session,selection_bridge,status],**event_args))
         def parse_action(c,a,key,value):
             try:return run(c,a,{key:json.loads(value)})
             except ValueError as exc:return render(c,'Invalid JSON: '+str(exc))

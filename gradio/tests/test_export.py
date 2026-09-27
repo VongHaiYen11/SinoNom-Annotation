@@ -141,7 +141,7 @@ class FolderExport(unittest.TestCase):
         s=e.apply(s,'save_content');s=e.apply(s,'next')
         s=e.apply(s,'add',{'bbox':[0,0,10,10]})
         s=e.apply(s,'confirm_source_mismatch',{
-            'issue_type':'extra_source_characters','note':'one source character is not visible'})
+            'issue_type':'wrong_source_content','note':'source does not match the image'})
         for _ in range(4):
             s=e.apply(s,'next')
         s=e.apply(s,'save')

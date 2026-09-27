@@ -7,16 +7,27 @@ MAX_CROP_SIDE = 4096
 
 
 def default_crop(size):
-    """Return a top-left anchored crop that fits the image and size limit."""
+    """Return the full image; export scaling is applied after cropping."""
     width, height = size
-    return [0, 0, min(width, MAX_CROP_SIDE), min(height, MAX_CROP_SIDE)]
+    return [0, 0, width, height]
 
 
 def validate_crop_coordinates(bbox, size):
     x1, y1, x2, y2 = validate_coordinates(bbox, size)
-    if x2 - x1 > MAX_CROP_SIDE or y2 - y1 > MAX_CROP_SIDE:
-        raise ValueError(f'Crop width and height cannot exceed {MAX_CROP_SIDE} pixels.')
     return [x1, y1, x2, y2]
+
+
+def auto_scale_crop(bbox, source_size):
+    """Uniformly scale image/crop metadata so the crop's longest side is <= 4096."""
+    bbox = validate_crop_coordinates(bbox, source_size)
+    longest = max(bbox[2] - bbox[0], bbox[3] - bbox[1])
+    scale = min(1.0, MAX_CROP_SIDE / longest)
+    output_size = [max(1, round(value * scale)) for value in source_size]
+    scale_x = output_size[0] / source_size[0]
+    scale_y = output_size[1] / source_size[1]
+    scaled = [round(bbox[0] * scale_x), round(bbox[1] * scale_y),
+              round(bbox[2] * scale_x), round(bbox[3] * scale_y)]
+    return validate_crop_coordinates(scaled, output_size), output_size
 
 
 def validate_resized_image_size(size):

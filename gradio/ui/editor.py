@@ -4,7 +4,6 @@ from pathlib import Path
 from annotation.reading_order import build_text_sequence
 from annotation.state import source_mismatch_confirmed
 from annotation.text_alignment import MISSING_ANNOTATION
-from crop.crop import MAX_CROP_SIDE
 from .icons import ARROW_RIGHT, DOCUMENT
 
 SCRIPT = (Path(__file__).parent / 'assets/editor.js').read_text()
@@ -18,7 +17,7 @@ def snapshot(s):
             revision=s['revision'], image=None, step=1)
     step=s['current_step']; source_w,source_h=s['image_size']
     source_mismatch=source_mismatch_confirmed(s)
-    w,h=(s.get('resized_image_size') or s['image_size']) if step == 6 else s['image_size']
+    w,h=s['image_size']
     if step == 6:
         boxes = {'crop': dict(bbox=s['crop'], status='intact')}
         selected_id = 'crop'
@@ -43,7 +42,7 @@ def snapshot(s):
         <button type="button" data-zoom="fit" aria-label="Fit image to view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3H3v3M10 3h3v3M6 13H3v-3M10 13h3v-3"/></svg></button></div></div>
         <div class="image-viewport"><svg class="annotation-canvas" viewBox="0 0 {w} {h}" role="img" aria-label="{filename} · annotation canvas" style="aspect-ratio:{w}/{h}">
         <image href="{html.escape(s['image_url'], quote=True)}" x="0" y="0" width="{w}" height="{h}" preserveAspectRatio="none"/>
-        {f'<rect class="source-image-outline" x="0" y="0" width="{w}" height="{h}" vector-effect="non-scaling-stroke"/>' if step == 6 else ''}'''
+        '''
     # Scale labels/handles to image size so full-resolution scans remain editable.
     unit=max(w,h)/900
     for key,b in boxes.items():
@@ -67,11 +66,6 @@ def snapshot(s):
             for n,(x,y) in enumerate([(x1,y1),(x2,y1),(x2,y2),(x1,y2)]):
                 markup+=f'<circle data-corner="{n}" cx="{x}" cy="{y}" r="{6*unit}" fill="{color}" stroke="#17191c" stroke-width="{1.5*unit}"/>'
         markup+='</g>'
-    if step == 6:
-        handle=18*unit; inset=28*unit
-        markup+=f'''<rect data-image-resize-handle="bottom-right" class="source-image-resize-handle"
-            x="{max(0,w-inset)}" y="{max(0,h-inset)}" width="{handle}" height="{handle}"
-            vector-effect="non-scaling-stroke"><title>Resize source image</title></rect>'''
     markup+='</svg></div>'
     if step in (3,4,5,7):
         markup+='<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span></div>'
@@ -120,5 +114,4 @@ def snapshot(s):
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=w,height=h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
-                max_crop_side=MAX_CROP_SIDE,
-                image_handle_inset=28*unit if step == 6 else 0)
+                max_crop_side=max(w,h), image_handle_inset=0)

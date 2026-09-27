@@ -414,12 +414,12 @@ Open `http://127.0.0.1:7860`. For a remote environment:
 3. **🔲 Bounding Boxes** — Detect, add, move, resize or delete regions; compare the box/character counts and, only when the extracted source is known to be wrong, confirm a structured source mismatch
 4. **🏷️ Status** — Select regions on the canvas and mark each one as `intact` or `damaged`
 5. **🔢 Reading Order** — Spatially order the regions, assign Box IDs `1..n`, align verified text and allow drag-and-drop reordering
-6. **✂️ Crop** — Optionally resize the source image with the blue corner handle, then adjust the independent crop frame; no crop side can exceed 4096 pixels
+6. **✂️ Crop** — Adjust the orange crop frame on the original image; when its longest side exceeds 4096 pixels, export scales it down proportionally and records the scale factors
 7. **✅ Review** — Inspect the final table/text/JSON and save the image object
 
 The Python state is authoritative. Before Reading Order, every editable region has a hidden `region_uid`; this allows selection, resize and status changes without exposing unstable Box IDs. Entering Reading Order spatially sorts the current regions, assigns contiguous public Box IDs from `1` to `n`, and aligns the verified Hán/Nôm text. Drag-and-drop then changes only `reading_order`, keeping each character attached to its Box ID.
 
-The normal path still requires exactly one source character per box. A confirmed source mismatch records the issue type and optional note, then allows status, reading order, crop and review to be completed without creating false character annotations. Changing the source text or adding/deleting/detecting boxes clears that confirmation; it must be confirmed again if the counts still differ. `missing_source_characters` is valid when there are more boxes than source characters, while `extra_source_characters` is valid in the opposite direction.
+The normal path still requires exactly one source character per box. A confirmed source mismatch records the issue type and optional note, then allows status, reading order, crop and review to be completed. Changing the source text or adding/deleting/detecting boxes clears that confirmation; it must be confirmed again if the counts still differ. `missing_source_characters` is valid when there are more boxes than source characters and adds explicit `MISS` annotations; other source problems can be recorded as `wrong_source_content` or `other` without generating a character mapping.
 
 If a region is added, deleted, moved or resized after alignment, the Box ID mapping, annotations and reading order are invalidated and rebuilt on the next Reading Order entry. Status remains attached to each surviving region. Hidden `region_uid` values are never written to output JSON.
 
@@ -502,7 +502,7 @@ The final text is built by following `reading_order`. In this example, `[1, 3, 2
 
 #### `source_mismatches.json`
 
-This optional file contains completed images whose source-character count cannot validly be aligned to the bounding boxes. These records retain the source text, boxes, statuses, reading order, resize and crop, but deliberately omit `annotations`.
+This optional file contains completed images whose source-character count cannot validly be aligned to the bounding boxes. Records with missing source characters include `MISS` annotations; other mismatch records retain the source text, boxes, statuses, reading order, resize and crop without a character mapping.
 
 ```json
 [
@@ -512,8 +512,8 @@ This optional file contains completed images whose source-character count cannot
     "source_text": "永寺樂",
     "source_character_count": 3,
     "bounding_box_count": 2,
-    "issue_type": "extra_source_characters",
-    "note": "One source character is not visible on the inscription face.",
+    "issue_type": "wrong_source_content",
+    "note": "The extracted source does not match the inscription face.",
     "bounding_boxes": {
       "1": {"bbox": [120, 350, 180, 420], "status": "intact"},
       "2": {"bbox": [120, 450, 180, 520], "status": "damaged"}
@@ -575,7 +575,7 @@ In this example, `12305` is the number of the corresponding inscription
 
 All JSON is written as UTF-8 with readable Unicode. Per-image annotation writes are atomic.
 
-Bounding boxes remain in original-image coordinates. `image_resize` records the independent source transformation into the Crop workspace; `scale_x` and `scale_y` may differ. Crop corners are stored in that resized-image coordinate system and are constrained inside `output_size`. The crop-frame behavior itself remains unchanged, including the 4096-pixel side limit. If the source is resized after positioning a crop, the frame is moved or reduced only as much as necessary to remain valid. Source updates use an in-process lock and baseline comparison; the application is intended to run as one server process, and concurrent edits of the same image should be avoided.
+Bounding boxes and the editable crop frame remain in original-image coordinates. There is no manual source-image resize handle. At save time, a crop whose longest side exceeds 4096 pixels is scaled down proportionally; `image_resize` records `source_size`, `output_size`, `scale_x`, and `scale_y`, while the saved crop corners use the scaled output coordinate system. Source updates use an in-process lock and baseline comparison; the application is intended to run as one server process, and concurrent edits of the same image should be avoided.
 
 ---
 
