@@ -37,6 +37,10 @@ class GradioCallbacks(unittest.TestCase):
         refresh_bbox_validation(state);confirm_status(state);initialize_alignment(state)
         missing_id=next(key for key,value in state['annotations'].items() if value=='MISS')
         self.assertEqual(state['bounding_boxes'][missing_id]['status'],'unknown')
+        reading_markup=snapshot(state)['markup']
+        self.assertIn('stroke="#f4f4f5"',reading_markup)
+        self.assertNotIn('stroke="#f59e0b"',reading_markup)
+        state['current_step']=5
         markup=snapshot(state)['markup']
         self.assertIn(f'<title>{missing_id} MISS · unknown</title>',markup)
         self.assertIn('stroke="#f59e0b"',markup)
@@ -297,6 +301,10 @@ class GradioCallbacks(unittest.TestCase):
             self.assertTrue(result[18]['visible'])
             self.assertIn('source-preview',result[8]['value']['markup'])
             self.assertIn('永',result[8]['value']['markup'])
+            self.assertIn('stroke="#f4f4f5"',result[8]['value']['markup'])
+            self.assertNotIn('stroke="#22c55e"',result[8]['value']['markup'])
+            self.assertNotIn('stroke="#ef4444"',result[8]['value']['markup'])
+            self.assertNotIn('status-legend',result[8]['value']['markup'])
             self.assertIn('data-box-id',result[8]['value']['markup'])
             self.assertNotIn('data-region-uid',result[8]['value']['markup'])
             region_uids=list(ctx['active']['regions'])
@@ -329,6 +337,8 @@ class GradioCallbacks(unittest.TestCase):
             result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],5)
             self.assertTrue(result[15]['visible'])
+            self.assertIn('status-legend',result[8]['value']['markup'])
+            self.assertIn('stroke="#22c55e"',result[8]['value']['markup'])
             first_damaged_box_id=ctx['active']['box_id_by_region'][first_damaged_uid]
             damaged_box_id=ctx['active']['box_id_by_region'][damaged_uid]
             # Each completed radio edit is persisted before moving to another

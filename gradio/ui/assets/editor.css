@@ -125,7 +125,7 @@
   gap: 7px;
   min-height: 36px;
   padding: 6px 9px 6px 10px;
-  border: 1px solid #42454c;
+  border: 1px solid #d4d4d8;
   border-radius: 999px;
   background: var(--color-panel, #17191c);
   color: var(--color-text, #f4f4f5);
@@ -137,7 +137,7 @@
 }
 .order-chip:active,
 .order-chips.is-sorting { cursor: grabbing; }
-.order-chip.missing { border-color: #f59e0b; background: #302116; color: #fbbf24; }
+.order-chip.missing { border-color: #d4d4d8; background: var(--color-panel, #17191c); color: var(--color-text, #f4f4f5); }
 .order-chip.missing .tile-character { font-family: Arial, Helvetica, sans-serif !important; font-size: 11px; font-weight: 700; }
 .order-chip.intact { border-color: #22c55e; }
 .order-chip.damaged { border-color: #ef4444; border-style: dashed; }

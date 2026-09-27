@@ -58,13 +58,14 @@ const renderLocalStatus = (id, status) => {
   const group = groupFor(id);
   if (!box || !group) return;
   box.status = status;
-  const color = status === 'unknown' ? '#f59e0b' : status === 'damaged' ? '#ef4444' : '#22c55e';
+  const revealStatus = props.value.step >= 5;
+  const color = !revealStatus ? '#f4f4f5' : status === 'unknown' ? '#f59e0b' : status === 'damaged' ? '#ef4444' : '#22c55e';
   const rect = group.querySelector('rect:not([data-image-resize-handle])');
   if (rect) {
     rect.setAttribute('fill', color);
     rect.setAttribute('stroke', color);
-    if (status === 'damaged') rect.setAttribute('stroke-dasharray', '5 4');
-    else if (status === 'unknown') rect.setAttribute('stroke-dasharray', '2 3');
+    if (revealStatus && status === 'damaged') rect.setAttribute('stroke-dasharray', '5 4');
+    else if (revealStatus && status === 'unknown') rect.setAttribute('stroke-dasharray', '2 3');
     else rect.removeAttribute('stroke-dasharray');
   }
   const label = group.querySelector('text');
@@ -120,9 +121,9 @@ const renderLocalAnnotations = () => {
     const text=card.querySelector('.tile-character');
     if(text)text.textContent=label;
     card.classList.toggle('missing',label==='MISS');
-    card.classList.toggle('intact',status==='intact');
-    card.classList.toggle('damaged',status==='damaged');
-    card.classList.toggle('unknown',status==='unknown');
+    card.classList.toggle('intact',props.value.step>=5 && status==='intact');
+    card.classList.toggle('damaged',props.value.step>=5 && status==='damaged');
+    card.classList.toggle('unknown',props.value.step>=5 && status==='unknown');
     card.setAttribute('aria-label',`Reading position ${index+1}, Box ${boxId}: ${label}, ${status}`);
     card.title=`Box ${boxId} · ${status}`;
     renderLocalStatus(String(boxId),status);

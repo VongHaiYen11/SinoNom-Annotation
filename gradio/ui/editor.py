@@ -47,11 +47,15 @@ def snapshot(s):
     unit=max(w,h)/900
     for key,b in boxes.items():
         x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6; multi_selected=key in selected_ids
-        color=('#ff7a1a' if step==6 else '#f59e0b' if b['status']=='unknown'
+        # Detection and reading-order review are intentionally status-neutral.
+        # The stored detector status is revealed only from the Status step on.
+        color=('#ff7a1a' if step==6 else '#f4f4f5' if step in (3,4)
+               else '#f59e0b' if b['status']=='unknown'
                else '#ef4444' if b['status']=='damaged' else '#22c55e')
         public_box = step not in (3, 6)
         label=html.escape(key+' '+s['annotations'].get(key,'')) if public_box else ''
-        dashed=(' stroke-dasharray="5 4"' if b['status']=='damaged' else
+        dashed=('' if step in (3,4) else
+                ' stroke-dasharray="5 4"' if b['status']=='damaged' else
                 ' stroke-dasharray="2 3"' if b['status']=='unknown' else '')
         identity_attr = (f'data-box-id="{key}" data-region-uid="{key}"'
                          if step == 3 else f'data-box-id="{key}"')
@@ -69,7 +73,7 @@ def snapshot(s):
                 markup+=f'<circle data-corner="{n}" cx="{x}" cy="{y}" r="{6*unit}" fill="{color}" stroke="#17191c" stroke-width="{1.5*unit}"/>'
         markup+='</g>'
     markup+='</svg></div>'
-    if step in (3,4,5,7):
+    if step in (5,7):
         markup+='<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown / MISS</span></div>'
     if step in (4,7):
         source=html.escape(s['annotation_text'])
@@ -87,7 +91,7 @@ def snapshot(s):
                 condition=s['bounding_boxes'][key]['status']
                 active=' active' if key==selected_id else ''
                 missing=' missing' if s['annotations'].get(key) == MISSING_ANNOTATION else ''
-                chips.append(f'''<button type="button" class="order-chip{active}{missing} {condition}" data-order-chip="1" data-box-id="{key}"
+                chips.append(f'''<button type="button" class="order-chip{active}{missing}" data-order-chip="1" data-box-id="{key}"
                     draggable="false" aria-pressed="{str(key==selected_id).lower()}" aria-label="Reading position {position}, Box {key}: {char}, {condition}" title="Box {key} · {condition}">
                     <span class="chip-id">{key}</span><span class="chip-separator" aria-hidden="true">·</span>
                     <span class="tile-character">{char}</span><span class="chip-grip" aria-hidden="true">⠿</span></button>''')
