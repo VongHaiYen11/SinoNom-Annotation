@@ -401,7 +401,7 @@ For custom data paths, either edit the config or override individual paths:
   --output-dir /path/to/annotations
 ```
 
-Open `http://127.0.0.1:7860`. For a remote environment:
+Open the local URL printed by Gradio (normally `http://127.0.0.1:7860`; a later free port is used when necessary). For a remote environment:
 
 ```text
 --server-name 0.0.0.0 --share
@@ -411,19 +411,23 @@ Open `http://127.0.0.1:7860`. For a remote environment:
 
 1. **🖼️ Image** — Select an image from the configured folder
 2. **📝 Content** — Verify and save the five configured sections: original Hán/Nôm, Sino-Vietnamese transcription, translation, summary and notes
-3. **🔲 Bounding Boxes** — Detect, add, move, resize or delete regions; compare the box/character counts and, only when the extracted source is known to be wrong, confirm a structured source mismatch
-4. **🏷️ Status** — Select regions on the canvas and mark each one as `intact` or `damaged`
+3. **🔲 Bounding Boxes** — Detect regions, use Alt/Option-drag to add one, move/resize locally, or delete selected regions; compare box/character counts and record a source mismatch only when the extracted source is known to be wrong
+4. **🏷️ Status** — Select regions and mark them `intact` or `damaged`; canvas colors update immediately and Next commits all current statuses
 5. **🔢 Reading Order** — Spatially order the regions, assign Box IDs `1..n`, align verified text and allow drag-and-drop reordering
 6. **✂️ Crop** — Adjust the orange crop frame on the original image; when its longest side exceeds 4096 pixels, export scales it down proportionally and records the scale factors
 7. **✅ Review** — Inspect the final table/text/JSON and save the image object
 
-The Python state is authoritative. Before Reading Order, every editable region has a hidden `region_uid`; this allows selection, resize and status changes without exposing unstable Box IDs. Entering Reading Order spatially sorts the current regions, assigns contiguous public Box IDs from `1` to `n`, and aligns the verified Hán/Nôm text. Drag-and-drop then changes only `reading_order`, keeping each character attached to its Box ID.
+The browser keeps transient geometry, selection, status and crop edits for responsive interaction; Next validates and commits the relevant local snapshot to the authoritative Python state. Before Reading Order, every editable region has a hidden `region_uid`, so edits do not depend on unstable public Box IDs. Entering Reading Order spatially sorts the committed regions, assigns contiguous Box IDs from `1` to `n`, and aligns the verified Hán/Nôm text. Drag-and-drop then changes only `reading_order`, keeping each annotation attached to its Box ID.
 
-The normal path still requires exactly one source character per box. A confirmed source mismatch records the issue type and optional note, then allows status, reading order, crop and review to be completed. Changing the source text or adding/deleting/detecting boxes clears that confirmation; it must be confirmed again if the counts still differ. `missing_source_characters` is valid when there are more boxes than source characters and adds explicit `MISS` annotations; other source problems can be recorded as `wrong_source_content` or `other` without generating a character mapping.
+The normal path requires exactly one source character per box. When there are more boxes than source characters, selecting `missing_source_characters` creates enough `MISS` tags to make the tag count equal the box count; those tags can be reordered with normal characters and are written to `annotations`. Other problems can be recorded as `wrong_source_content` or `other` without inventing a character mapping. Selecting a mismatch type is sufficient for Next to confirm it automatically; the explicit Confirm button remains available. Changing source text or adding, deleting, or detecting boxes clears the confirmation.
 
-If a region is added, deleted, moved or resized after alignment, the Box ID mapping, annotations and reading order are invalidated and rebuilt on the next Reading Order entry. Status remains attached to each surviving region. Hidden `region_uid` values are never written to output JSON.
+If a region is added, deleted, moved or resized before alignment, Next commits the final geometry and builds the Box ID mapping, annotations and reading order. Status remains attached to each surviving region. Hidden `region_uid` values are never written to output JSON.
 
-Bounding-box manipulation is frontend-first. Every rendered region carries its stable internal ID, while selection, Ctrl/Cmd multi-selection, selection rectangles, dragging, resizing, group movement and deselection remain in browser-local state with immediate SVG updates. A drag or resize sends one validated batch commit only after pointer-up; ordinary selection never calls Python and never opens the loading modal. Drag empty canvas space to select regions, or Alt/Option-drag to draw a new region. The coordinate, status and delete controls consume the current local selection only when their explicit action button is used.
+Bounding-box manipulation is frontend-first. Selection, Ctrl/Cmd multi-selection, selection rectangles, dragging, resizing, group movement and deselection update the SVG immediately. Repeated drag/resize operations stay local—even after pointer-up—and Next submits one validated geometry snapshot. Alt/Option-drag creates a new region immediately; **Delete selected**, detection, and manually entered coordinates via **Update coordinates** also commit immediately. There is no separate Add Box button.
+
+Status editing is also frontend-first. Changing `intact`/`damaged` immediately switches the selected box between a solid green and dashed red outline. Statuses for all visited boxes stay in the local snapshot, and Next commits them together before Reading Order; there is no Update Status button.
+
+Crop dragging follows the same model: moving, resizing, or drawing the orange frame updates only local state and never opens a loading modal. Next commits the current frame. The coordinate textbox mirrors the local frame, while **Apply crop** remains available for explicit coordinate entry. The desktop and mobile layouts use normal page scrolling rather than clipping long content into a fixed-height application shell.
 
 Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengXian and PMingLiU fonts. PMingLiU-ExtB is included as a fallback for extended CJK characters that may be missing from the primary fonts. The font picker affects only how Hán/Nôm characters are displayed; it never changes the stored Unicode text, character count, annotation mapping or reading order.
 
@@ -431,6 +435,9 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 
 - **Save Content** updates the source JSON and adds/updates that image in the internal content registry. It does not download a file
 - **Next** on Content (Step 2) applies the currently displayed editor text and saves all draft content before entering Bounding Boxes (Step 3). If saving fails, it stays on Step 2 with the editor text preserved. Apply each edited section before switching sections; Next also includes those applied edits.
+- **Next** on Bounding Boxes commits the final locally dragged/resized geometry, validates the box/character relationship and auto-confirms the selected mismatch type when needed
+- **Next** on Status commits the complete local status map before assigning public Box IDs and entering Reading Order
+- **Next** on Crop commits the current local orange frame; oversized crops are scaled only when the output document is built
 - **Save Image** on Review commits either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image
 - **Save All** creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
   - `text_annotations.json` for images committed with **Save Image**
@@ -483,16 +490,16 @@ This file contains only images committed with **Save Image** on the Review step.
       "3": "樂"
     },
     "image_resize": {
-      "source_size": [1000, 1800],
-      "output_size": [900, 1600],
-      "scale_x": 0.9,
-      "scale_y": 0.88888889
+      "source_size": [5000, 3000],
+      "output_size": [4096, 2458],
+      "scale_x": 0.8192,
+      "scale_y": 0.81933333
     },
     "crop": {
-      "top_left": [100, 200],
-      "top_right": [900, 200],
-      "bottom_right": [900, 1500],
-      "bottom_left": [100, 1500]
+      "top_left": [0, 0],
+      "top_right": [4096, 0],
+      "bottom_right": [4096, 2458],
+      "bottom_left": [0, 2458]
     }
   }
 ]
@@ -503,6 +510,25 @@ The final text is built by following `reading_order`. In this example, `[1, 3, 2
 #### `source_mismatches.json`
 
 This optional file contains completed images whose source-character count cannot validly be aligned to the bounding boxes. Records with missing source characters include `MISS` annotations; other mismatch records retain the source text, boxes, statuses, reading order, resize and crop without a character mapping.
+
+For example, four boxes aligned against three source characters may contain:
+
+```json
+{
+  "source_character_count": 3,
+  "bounding_box_count": 4,
+  "issue_type": "missing_source_characters",
+  "reading_order": [1, 2, 4, 3],
+  "annotations": {
+    "1": "永",
+    "2": "寺",
+    "3": "樂",
+    "4": "MISS"
+  }
+}
+```
+
+Moving the `MISS` card changes `reading_order`, identifying where the absent source character belongs without shifting subsequent characters onto the wrong boxes. A `wrong_source_content` or `other` record deliberately omits `annotations`, as shown below.
 
 ```json
 [
@@ -563,7 +589,7 @@ This file contains only images committed with **Save Content**. It stores the im
 annotations/
 ├── 12305.json          # Boxes, statuses, annotations, reading order and crop
 ├── source_mismatches/
-│   └── 12306.json      # Source issue plus boxes/status/order; no annotations
+│   └── 12306.json      # Source issue plus boxes/status/order; MISS annotations when applicable
 ├── annotations.zip     # Save All archive, also downloaded by the browser
 └── .state/
     ├── 12305.json      # Text/document fingerprints used to verify committed data
@@ -575,7 +601,7 @@ In this example, `12305` is the number of the corresponding inscription
 
 All JSON is written as UTF-8 with readable Unicode. Per-image annotation writes are atomic.
 
-Bounding boxes and the editable crop frame remain in original-image coordinates. There is no manual source-image resize handle. At save time, a crop whose longest side exceeds 4096 pixels is scaled down proportionally; `image_resize` records `source_size`, `output_size`, `scale_x`, and `scale_y`, while the saved crop corners use the scaled output coordinate system. Source updates use an in-process lock and baseline comparison; the application is intended to run as one server process, and concurrent edits of the same image should be avoided.
+Bounding boxes and the editable crop frame remain in original-image coordinates. There is no manual source-image resize handle. At save time, a crop whose longest side exceeds 4096 pixels is scaled down proportionally; `image_resize` records `source_size`, `output_size`, `scale_x`, and `scale_y`, while the saved crop corners use the scaled output coordinate system. `scale_x` and `scale_y` can differ very slightly because output dimensions must be rounded to whole pixels. Source updates use an in-process lock and baseline comparison; the application is intended to run as one server process, and concurrent edits of the same image should be avoided.
 
 ---
 
