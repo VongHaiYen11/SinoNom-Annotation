@@ -99,10 +99,14 @@ class Invariants(unittest.TestCase):
             update_bboxes(invalid,{uids[0]:[2,2,7,7],uids[1]:[0,0,101,10]})
         self.assertEqual(invalid,before)
 
-    def test_reorder_remaps_text_to_ordered_boxes(self):
+    def test_reorder_assigns_source_characters_by_order(self):
         s=aligned_state()
+        statuses={key:box['status'] for key,box in s['bounding_boxes'].items()}
         update_reading_order(s,[1,3,2])
         self.assertEqual(s['annotations'],{'1':'永','3':'寺','2':'樂'})
+        self.assertEqual(
+            {key:box['status'] for key,box in s['bounding_boxes'].items()},
+            statuses)
         self.assertEqual(build_text_sequence(s),'永寺樂')
         for order in ([1,3],[1,3,3],[1,3,5],['1',2,3],[True,2,3]):
             with self.assertRaises(ValueError):update_reading_order(s,order)
@@ -127,6 +131,15 @@ class Invariants(unittest.TestCase):
         s=state();uid=list(s['regions'])[1];old=deepcopy(s);update_status(s,uid,'damaged')
         old['regions'][uid]['status']='damaged'
         self.assertEqual(s,old)
+
+    def test_confirm_status_resynchronizes_public_box_status(self):
+        s=aligned_state()
+        uid=list(s['regions'])[1]
+        box_id=s['box_id_by_region'][uid]
+        s['regions'][uid]['status']='damaged'
+        s['bounding_boxes'][box_id]['status']='intact'
+        confirm_status(s)
+        self.assertEqual(s['bounding_boxes'][box_id]['status'],'damaged')
 
     def test_coordinates(self):
         for coords in ([1,1,0,0],[-1,0,2,2],[0,0,101,2],[0,0,float('nan'),2],[False,0,2,2]):

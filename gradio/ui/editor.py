@@ -91,11 +91,6 @@ def snapshot(s):
 </div>
                 <div class="cards">{''.join(cards)}</div></section>'''
         if step==7:
-            rows=[]
-            for pos,key in enumerate(s['reading_order'],1):
-                box=s['bounding_boxes'][str(key)]
-                annotation=html.escape(s['annotations'].get(str(key),'—'))
-                rows.append(f'<tr><td>{pos}</td><td>{key}</td><td>{box["bbox"]}</td><td><span class="table-status {box["status"]}">{box["status"]}</span></td><td class="table-character">{annotation}</td></tr>')
             order_separator = ARROW_RIGHT
             if source_mismatch:
                 issue=s['source_mismatch']
@@ -110,7 +105,7 @@ def snapshot(s):
                     {note}</div>'''
             else:
                 review='<div class="review-text"><span class="eyebrow">FINAL TEXT</span><p>'+html.escape(build_text_sequence(s))+'</p></div>'
-            markup+='<section class="review-detail">'+review+'<p class="order-sequence"><span>Reading order:</span> '+ order_separator.join(map(str,s['reading_order']))+'</p><div class="review-table-wrap"><table><thead><tr><th>Order</th><th>Box ID</th><th>BBox</th><th>Status</th><th>Annotation</th></tr></thead><tbody>'+''.join(rows)+'</tbody></table></div></section>'
+            markup+='<section class="review-detail">'+review+'<p class="order-sequence"><span>Reading order:</span> '+ order_separator.join(map(str,s['reading_order']))+'</p></section>'
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=w,height=h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),

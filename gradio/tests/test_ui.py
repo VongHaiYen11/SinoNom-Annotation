@@ -305,8 +305,13 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(ctx['active']['reading_order'],[1,3,2])
             damaged_box_id=ctx['active']['box_id_by_region'][damaged_uid]
             self.assertEqual(ctx['active']['bounding_boxes'][damaged_box_id]['status'],'damaged')
-            self.assertIn('<span class="table-status damaged">damaged</span>',
+            damaged_annotation=ctx['active']['annotations'][damaged_box_id]
+            self.assertIn(f'{damaged_box_id} {damaged_annotation}',
                           result[8]['value']['markup'])
+            self.assertIn(
+                f'<title>{damaged_box_id} {damaged_annotation} · damaged</title>',
+                result[8]['value']['markup'])
+            self.assertNotIn('<table',result[8]['value']['markup'])
             ctx=action('save')(ctx)[0]
             self.assertTrue(ctx['active']['saved'])
             self.assertTrue((root/'out/12305.json').exists())

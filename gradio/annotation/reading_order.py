@@ -17,6 +17,9 @@ def update_reading_order(state, order):
     if (not (validate_bbox_text_count(state) or source_mismatch_confirmed(state))
             or not validate_reading_order(candidate)):
         raise ValueError('Reading order has missing, duplicate, or invalid IDs.')
+    # Geometry and status stay attached to their Box IDs. Source characters
+    # are assigned by position in reading order: character 1 goes to order[0],
+    # character 2 to order[1], and so on.
     state['reading_order'] = list(order)
     if validate_bbox_text_count(state):
         state['annotations'] = temporary_align_text(order, state['annotation_text'])
