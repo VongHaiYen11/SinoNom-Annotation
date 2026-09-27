@@ -4,6 +4,7 @@ let syncingStatusControl = false;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null;
 let localReadingOrder = [];
+const chipReflowAnimations = new WeakMap();
 const imageTransform = {zoom: 100, width: props.value.width, height: props.value.height};
 
 const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map(
@@ -271,15 +272,37 @@ const insertionReference = (container, x, y) => {
   const last=row.items.at(-1).chip;
   return flattened[flattened.indexOf(last)+1] || null;
 };
-const animateChipReflow = (container, before) => {
+const captureChipRects = container => {
+  const first=new Map();
+  container.querySelectorAll('[data-order-chip]').forEach(chip=>{
+    // getBoundingClientRect includes the current animated transform. Capture
+    // that visual position, then cancel so Last measures the true new layout.
+    first.set(chip,chip.getBoundingClientRect());
+    chipReflowAnimations.get(chip)?.cancel();
+    chipReflowAnimations.delete(chip);
+  });
+  return first;
+};
+const animateChipReflow = (container, first) => {
   container.querySelectorAll('[data-order-chip]').forEach(chip=>{
     if(chip===orderDrag.chip)return;
-    const old=before.get(chip),now=chip.getBoundingClientRect();
+    const old=first.get(chip),now=chip.getBoundingClientRect();
     if(!old)return;
     const dx=old.left-now.left,dy=old.top-now.top;
-    if(dx||dy)chip.animate(
-      [{transform:`translate(${dx}px, ${dy}px)`},{transform:'translate(0, 0)'}],
-      {duration:150,easing:'cubic-bezier(.2,.8,.2,1)'});
+    if(Math.abs(dx)<.5 && Math.abs(dy)<.5)return;
+    // FLIP: invert the layout delta, then play only the surrounding chip back
+    // to its natural position. Wrapped-row moves naturally include both axes.
+    const animation=chip.animate(
+      [{transform:`translate3d(${dx}px, ${dy}px, 0)`},
+       {transform:'translate3d(0, 0, 0)'}],
+      {duration:180,easing:'cubic-bezier(.22, 1, .36, 1)',fill:'both'});
+    chipReflowAnimations.set(chip,animation);
+    animation.onfinish=()=>{
+      if(chipReflowAnimations.get(chip)===animation){
+        animation.cancel();
+        chipReflowAnimations.delete(chip);
+      }
+    };
   });
 };
 const beginOrderDrag = event => {
@@ -294,8 +317,10 @@ const beginOrderDrag = event => {
   state.container.classList.add('is-sorting');state.chip.classList.add('dragging');
 };
 const moveOrderGhost = event => {
-  orderDrag.ghost.style.left=`${event.clientX-orderDrag.offsetX}px`;
-  orderDrag.ghost.style.top=`${event.clientY-orderDrag.offsetY}px`;
+  const x=event.clientX-orderDrag.offsetX,y=event.clientY-orderDrag.offsetY;
+  // The active chip follows the pointer directly; it never receives FLIP or a
+  // transition, so there is no perceived lag behind surrounding-chip motion.
+  orderDrag.ghost.style.transform=`translate3d(${x}px, ${y}px, 0) rotate(1deg) scale(1.03)`;
 };
 const arrangeOrder = (container, order) => order.forEach(boxId=>{
   const chip=[...container.querySelectorAll('[data-order-chip]')].find(
@@ -306,7 +331,11 @@ const finishOrderDrag = (commit=true) => {
   if(!orderDrag)return;
   const state=orderDrag;
   if(state.started){
-    if(!commit)arrangeOrder(state.container,state.originalOrder);
+    if(!commit){
+      const first=captureChipRects(state.container);
+      arrangeOrder(state.container,state.originalOrder);
+      animateChipReflow(state.container,first);
+    }
     state.ghost?.remove();state.chip.classList.remove('dragging');
     state.container.classList.remove('is-sorting');
     if(commit){
@@ -388,12 +417,11 @@ element.addEventListener('pointermove', event => {
     if(!orderDrag.started)beginOrderDrag(event);
     moveOrderGhost(event);
     const container=orderDrag.container;
-    const beforeRects=new Map([...container.querySelectorAll('[data-order-chip]')]
-      .map(chip=>[chip,chip.getBoundingClientRect()]));
     const reference=insertionReference(container,event.clientX,event.clientY);
     if(reference!==orderDrag.chip.nextElementSibling){
+      const first=captureChipRects(container);
       if(reference)container.insertBefore(orderDrag.chip,reference);else container.appendChild(orderDrag.chip);
-      animateChipReflow(container,beforeRects);
+      animateChipReflow(container,first);
     }
     event.preventDefault();return;
   }

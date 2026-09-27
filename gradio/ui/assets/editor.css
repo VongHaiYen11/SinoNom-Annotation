@@ -152,6 +152,8 @@
 }
 .order-chip-ghost {
   position: fixed;
+  top: 0;
+  left: 0;
   z-index: 10000;
   margin: 0;
   border-color: var(--color-accent, #ff7a1a);
@@ -159,7 +161,9 @@
   box-shadow: 0 10px 28px rgb(0 0 0 / 45%);
   opacity: .96;
   pointer-events: none;
-  transform: rotate(1deg) scale(1.03);
+  transform: translate3d(0, 0, 0) rotate(1deg) scale(1.03);
+  transform-origin: center;
+  will-change: transform;
 }
 .chip-id { min-width: 1ch; color: var(--color-muted, #a1a1aa); font-size: 11px; font-variant-numeric: tabular-nums; }
 .chip-separator { color: #5d616a; }
