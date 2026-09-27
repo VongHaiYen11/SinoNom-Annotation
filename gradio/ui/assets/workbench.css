@@ -316,6 +316,7 @@ button#next-button::after { transform: rotate(180deg); }
   min-width: 0 !important;
   height: var(--button-height);
 }
+#control-panel .delete-action-row { grid-template-columns: minmax(0, 1fr); }
 #control-panel .sidebar-action-row button,
 #control-panel .sidebar-section > button,
 #content-image-preview,

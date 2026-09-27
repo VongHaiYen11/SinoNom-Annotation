@@ -177,8 +177,8 @@ def create_app(options):
                         gr.Markdown('### Box Actions')
                         gr.Markdown('Click or drag to select. Ctrl/Cmd adds to selection; Alt/Option-drag creates a box.',
                                     elem_classes='sidebar-help')
-                        with gr.Row(elem_classes=['button-group','sidebar-action-row']):
-                            add=gr.Button('Add box', min_width=0);delete=gr.Button('Delete selected', elem_id='delete-box', min_width=0)
+                        with gr.Row(elem_classes=['button-group','sidebar-action-row','delete-action-row']):
+                            delete=gr.Button('Delete selected', elem_id='delete-box', min_width=0)
                     with gr.Accordion('Detection', open=False,
                                       elem_classes=['section','sidebar-section','sidebar-disclosure']):
                         rerun_confirm=gr.Checkbox(label='Replace all existing boxes')
@@ -391,13 +391,17 @@ def create_app(options):
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if ctx['active']['current_step'] == 4:
                 try:
+                    statuses = frontend_statuses(selection)
                     active, _ = frontend_selection(selection)
-                    if active:
-                        updated = engine.apply(ctx['active'], 'status', {
-                            'id': active,
-                            'status': status_value,
+                    if active and active not in statuses:
+                        statuses[active] = status_value
+                    updated = ctx['active']
+                    for uid, selected_status in statuses.items():
+                        updated = engine.apply(updated, 'status', {
+                            'id': uid,
+                            'status': selected_status,
                         })
-                        ctx = dict(ctx, active=updated)
+                    ctx = dict(ctx, active=updated)
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             result = run(ctx, 'next', auto_detect=auto_detect)
@@ -448,9 +452,6 @@ def create_app(options):
                 return render(ctx,'Select a content section.')
             return run(ctx,'field',dict(path=parsed,value=value))
         clear_loading_when_done(apply_field.click(apply_content_field,[session,field,field_value],**event_args))
-        clear_loading_when_done(add.click(
-            lambda c,i,a,b,d,e,op='add':run(c,op,dict(id=i,bbox=[a,b,d,e])),
-            [session,box_id,x1,y1,x2,y2],**event_args))
         def frontend_selection(value):
             try:
                 parsed=json.loads(value or '{}')
@@ -460,6 +461,17 @@ def create_app(options):
                 return active,selected
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local box selection is invalid.')
+        def frontend_statuses(value):
+            try:
+                parsed=json.loads(value or '{}')
+                statuses=parsed.get('statuses',{})
+                if (not isinstance(statuses,dict)
+                        or any(not isinstance(uid,str) or selected_status not in ('intact','damaged')
+                               for uid,selected_status in statuses.items())):
+                    raise ValueError
+                return statuses
+            except (ValueError,TypeError,AttributeError):
+                raise gr.Error('The local box statuses are invalid.')
         def update_coordinates(ctx,selection,a,b,d,e):
             active,_=frontend_selection(selection)
             if not active:raise gr.Error('Select a bounding box first.')

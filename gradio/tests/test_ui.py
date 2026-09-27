@@ -201,7 +201,11 @@ class GradioCallbacks(unittest.TestCase):
                     result=on_action(ctx,gr.EventData(None,dict(action='detect',payload={})))
                 ctx=result[0]
                 self.assertIn('Detection is disabled',result[2]['value'])
-                ctx=action('add')(ctx,None,0,0,10,10)[0]
+                active=ctx['active']
+                ctx=on_action(ctx,gr.EventData(None,dict(
+                    action='add',payload={'bbox':[0,0,10,10],
+                                          'revision':active['revision'],
+                                          'image':active['image']})))[0]
                 ctx=action('next')(ctx)[0]
                 self.assertEqual(ctx['active']['current_step'],4)
                 self.assertEqual(ctx['active']['annotations'],{})
@@ -247,8 +251,8 @@ class GradioCallbacks(unittest.TestCase):
             ctx=result[0];self.assertEqual(ctx['active']['current_step'],3)
             self.assertFalse(result[27]['visible'])
             self.assertIn('fixture model unavailable',result[2]['value'])
-            add=action('add')
-            for x in (0,20,40):ctx=add(ctx,None,x,0,x+10,10)[0]
+            for x in (0,20,40):
+                ctx=board_action(ctx,'add',{'bbox':[x,0,x+10,10]})[0]
             first_uid=list(ctx['active']['regions'])[0]
             ctx=board_action(ctx,'commit_boxes',{
                 'boxes':{first_uid:[1,1,11,11]},
@@ -332,6 +336,7 @@ class GradioCallbacks(unittest.TestCase):
             app=create_app(options)
             functions=[f.fn for f in app.fns.values() if f.fn]
             open_image=next(f for f in functions if f.__name__=='open_image')
+            on_action=next(f for f in functions if f.__name__=='on_action')
             confirm=next(f for f in functions if f.__name__=='confirm_source_mismatch')
             lambdas=[f for f in functions if f.__name__=='<lambda>']
             def action(name):
@@ -342,7 +347,12 @@ class GradioCallbacks(unittest.TestCase):
 
             ctx=open_image(dict(active=new_state(),drafts={}),str(image))[0]
             ctx=action('save_content')(ctx)[0];ctx=action('next')(ctx)[0]
-            result=action('add')(ctx,None,0,0,10,10);ctx=result[0]
+            active=ctx['active']
+            result=on_action(ctx,gr.EventData(None,dict(
+                action='add',payload={'bbox':[0,0,10,10],
+                                      'revision':active['revision'],
+                                      'image':active['image']})))
+            ctx=result[0]
             self.assertIn('Difference (boxes − characters)',result[25])
             self.assertTrue(result[31]['visible'])
             self.assertTrue(result[34]['interactive'])

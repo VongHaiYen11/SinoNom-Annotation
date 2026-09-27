@@ -24,6 +24,9 @@ const syncExternalControls = () => {
   setInputValue('#selection-bridge', JSON.stringify({
     active: activeBoxId,
     selected: [...selectedIds],
+    statuses: Object.fromEntries(Object.entries(localBoxes).map(
+      ([id, box]) => [id, box.status]
+    )),
   }));
   const active = activeBoxId && localBoxes[activeBoxId];
   if (!active) return;
@@ -35,6 +38,20 @@ const syncExternalControls = () => {
   if (props.value.step === 4) {
     const status = root.querySelector(`#status-radio input[value="${active.status}"]`);
     if (status && !status.checked) status.click();
+  }
+};
+const renderLocalStatus = (id, status) => {
+  const box = localBoxes[id];
+  const group = groupFor(id);
+  if (!box || !group) return;
+  box.status = status;
+  const color = status === 'damaged' ? '#ef4444' : '#22c55e';
+  const rect = group.querySelector('rect:not([data-image-resize-handle])');
+  if (rect) {
+    rect.setAttribute('fill', color);
+    rect.setAttribute('stroke', color);
+    if (status === 'damaged') rect.setAttribute('stroke-dasharray', '5 4');
+    else rect.removeAttribute('stroke-dasharray');
   }
 };
 const renderSelection = (sync=true) => {
@@ -107,6 +124,13 @@ watch('value', () => {
 hydrateLocalState();
 const resizeObserver = new ResizeObserver(() => requestAnimationFrame(applyZoom));
 resizeObserver.observe(element);
+
+root.addEventListener('change', event => {
+  const input = event.target.closest('#status-radio input');
+  if (!input || props.value.step !== 4 || !activeBoxId) return;
+  renderLocalStatus(activeBoxId, input.value);
+  syncExternalControls();
+});
 
 const point = (event, svg, width=props.value.width, height=props.value.height) => {
   const p = svg.createSVGPoint(); p.x=event.clientX; p.y=event.clientY;
