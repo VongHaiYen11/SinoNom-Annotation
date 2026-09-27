@@ -106,6 +106,20 @@ class Invariants(unittest.TestCase):
         for order in ([1,3],[1,3,3],[1,3,5],['1',2,3],[True,2,3]):
             with self.assertRaises(ValueError):update_reading_order(s,order)
 
+    def test_missing_source_alignment_adds_reorderable_miss_tags(self):
+        s=state(n=5)
+        s['source_mismatch']={
+            'source_text':s['annotation_text'], 'source_character_count':3,
+            'bounding_box_count':5, 'issue_type':'missing_source_characters', 'note':''}
+        confirm_status(s);initialize_alignment(s)
+        self.assertEqual(list(s['annotations'].values()),['永','寺','樂','MISS','MISS'])
+        update_reading_order(s,[1,4,2,3,5])
+        self.assertEqual(build_text_sequence(s),'永MISS寺樂MISS')
+        s['workflow']['reading_order_valid']=True
+        s['code']='12305'
+        document=final_source_mismatch_document(s)
+        self.assertEqual(document['annotations']['4'],'MISS')
+
     def test_status_only(self):
         s=state();uid=list(s['regions'])[1];old=deepcopy(s);update_status(s,uid,'damaged')
         old['regions'][uid]['status']='damaged'

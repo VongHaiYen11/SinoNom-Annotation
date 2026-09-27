@@ -1,6 +1,6 @@
 from copy import deepcopy
-from .text_alignment import (count_annotation_characters, temporary_align_text,
-                             validate_bbox_text_count)
+from .text_alignment import (align_text_with_missing, count_annotation_characters,
+                             temporary_align_text, validate_bbox_text_count)
 
 
 def new_state():
@@ -94,8 +94,12 @@ def initialize_alignment(state):
         str(box_id): deepcopy(state['regions'][uid])
         for uid, box_id in zip(ordered_uids, ids)
     }
-    state['annotations'] = (temporary_align_text(ids, state['annotation_text'])
-                            if state['workflow']['bbox_valid'] else {})
+    if state['workflow']['bbox_valid']:
+        state['annotations'] = temporary_align_text(ids, state['annotation_text'])
+    elif state['source_mismatch']['issue_type'] == 'missing_source_characters':
+        state['annotations'] = align_text_with_missing(ids, state['annotation_text'])
+    else:
+        state['annotations'] = {}
     state['reading_order'] = ids
     state['selected_box_id'] = state['box_id_by_region'].get(state['selected_region_uid'])
     state['workflow']['alignment_valid'] = True

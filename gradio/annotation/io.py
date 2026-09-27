@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from .bbox import validate_coordinates
 from .reading_order import validate_reading_order
-from .text_alignment import validate_bbox_text_count, characters
+from .text_alignment import MISSING_ANNOTATION, validate_bbox_text_count, characters
 
 
 SOURCE_MISMATCH_TYPES = {
@@ -81,7 +81,8 @@ def validate_document(doc, image, size):
     if 'annotations' in doc:
         if set(doc['annotations']) != set(doc['bounding_boxes']):
             raise ValueError('Annotations contain missing or unknown box IDs.')
-        if any(not isinstance(c, str) or characters(c) != [c] for c in doc['annotations'].values()):
+        if any(not isinstance(c, str) or (c != MISSING_ANNOTATION and characters(c) != [c])
+               for c in doc['annotations'].values()):
             raise ValueError('Each annotation must contain one valid character.')
     resized_size = size
     if 'image_resize' in doc:
@@ -125,12 +126,14 @@ def load_annotation(path, image, size):
 
 
 def validate_source_mismatch_document(doc, image, size):
-    expected_keys = {
+    required_keys = {
         'image', 'inscription_code', 'source_text', 'source_character_count',
         'bounding_box_count', 'issue_type', 'note', 'bounding_boxes',
         'reading_order', 'image_resize', 'crop',
     }
-    if not isinstance(doc, dict) or set(doc) != expected_keys:
+    allowed_keys = required_keys | {'annotations'}
+    if (not isinstance(doc, dict) or not required_keys.issubset(doc)
+            or not set(doc).issubset(allowed_keys)):
         raise ValueError('Invalid source mismatch document.')
     if doc['inscription_code'] != Path(image).stem:
         raise ValueError('Source mismatch does not belong to this inscription.')
@@ -150,8 +153,15 @@ def validate_source_mismatch_document(doc, image, size):
         doc['issue_type'], doc['source_character_count'], doc['bounding_box_count'])
     if not isinstance(doc['note'], str):
         raise ValueError('Source mismatch note must be a string.')
-    if 'annotations' in doc:
-        raise ValueError('Source mismatch documents cannot contain annotations.')
+    annotations = doc.get('annotations')
+    if doc['issue_type'] == 'missing_source_characters':
+        if not isinstance(annotations, dict):
+            raise ValueError('Missing-source documents require annotations.')
+        missing_count = doc['bounding_box_count'] - doc['source_character_count']
+        if list(annotations.values()).count(MISSING_ANNOTATION) != missing_count:
+            raise ValueError('Missing-source annotations contain an invalid MISS count.')
+    elif annotations is not None:
+        raise ValueError('Only missing-source documents can contain annotations.')
     validate_document(doc, image, size)
     return doc
 
@@ -192,6 +202,8 @@ def final_source_mismatch_document(state):
         'bounding_boxes': state['bounding_boxes'],
         'reading_order': state['reading_order'],
     }
+    if issue['issue_type'] == 'missing_source_characters':
+        doc['annotations'] = state['annotations']
     from crop.crop import crop_document, default_crop, image_resize
     resized_size = state.get('resized_image_size') or state['image_size']
     doc['image_resize'] = image_resize(state['image_size'], resized_size)

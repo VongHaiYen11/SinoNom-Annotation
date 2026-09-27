@@ -2,6 +2,8 @@
 import unicodedata
 import regex
 
+MISSING_ANNOTATION = 'MISS'
+
 
 def normalize_annotation_text(text):
     return ''.join(c for c in unicodedata.normalize('NFC', text)
@@ -22,6 +24,15 @@ def temporary_align_text(box_ids, text):
     if not chars or len(ids) != len(chars) or len(set(ids)) != len(ids):
         raise ValueError('Box and character counts must match and be nonzero; IDs must be unique.')
     return dict(zip(ids, chars))
+
+
+def align_text_with_missing(box_ids, text):
+    """Pad source text with explicit missing-character tags for extra boxes."""
+    ids = [str(i) for i in box_ids]
+    chars = characters(text)
+    if not chars or len(ids) <= len(chars) or len(set(ids)) != len(ids):
+        raise ValueError('Missing-source alignment requires more unique box IDs than characters.')
+    return dict(zip(ids, chars + [MISSING_ANNOTATION] * (len(ids) - len(chars))))
 
 
 def validate_bbox_text_count(state):

@@ -3,6 +3,7 @@ import html
 from pathlib import Path
 from annotation.reading_order import build_text_sequence
 from annotation.state import source_mismatch_confirmed
+from annotation.text_alignment import MISSING_ANNOTATION
 from crop.crop import MAX_CROP_SIDE
 from .icons import ARROW_RIGHT, DOCUMENT
 
@@ -87,7 +88,8 @@ def snapshot(s):
                 char=html.escape(s['annotations'].get(key,'—'))
                 condition=s['bounding_boxes'][key]['status']
                 active=' active' if key==selected_id else ''
-                cards.append(f'''<button type="button" class="card{active} {condition}" data-card="1" data-box-id="{key}"
+                missing=' missing' if s['annotations'].get(key) == MISSING_ANNOTATION else ''
+                cards.append(f'''<button type="button" class="card{active}{missing} {condition}" data-card="1" data-box-id="{key}"
                     draggable="{str(step==5).lower()}" aria-pressed="{str(key==selected_id).lower()}" aria-label="Box {key}: {char}, {condition}" title="ID {key} · {condition}">
                     <span class="tile-character">{char}</span><small>{key}</small></button>''')
             title='Reading Order'
@@ -105,8 +107,11 @@ def snapshot(s):
                 issue=s['source_mismatch']
                 note=(f'<small>Note: {html.escape(issue["note"])}</small>'
                       if issue['note'] else '')
+                mismatch_text = (html.escape(build_text_sequence(s))
+                                 if issue['issue_type'] == 'missing_source_characters' else
+                                 'No character annotations will be generated for this image.')
                 review=f'''<div class="review-text source-mismatch-review"><span class="eyebrow">SOURCE MISMATCH</span>
-                    <p>No character annotations will be generated for this image.</p>
+                    <p>{mismatch_text}</p>
                     <small>{html.escape(issue['issue_type'])} · {issue['source_character_count']} characters · {issue['bounding_box_count']} boxes</small>
                     {note}</div>'''
             else:

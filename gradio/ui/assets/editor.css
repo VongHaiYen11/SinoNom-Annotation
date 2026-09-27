@@ -119,6 +119,8 @@
   cursor: pointer;
   user-select: none;
 }
+.card.missing { border-color: #f59e0b; background: #302116; color: #fbbf24; }
+.card.missing .tile-character { font-family: Arial, Helvetica, sans-serif !important; font-size: 12px; font-weight: 700; }
 
 .card[draggable="true"] { cursor: grab; }
 .card[draggable="true"]:active { cursor: grabbing; }
