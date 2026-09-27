@@ -99,10 +99,11 @@ class Invariants(unittest.TestCase):
             update_bboxes(invalid,{uids[0]:[2,2,7,7],uids[1]:[0,0,101,10]})
         self.assertEqual(invalid,before)
 
-    def test_reorder_preserves_mapping(self):
-        s=aligned_state();before=deepcopy(s['annotations'])
+    def test_reorder_remaps_text_to_ordered_boxes(self):
+        s=aligned_state()
         update_reading_order(s,[1,3,2])
-        self.assertEqual(s['annotations'],before);self.assertEqual(build_text_sequence(s),'永樂寺')
+        self.assertEqual(s['annotations'],{'1':'永','3':'寺','2':'樂'})
+        self.assertEqual(build_text_sequence(s),'永寺樂')
         for order in ([1,3],[1,3,3],[1,3,5],['1',2,3],[True,2,3]):
             with self.assertRaises(ValueError):update_reading_order(s,order)
 
@@ -114,11 +115,13 @@ class Invariants(unittest.TestCase):
         confirm_status(s);initialize_alignment(s)
         self.assertEqual(list(s['annotations'].values()),['永','寺','樂','MISS','MISS'])
         update_reading_order(s,[1,4,2,3,5])
-        self.assertEqual(build_text_sequence(s),'永MISS寺樂MISS')
+        self.assertEqual(s['annotations'],{
+            '1':'永','4':'寺','2':'樂','3':'MISS','5':'MISS'})
+        self.assertEqual(build_text_sequence(s),'永寺樂MISSMISS')
         s['workflow']['reading_order_valid']=True
         s['code']='12305'
         document=final_source_mismatch_document(s)
-        self.assertEqual(document['annotations']['4'],'MISS')
+        self.assertEqual(document['annotations']['3'],'MISS')
 
     def test_status_only(self):
         s=state();uid=list(s['regions'])[1];old=deepcopy(s);update_status(s,uid,'damaged')
@@ -156,7 +159,7 @@ class Invariants(unittest.TestCase):
         s=state()
         with self.assertRaises(ValueError):final_document(s)
         confirm_status(s);initialize_alignment(s);update_reading_order(s,[1,3,2]);s['workflow']['reading_order_valid']=True
-        self.assertEqual(final_document(s)['annotations']['2'],'寺')
+        self.assertEqual(final_document(s)['annotations']['2'],'樂')
         del s['annotations']['2']
         with self.assertRaises(ValueError):final_document(s)
 
@@ -208,7 +211,8 @@ class Integration(unittest.TestCase):
         mapping=deepcopy(s['annotations'])
         s=e.apply(s,'reorder',{'order':[1,3,2]});s=e.apply(s,'next')
         self.assertEqual(s['current_step'],6)
-        self.assertEqual(s['annotations'],mapping)
+        self.assertNotEqual(s['annotations'],mapping)
+        self.assertEqual(s['annotations'],{'1':'永','3':'寺','2':'樂'})
         before_crop=deepcopy(final_document(s))
         s=e.apply(s,'crop',{'bbox':[1,2,90,95]});s=e.apply(s,'save_crop')
         self.assertEqual({k:v for k,v in final_document(s).items() if k!='crop'},
@@ -218,7 +222,7 @@ class Integration(unittest.TestCase):
         self.assertFalse((self.root/'out/12305.json').exists())
         s=e.apply(s,'next');self.assertEqual(s['current_step'],7)
         s=e.apply(s,'save')
-        self.assertEqual(build_text_sequence(s),'永樂寺')
+        self.assertEqual(build_text_sequence(s),'永寺樂')
         doc=read_json(self.root/'out/12305.json')
         self.assertNotIn('region_uid',json.dumps(doc))
         loaded=e.open_image(self.image);self.assertEqual(loaded['annotations'],doc['annotations'])

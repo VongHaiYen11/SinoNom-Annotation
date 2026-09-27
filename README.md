@@ -417,7 +417,7 @@ Open the local URL printed by Gradio (normally `http://127.0.0.1:7860`; a later 
 6. **✂️ Crop** — Adjust the orange crop frame on the original image; when its longest side exceeds 4096 pixels, export scales it down proportionally and records the scale factors
 7. **✅ Review** — Inspect the final table/text/JSON and save the image object
 
-The browser keeps transient geometry, selection, status and crop edits for responsive interaction; Next validates and commits the relevant local snapshot to the authoritative Python state. Before Reading Order, every editable region has a hidden `region_uid`, so edits do not depend on unstable public Box IDs. Entering Reading Order spatially sorts the committed regions, assigns contiguous Box IDs from `1` to `n`, and aligns the verified Hán/Nôm text. Drag-and-drop then changes only `reading_order`, keeping each annotation attached to its Box ID.
+The browser keeps transient geometry, selection, status and crop edits for responsive interaction; Next validates and commits the relevant local snapshot to the authoritative Python state. Before Reading Order, every editable region has a hidden `region_uid`, so edits do not depend on unstable public Box IDs. Entering Reading Order spatially sorts the committed regions and assigns contiguous Box IDs from `1` to `n`. Drag-and-drop changes `reading_order` and rebuilds `annotations`: the first source character is assigned to the first ordered box, the second character to the second ordered box, and so on. Box geometry and status remain attached to their Box IDs.
 
 The normal path requires exactly one source character per box. When there are more boxes than source characters, selecting `missing_source_characters` creates enough `MISS` tags to make the tag count equal the box count; those tags can be reordered with normal characters and are written to `annotations`. Other problems can be recorded as `wrong_source_content` or `other` without inventing a character mapping. Selecting a mismatch type is sufficient for Next to confirm it automatically; the explicit Confirm button remains available. Changing source text or adding, deleting, or detecting boxes clears the confirmation.
 
@@ -463,7 +463,7 @@ Each file is a UTF-8 JSON array with one object per committed image. If no image
 
 #### `text_annotations.json`
 
-This file contains only images committed with **Save Image** on the Review step. Box IDs are contiguous from `1` to `n`; annotations remain attached to their Box IDs when `reading_order` changes.
+This file contains only images committed with **Save Image** on the Review step. Box IDs are contiguous from `1` to `n`. When `reading_order` changes, annotations are remapped from the verified source sequence onto the newly ordered Box IDs; geometry and status remain fixed to each box.
 
 ```json
 [
@@ -505,7 +505,7 @@ This file contains only images committed with **Save Image** on the Review step.
 ]
 ```
 
-The final text is built by following `reading_order`. In this example, `[1, 3, 2]` produces `永樂寺`.
+The final text is built by following `reading_order`. In this example, `[1, 3, 2]` maps `永`, `寺`, `樂` onto boxes `1`, `3`, `2`, so both the canvas labels and final text remain `永寺樂`.
 
 #### `source_mismatches.json`
 

@@ -272,7 +272,11 @@ class GradioCallbacks(unittest.TestCase):
             self.assertIn('data-box-id',result[8]['value']['markup'])
             self.assertIn('data-region-uid',result[8]['value']['markup'])
             damaged_uid=list(ctx['active']['regions'])[1]
-            local_selection=json.dumps({'active':damaged_uid,'selected':[damaged_uid]})
+            local_selection=json.dumps({
+                'active':damaged_uid,'selected':[damaged_uid],
+                # Simulate a bridge update arriving one tick behind the radio.
+                'statuses':{uid:'intact' for uid in ctx['active']['regions']},
+            })
             advance=next(f for f in functions if f.__name__=='next_with_progress')
             result=list(advance(ctx,None,None,None,'',local_selection,'damaged'))[-1]
             ctx=result[0]
@@ -287,16 +291,22 @@ class GradioCallbacks(unittest.TestCase):
                 rejected=board_action(ctx,'reorder',{'order':[1,3,3]})
             self.assertEqual(rejected[0]['active']['reading_order'],[1,2,3])
             ctx=board_action(rejected[0],'reorder',{'order':[1,3,2]})[0]
-            self.assertEqual(ctx['active']['annotations'],mapping)
+            self.assertNotEqual(ctx['active']['annotations'],mapping)
+            mapping=dict(ctx['active']['annotations'])
+            self.assertEqual(mapping,{'1':'永','3':'寺','2':'樂'})
             result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],6)
             self.assertTrue(result[21]['visible'])
             self.assertNotIn('data-image-resize-handle',result[8]['value']['markup'])
             ctx=board_action(ctx,'crop',{'bbox':[5,10,95,70]})[0]
             self.assertEqual(ctx['active']['annotations'],mapping)
-            ctx=action('next')(ctx)[0]
+            result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],7)
             self.assertEqual(ctx['active']['reading_order'],[1,3,2])
+            damaged_box_id=ctx['active']['box_id_by_region'][damaged_uid]
+            self.assertEqual(ctx['active']['bounding_boxes'][damaged_box_id]['status'],'damaged')
+            self.assertIn('<span class="table-status damaged">damaged</span>',
+                          result[8]['value']['markup'])
             ctx=action('save')(ctx)[0]
             self.assertTrue(ctx['active']['saved'])
             self.assertTrue((root/'out/12305.json').exists())
@@ -323,7 +333,7 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(restored['active']['current_step'],7)
             reset=open_image(ctx,str(path),True)[0]
             self.assertEqual(reset['active']['current_step'],2)
-            self.assertEqual(reset['active']['annotations'],{'1':'永','2':'寺','3':'樂'})
+            self.assertEqual(reset['active']['annotations'],{'1':'永','3':'寺','2':'樂'})
 
     def test_ui_source_mismatch_flow(self):
         with tempfile.TemporaryDirectory() as folder:

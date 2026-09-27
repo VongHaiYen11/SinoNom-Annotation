@@ -1,5 +1,6 @@
 from .state import require, source_mismatch_confirmed
-from .text_alignment import validate_bbox_text_count
+from .text_alignment import (align_text_with_missing, temporary_align_text,
+                             validate_bbox_text_count)
 
 
 def validate_reading_order(state):
@@ -17,6 +18,11 @@ def update_reading_order(state, order):
             or not validate_reading_order(candidate)):
         raise ValueError('Reading order has missing, duplicate, or invalid IDs.')
     state['reading_order'] = list(order)
+    if validate_bbox_text_count(state):
+        state['annotations'] = temporary_align_text(order, state['annotation_text'])
+    elif (source_mismatch_confirmed(state)
+          and state['source_mismatch']['issue_type'] == 'missing_source_characters'):
+        state['annotations'] = align_text_with_missing(order, state['annotation_text'])
     state['workflow']['reading_order_valid'] = False
     state['saved'] = False
 

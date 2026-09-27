@@ -407,7 +407,10 @@ def create_app(options):
                 try:
                     statuses = frontend_statuses(selection)
                     active, _ = frontend_selection(selection)
-                    if active and active not in statuses:
+                    # The radio is a direct Next input and is therefore the
+                    # freshest value when its bridge update and the click
+                    # happen in the same browser tick.
+                    if active:
                         statuses[active] = status_value
                     updated = ctx['active']
                     for uid, selected_status in statuses.items():
