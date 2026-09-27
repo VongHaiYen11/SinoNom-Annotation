@@ -44,6 +44,9 @@ SHOW_LOADING_JS = """(...args) => {
     document.getElementById('global-loading')?.classList.add('is-visible');
     return args;
 }"""
+HIDE_LOADING_JS = """() => {
+    document.getElementById('global-loading')?.classList.remove('is-visible');
+}"""
 
 
 def _config_relative(config_path, value, field):
@@ -194,11 +197,11 @@ def create_app(options):
                     board=gr.HTML(value=snapshot(initial['active']),html_template='${value.markup}',css_template=CSS,js_on_load=SCRIPT, elem_id='annotation-board')
                     preview=gr.JSON(label='Image JSON',visible=False, elem_id='final-preview', elem_classes='han-nom-json')
                 message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
-                with gr.Row(elem_id='workflow-footer',elem_classes='button-group'):
-                    back=gr.Button('Back', interactive=False, scale=0, elem_id='back-button')
-                    footer_label=gr.HTML(footer(initial['active']))
-                    save=gr.Button('Save image',visible=False,variant='primary', scale=0)
-                    next_button=gr.Button('Next',variant='primary',interactive=False, scale=0, elem_id='next-button')
+        with gr.Row(elem_id='workflow-footer',elem_classes='button-group'):
+            back=gr.Button('Back', interactive=False, scale=0, elem_id='back-button')
+            footer_label=gr.HTML(footer(initial['active']))
+            save=gr.Button('Save image',visible=False,variant='primary', scale=0)
+            next_button=gr.Button('Next',variant='primary',interactive=False, scale=0, elem_id='next-button')
         # Preserve callback output slots while removing the normalized-text component.
         normalized=gr.State(None)
         outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,order_group,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table]
@@ -276,6 +279,14 @@ def create_app(options):
         # Hide Gradio's per-component timers/spinners and show one centered modal instead.
         event_args=dict(outputs=outputs,concurrency_id='annotation-actions',concurrency_limit=1,
                         show_progress='hidden',js=SHOW_LOADING_JS)
+        def clear_loading_when_done(event):
+            # The returned loading HTML is normally identical to its initial value,
+            # so Gradio may skip patching the DOM after a completed action. Clear
+            # the class explicitly on both completion paths instead.
+            event.success(fn=None,inputs=None,outputs=None,js=HIDE_LOADING_JS)
+            event.failure(fn=None,inputs=None,outputs=None,js=HIDE_LOADING_JS)
+            return event
+
         def save_folder():
             try:
                 annotations=collect_annotations(images,options.output_dir,allow_empty=True)
@@ -299,10 +310,10 @@ def create_app(options):
                 document.body.appendChild(link);link.click();link.remove();
                 setTimeout(()=>URL.revokeObjectURL(url),10000);
             }""")
-        open_button.click(open_image,[session,image_choice],**event_args)
-        reset_button.click(lambda c,p:open_image(c,p,True),[session,image_choice],**event_args)
+        clear_loading_when_done(open_button.click(open_image,[session,image_choice],**event_args))
+        clear_loading_when_done(reset_button.click(lambda c,p:open_image(c,p,True),[session,image_choice],**event_args))
         for button,action in [(back,'back'),(save,'save'),(save_content,'save_content'),(undo,'undo'),(restore,'original')]:
-            button.click(lambda c,a=action:run(c,a),[session],**event_args)
+            clear_loading_when_done(button.click(lambda c,a=action:run(c,a),[session],**event_args))
         def next_step(ctx, path=None, value=None, auto_detect=True):
             if ctx['active']['current_step'] == 2 and path is not None:
                 try:
@@ -333,7 +344,7 @@ def create_app(options):
             yield result
             if needs_detection:
                 yield run(result[0], 'detect')
-        next_button.click(next_with_progress,[session,field,field_value],**event_args)
+        clear_loading_when_done(next_button.click(next_with_progress,[session,field,field_value],**event_args))
         def choose_field(ctx,path):
             if not path:return ''
             s=ctx['active']
@@ -352,29 +363,29 @@ def create_app(options):
             except (ValueError,TypeError):
                 return render(ctx,'Select a content section.')
             return run(ctx,'field',dict(path=parsed,value=value))
-        apply_field.click(apply_content_field,[session,field,field_value],**event_args)
+        clear_loading_when_done(apply_field.click(apply_content_field,[session,field,field_value],**event_args))
         for button,action in [(add,'add'),(update,'update')]:
-            button.click(lambda c,i,a,b,d,e,op=action:run(c,op,dict(id=i,bbox=[a,b,d,e])),[session,box_id,x1,y1,x2,y2],**event_args)
-        delete.click(lambda c:run(c,'delete',dict(ids=c['active'].get('selected_region_uids', []))),[session],**event_args)
-        detect.click(lambda c,ok:run(c,'detect') if ok or not c['active']['detection_loaded'] else render(c,'Confirm replacement of existing boxes.'),[session,rerun_confirm],**event_args)
+            clear_loading_when_done(button.click(lambda c,i,a,b,d,e,op=action:run(c,op,dict(id=i,bbox=[a,b,d,e])),[session,box_id,x1,y1,x2,y2],**event_args))
+        clear_loading_when_done(delete.click(lambda c:run(c,'delete',dict(ids=c['active'].get('selected_region_uids', []))),[session],**event_args))
+        clear_loading_when_done(detect.click(lambda c,ok:run(c,'detect') if ok or not c['active']['detection_loaded'] else render(c,'Confirm replacement of existing boxes.'),[session,rerun_confirm],**event_args))
         for selector in (box_id,status_id):
-            selector.input(lambda c,i:run(c,'select',dict(id=i)),[session,selector],**event_args)
-        set_status.click(lambda c,i,v:run(c,'status',dict(id=i,status=v)),[session,status_id,status],**event_args)
+            clear_loading_when_done(selector.input(lambda c,i:run(c,'select',dict(id=i)),[session,selector],**event_args))
+        clear_loading_when_done(set_status.click(lambda c,i,v:run(c,'status',dict(id=i,status=v)),[session,status_id,status],**event_args))
         def parse_action(c,a,key,value):
             try:return run(c,a,{key:json.loads(value)})
             except ValueError as exc:return render(c,'Invalid JSON: '+str(exc))
-        set_order.click(lambda c,v:parse_action(c,'reorder','order',v),[session,order_text],**event_args)
-        apply_crop.click(lambda c,v:parse_action(c,'crop','bbox',v),[session,crop_coords],**event_args)
+        clear_loading_when_done(set_order.click(lambda c,v:parse_action(c,'reorder','order',v),[session,order_text],**event_args))
+        clear_loading_when_done(apply_crop.click(lambda c,v:parse_action(c,'crop','bbox',v),[session,crop_coords],**event_args))
         def select_status_row(ctx,evt:gr.SelectData):
             row = evt.index[0] if isinstance(evt.index, (list, tuple)) else evt.index
             uids = list(ctx['active']['regions'])
             if not isinstance(row, int) or not 0 <= row < len(uids):
                 return render(ctx,'Select a valid region.')
             return run(ctx,'select',dict(uid=uids[row]))
-        status_table.select(select_status_row,[session],**event_args)
+        clear_loading_when_done(status_table.select(select_status_row,[session],**event_args))
         def on_action(ctx,evt:gr.EventData):
             return run(ctx,evt._data['action'],evt._data['payload'])
-        board.action(on_action,[session],**event_args)
+        clear_loading_when_done(board.action(on_action,[session],**event_args))
     return app
 
 
