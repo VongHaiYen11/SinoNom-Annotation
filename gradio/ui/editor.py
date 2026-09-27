@@ -77,8 +77,10 @@ def snapshot(s):
         markup+=f'<section class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></section>'
         if step != 7:
             cards=[]
-            for pos,key in enumerate(s['reading_order'],1):
-                key=str(key)
+            # Keep physical Box ID slots stable in the editor. Reading-order
+            # edits move the annotation assigned to a slot, not the slot,
+            # geometry, or status itself.
+            for key in sorted(s['bounding_boxes'], key=int):
                 char=html.escape(s['annotations'].get(key,'—'))
                 condition=s['bounding_boxes'][key]['status']
                 active=' active' if key==selected_id else ''
@@ -109,4 +111,7 @@ def snapshot(s):
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=w,height=h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
+                readingOrder=list(s['reading_order']),
+                orderedAnnotations=[s['annotations'].get(str(box_id),'')
+                                    for box_id in s['reading_order']],
                 max_crop_side=max(w,h), image_handle_inset=0)

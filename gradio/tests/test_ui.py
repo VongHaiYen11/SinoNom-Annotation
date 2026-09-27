@@ -282,18 +282,31 @@ class GradioCallbacks(unittest.TestCase):
             ctx=result[0]
             self.assertEqual(ctx['active']['regions'][damaged_uid]['status'],'damaged')
             self.assertEqual(ctx['active']['current_step'],5)
-            # Reading order is edited directly on the draggable cards; the
-            # redundant raw Box IDs control is intentionally not rendered.
-            self.assertIsNone(result[18])
+            # Reading order is edited on fixed Box ID slots and explicitly
+            # committed with Apply Changes (or implicitly by Next).
+            self.assertTrue(result[18]['visible'])
             self.assertIn('draggable="true"',result[8]['value']['markup'])
             mapping=dict(ctx['active']['annotations'])
             with self.assertLogs('app',level='ERROR'):
                 rejected=board_action(ctx,'reorder',{'order':[1,3,3]})
             self.assertEqual(rejected[0]['active']['reading_order'],[1,2,3])
-            ctx=board_action(rejected[0],'reorder',{'order':[1,3,2]})[0]
+            apply_reading_order=next(
+                f for f in functions if f.__name__=='apply_reading_order')
+            local_order=json.dumps({'readingOrder':[1,3,2]})
+            ctx=apply_reading_order(rejected[0],local_order)[0]
             self.assertNotEqual(ctx['active']['annotations'],mapping)
             mapping=dict(ctx['active']['annotations'])
             self.assertEqual(mapping,{'1':'永','3':'寺','2':'樂'})
+            reordered_markup=board_action(ctx,'select',{'id':1})[8]['value']['markup']
+            # Box slots remain in physical ID order even though their assigned
+            # annotations now follow reading order [1, 3, 2].
+            card_marker=lambda box_id:f'data-card="1" data-box-id="{box_id}"'
+            self.assertLess(reordered_markup.index(card_marker(1)),
+                            reordered_markup.index(card_marker(2)))
+            self.assertLess(reordered_markup.index(card_marker(2)),
+                            reordered_markup.index(card_marker(3)))
+            self.assertIn('Box 2: 樂',reordered_markup)
+            self.assertIn('Box 3: 寺',reordered_markup)
             result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],6)
             self.assertTrue(result[21]['visible'])

@@ -205,10 +205,16 @@ def create_app(options):
                     gr.Markdown('### Selected region')
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
-                # Preserve callback slots without rendering the redundant region
-                # table or raw reading-order JSON in the control panel.
+                # Preserve the status-table callback slot without rendering the
+                # redundant region table.
                 status_table=gr.State([])
-                order_group=gr.State(None)
+                with gr.Group(visible=False,
+                              elem_classes=['section','sidebar-section']) as order_group:
+                    gr.Markdown('### Reading order')
+                    gr.Markdown('Drag labels between fixed Box ID slots, then apply the change.',
+                                elem_classes='sidebar-help')
+                    apply_order=gr.Button('Apply Changes',variant='primary',
+                                          elem_id='apply-reading-order')
                 order_text=gr.State('[]')
                 with gr.Group(visible=False, elem_classes=['section','sidebar-section']) as crop_group:
                     gr.Markdown('### Crop')
@@ -271,7 +277,7 @@ def create_app(options):
                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
                     gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected),*box['bbox'],
                     gr.update(visible=step==4),gr.update(choices=region_ids,value=selected),box['status'],
-                    None,json.dumps(s['reading_order']),gr.update(value=final,visible=step==7),
+                    gr.update(visible=step==5),json.dumps(s['reading_order']),gr.update(value=final,visible=step==7),
                     gr.update(visible=step==6),json.dumps(s.get('crop')),gr.update(visible=step==7),
                     panel_heading(s),panel_summary(s),footer(s),gr.update(visible=step==2 and has),
                     gr.update(interactive=has and step>1),gr.update(interactive=has and step<7,visible=step<7),
@@ -421,6 +427,16 @@ def create_app(options):
                     ctx = dict(ctx, active=updated)
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
+            if ctx['active']['current_step'] == 5:
+                try:
+                    local_order = frontend_reading_order(selection)
+                    if local_order is not None and local_order != ctx['active']['reading_order']:
+                        updated = engine.apply(ctx['active'], 'reorder', {
+                            'order': local_order,
+                        })
+                        ctx = dict(ctx, active=updated)
+                except Exception as exc:
+                    return render(ctx, WARNING+' '+html.escape(str(exc)))
             if ctx['active']['current_step'] == 6:
                 try:
                     crop_value = frontend_crop(selection)
@@ -520,6 +536,17 @@ def create_app(options):
                 return crop_value
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local crop frame is invalid.')
+        def frontend_reading_order(value):
+            try:
+                parsed=json.loads(value or '{}')
+                order=parsed.get('readingOrder')
+                if order is not None and (
+                        not isinstance(order,list)
+                        or any(type(box_id) is not int for box_id in order)):
+                    raise ValueError
+                return order
+            except (ValueError,TypeError,AttributeError):
+                raise gr.Error('The local reading order is invalid.')
         def update_coordinates(ctx,selection,a,b,d,e):
             active,_=frontend_selection(selection)
             if not active:raise gr.Error('Select a bounding box first.')
@@ -544,6 +571,13 @@ def create_app(options):
             try:return run(c,a,{key:json.loads(value)})
             except ValueError as exc:return render(c,'Invalid JSON: '+str(exc))
         clear_loading_when_done(apply_crop.click(lambda c,v:parse_action(c,'crop','bbox',v),[session,crop_coords],**event_args))
+        def apply_reading_order(ctx,selection):
+            order=frontend_reading_order(selection)
+            if order is None:
+                raise gr.Error('No reading-order change is available.')
+            return run(ctx,'reorder',{'order':order})
+        clear_loading_when_done(apply_order.click(
+            apply_reading_order,[session,selection_bridge],**event_args))
         def on_action(ctx,evt:gr.EventData):
             return run(ctx,evt._data['action'],evt._data['payload'])
         board.action(on_action,[session],outputs=outputs,concurrency_id='annotation-actions',

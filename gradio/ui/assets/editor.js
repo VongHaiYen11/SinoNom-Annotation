@@ -2,6 +2,7 @@
 let pending = false, moving = null, dragged = null;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null;
+let localReadingOrder = [];
 const imageTransform = {zoom: 100, width: props.value.width, height: props.value.height};
 
 const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map(
@@ -31,6 +32,7 @@ const syncExternalControls = () => {
       ([id, box]) => [id, [...box.bbox]]
     )),
     crop: localBoxes.crop?.bbox || null,
+    readingOrder: [...localReadingOrder],
   }));
   const active = activeBoxId && localBoxes[activeBoxId];
   if (!active) return;
@@ -84,6 +86,7 @@ const hydrateLocalState = () => {
   const context = `${props.value.image || ''}:${props.value.step}`;
   const preserveSelection = context === localContext;
   localBoxes = cloneBoxes(props.value.boxes);
+  localReadingOrder = [...(props.value.readingOrder || [])].map(Number);
   imageTransform.width = props.value.width;
   imageTransform.height = props.value.height;
   if (preserveSelection) {
@@ -95,6 +98,22 @@ const hydrateLocalState = () => {
     localContext = context;
   }
   renderSelection();
+};
+
+const renderLocalAnnotations = () => {
+  const labels=props.value.orderedAnnotations || [];
+  localReadingOrder.forEach((boxId,index) => {
+    const card=[...element.querySelectorAll('[data-card]')].find(
+      item => item.dataset.boxId === String(boxId));
+    if(!card)return;
+    const label=labels[index] ?? '';
+    const status=localBoxes[String(boxId)]?.status || 'intact';
+    const text=card.querySelector('.tile-character');
+    if(text)text.textContent=label;
+    card.classList.toggle('missing',label==='MISS');
+    card.setAttribute('aria-label',`Box ${boxId}: ${label}, ${status}`);
+    card.title=`ID ${boxId} · ${status}`;
+  });
 };
 
 const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => {
@@ -382,10 +401,20 @@ element.addEventListener('drop',event=>{
   if(!target || !dragged || pending || props.value.step!==5)return;
   event.preventDefault();
   if(target===dragged){clearDrag();return;}
-  const order=[...element.querySelectorAll('[data-card]')].map(card=>Number(card.dataset.boxId));
-  const from=order.indexOf(Number(dragged.dataset.boxId)),to=order.indexOf(Number(target.dataset.boxId));
-  const [id]=order.splice(from,1);order.splice(to,0,id);
-  clearDrag();send('reorder',{order});
+  // Cards are fixed physical Box ID slots. The movable item is the annotation
+  // currently assigned through readingOrder, so insertion must start from the
+  // persisted order rather than the visual DOM order.
+  const order=[...localReadingOrder];
+  const sourcePosition=order.indexOf(Number(dragged.dataset.boxId));
+  const targetPosition=order.indexOf(Number(target.dataset.boxId));
+  if(sourcePosition<0 || targetPosition<0){clearDrag();return;}
+  // To place the dragged annotation into a fixed target slot, move the target
+  // Box ID to the dragged annotation's source position. Re-alignment then
+  // shifts every intervening annotation while all physical slots stay put.
+  const [targetId]=order.splice(targetPosition,1);
+  order.splice(sourcePosition,0,targetId);
+  localReadingOrder=order;
+  clearDrag();renderLocalAnnotations();syncExternalControls();
 });
 element.addEventListener('dragend',clearDrag);
 element.addEventListener('click', event => {
