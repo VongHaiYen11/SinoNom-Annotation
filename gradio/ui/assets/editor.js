@@ -27,6 +27,7 @@ const syncExternalControls = () => {
     statuses: Object.fromEntries(Object.entries(localBoxes).map(
       ([id, box]) => [id, box.status]
     )),
+    crop: localBoxes.crop?.bbox || null,
   }));
   const active = activeBoxId && localBoxes[activeBoxId];
   if (!active) return;
@@ -38,6 +39,9 @@ const syncExternalControls = () => {
   if (props.value.step === 4) {
     const status = root.querySelector(`#status-radio input[value="${active.status}"]`);
     if (status && !status.checked) status.click();
+  }
+  if (props.value.step === 6 && localBoxes.crop) {
+    setInputValue('#crop-coordinates', JSON.stringify(localBoxes.crop.bbox));
   }
 };
 const renderLocalStatus = (id, status) => {
@@ -327,10 +331,17 @@ element.addEventListener('pointerup', () => {
   }
   if(state.kind==='crop-new'){
     state.rect.remove();
-    if(state.result && state.result[2]>state.result[0] && state.result[3]>state.result[1]) send('crop',{bbox:state.result});
+    if(state.result && state.result[2]>state.result[0] && state.result[3]>state.result[1]) {
+      localBoxes.crop.bbox=[...state.result];
+      drawPreview(groupFor('crop'),state.result);
+      syncExternalControls();
+    }
     return;
   }
-  if(state.kind==='crop' && state.result) send('crop',{bbox:state.result});
+  if(state.kind==='crop' && state.result) {
+    localBoxes.crop.bbox=[...state.result];
+    syncExternalControls();
+  }
 });
 
 element.addEventListener('pointercancel',()=>{

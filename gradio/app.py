@@ -214,7 +214,8 @@ def create_app(options):
                     gr.Markdown('### Crop')
                     gr.Markdown('Adjust the orange crop frame. Oversized crops are scaled automatically on export.',
                                 elem_classes='sidebar-help')
-                    crop_coords=gr.Textbox(label='Coordinates [x1, y1, x2, y2]')
+                    crop_coords=gr.Textbox(label='Coordinates [x1, y1, x2, y2]',
+                                           elem_id='crop-coordinates')
                     apply_crop=gr.Button('Apply crop',variant='primary')
                 summary=gr.HTML(panel_summary(initial['active']))
                 with gr.Accordion('Display font', open=False,
@@ -404,6 +405,16 @@ def create_app(options):
                     ctx = dict(ctx, active=updated)
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
+            if ctx['active']['current_step'] == 6:
+                try:
+                    crop_value = frontend_crop(selection)
+                    if crop_value is not None:
+                        updated = engine.apply(ctx['active'], 'crop', {
+                            'bbox': crop_value,
+                        })
+                        ctx = dict(ctx, active=updated)
+                except Exception as exc:
+                    return render(ctx, WARNING+' '+html.escape(str(exc)))
             result = run(ctx, 'next', auto_detect=auto_detect)
             if result[0]['active']['current_step'] == 2:
                 # Keep the current section and unsaved input visible on failure.
@@ -472,6 +483,16 @@ def create_app(options):
                 return statuses
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local box statuses are invalid.')
+        def frontend_crop(value):
+            try:
+                parsed=json.loads(value or '{}')
+                crop_value=parsed.get('crop')
+                if crop_value is not None and (
+                        not isinstance(crop_value,list) or len(crop_value) != 4):
+                    raise ValueError
+                return crop_value
+            except (ValueError,TypeError,AttributeError):
+                raise gr.Error('The local crop frame is invalid.')
         def update_coordinates(ctx,selection,a,b,d,e):
             active,_=frontend_selection(selection)
             if not active:raise gr.Error('Select a bounding box first.')
