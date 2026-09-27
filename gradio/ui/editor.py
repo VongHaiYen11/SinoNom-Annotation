@@ -14,7 +14,8 @@ def snapshot(s):
         return dict(markup=f'''<div class="empty-workspace"><span class="empty-icon">{DOCUMENT}</span>
             <h2>Select an image</h2></div>''',
             revision=s['revision'], image=None, step=1)
-    step=s['current_step']; w,h=s['image_size']
+    step=s['current_step']; source_w,source_h=s['image_size']
+    w,h=(s.get('resized_image_size') or s['image_size']) if step == 6 else s['image_size']
     if step == 6:
         boxes = {'crop': dict(bbox=s['crop'], status='intact')}
         selected_id = 'crop'
@@ -28,14 +29,18 @@ def snapshot(s):
         selected_id = s['selected_box_id'] if s['selected_box_id'] in boxes else next(iter(boxes), None)
         selected_ids = {selected_id} if selected_id else set()
     filename=html.escape(s['image'])
+    dimensions = (f'{source_w} × {source_h} px → {w} × {h} px'
+                  if step == 6 and [w,h] != [source_w,source_h]
+                  else f'{w} × {h} px')
     markup=f'''<div class="workbench-board"><div class="workspace-toolbar">
-        <div class="workspace-context"><span class="file-icon">{DOCUMENT}</span><strong>{filename}</strong><span class="dimensions">{w} × {h} px</span></div>
+        <div class="workspace-context"><span class="file-icon">{DOCUMENT}</span><strong>{filename}</strong><span class="dimensions">{dimensions}</span></div>
         <div class="toolbar-tools"><span class="zoom-label" aria-live="polite">100%</span>
         <button type="button" data-zoom="out" aria-label="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
         <button type="button" data-zoom="in" aria-label="Zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg></button>
         <button type="button" data-zoom="fit" aria-label="Fit image to view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3H3v3M10 3h3v3M6 13H3v-3M10 13h3v-3"/></svg></button></div></div>
         <div class="image-viewport"><svg class="annotation-canvas" viewBox="0 0 {w} {h}" role="img" aria-label="{filename} · annotation canvas" style="aspect-ratio:{w}/{h}">
-        <image href="{html.escape(s['image_url'], quote=True)}" x="0" y="0" width="{w}" height="{h}" preserveAspectRatio="none"/>'''
+        <image href="{html.escape(s['image_url'], quote=True)}" x="0" y="0" width="{w}" height="{h}" preserveAspectRatio="none"/>
+        {f'<rect class="source-image-outline" x="0" y="0" width="{w}" height="{h}" vector-effect="non-scaling-stroke"/>' if step == 6 else ''}'''
     # Scale labels/handles to image size so full-resolution scans remain editable.
     unit=max(w,h)/900
     for key,b in boxes.items():
@@ -54,6 +59,11 @@ def snapshot(s):
             for n,(x,y) in enumerate([(x1,y1),(x2,y1),(x2,y2),(x1,y2)]):
                 markup+=f'<circle data-corner="{n}" cx="{x}" cy="{y}" r="{6*unit}" fill="{color}" stroke="#17191c" stroke-width="{1.5*unit}"/>'
         markup+='</g>'
+    if step == 6:
+        handle=18*unit; inset=28*unit
+        markup+=f'''<rect data-image-resize-handle="bottom-right" class="source-image-resize-handle"
+            x="{max(0,w-inset)}" y="{max(0,h-inset)}" width="{handle}" height="{handle}"
+            vector-effect="non-scaling-stroke"><title>Resize source image</title></rect>'''
     markup+='</svg></div>'
     if step in (3,4,5,7):
         markup+='<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span></div>'
@@ -86,4 +96,5 @@ def snapshot(s):
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=w,height=h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
-                max_crop_side=MAX_CROP_SIDE)
+                max_crop_side=MAX_CROP_SIDE,
+                image_handle_inset=28*unit if step == 6 else 0)

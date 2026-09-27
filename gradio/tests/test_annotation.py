@@ -228,6 +228,35 @@ class Integration(unittest.TestCase):
         s=e.apply(s,'save');self.assertTrue(s['saved'])
         self.assertEqual(e.apply(s,'next')['current_step'],7)
 
+    def test_source_resize_and_crop_frame_are_independent(self):
+        e=self.engine;s=e.open_image(self.image)
+        s=e.apply(s,'save_content');s=e.apply(s,'next')
+        for x in (0,20,40):s=e.apply(s,'add',{'bbox':[x,0,x+10,10]})
+        s=e.apply(s,'next');s=e.apply(s,'next');s=e.apply(s,'next')
+        self.assertEqual(s['current_step'],6)
+        regions=deepcopy(s['regions']);annotations=deepcopy(s['annotations'])
+
+        s=e.apply(s,'resize_image',{'size':[120,80]})
+        self.assertEqual(s['resized_image_size'],[120,80])
+        self.assertEqual(s['crop'],[0,0,100,80])
+        s=e.apply(s,'crop',{'bbox':[5,10,115,70]})
+        self.assertEqual(s['crop'],[5,10,115,70])
+        self.assertEqual(s['regions'],regions)
+        self.assertEqual(s['annotations'],annotations)
+
+        document=final_document(s)
+        self.assertEqual(document['image_resize'],{
+            'source_size':[100,100], 'output_size':[120,80],
+            'scale_x':1.2, 'scale_y':0.8,
+        })
+        self.assertEqual(document['crop']['top_left'],[5,10])
+        self.assertEqual(document['crop']['bottom_right'],[115,70])
+
+        s=e.apply(s,'resize_image',{'size':[50,40]})
+        self.assertEqual(s['crop'],[0,0,50,40])
+        with self.assertRaises(ValueError):
+            e.apply(s,'crop',{'bbox':[0,0,51,40]})
+
     def test_multiselect_then_delete_regions(self):
         e=self.engine
         s=e.apply(e.open_image(self.image),'save_content')

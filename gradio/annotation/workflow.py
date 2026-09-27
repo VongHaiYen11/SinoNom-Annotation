@@ -20,7 +20,8 @@ from .reading_order import update_reading_order, validate_reading_order
 from .io import load_annotation, validate_document, read_json, atomic_write, save_annotation, final_document
 from .detection_adapter import detect
 from crop.crop import (save_crop_coordinates, crop_bbox, default_crop,
-                       validate_crop_coordinates)
+                       validate_crop_coordinates, validate_resized_image_size,
+                       constrain_crop)
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +99,7 @@ class Workflow:
                     im.convert('RGB').save(preview_path, format='JPEG', quality=95, subsampling=0)
         located = self._source_content_for(path.name)
         state.update(image=path.name, image_path=str(path), image_size=size,
+                     resized_image_size=list(size),
                      image_url='gradio_api/file=' + quote(str(preview_path), safe='/'),
                      source_content=deepcopy(located['record']), source_baseline=deepcopy(located['record']),
                      draft_content=deepcopy(located['record']), code=located['code'], current_step=2)
@@ -106,6 +108,9 @@ class Workflow:
         if saved.exists():
             doc = load_annotation(saved, path.name, size)
             saved_crop = doc.get('crop')
+            if doc.get('image_resize'):
+                state['resized_image_size'] = validate_resized_image_size(
+                    doc['image_resize']['output_size'])
             _load_regions(state, doc)
             state['detection_loaded'] = True
             state['loaded_document'] = {k: deepcopy(doc[k]) for k in ('image', 'bounding_boxes', 'reading_order', 'annotations')}
@@ -115,16 +120,19 @@ class Workflow:
                 sidecar = read_json(meta)
                 if sidecar.get('document_hash') == fingerprint(json.dumps(doc, sort_keys=True, ensure_ascii=False)):
                     state['loaded_meta'] = sidecar
-        state['crop'] = default_crop(size)
+        state['crop'] = default_crop(state['resized_image_size'])
         crop_path = self.output / 'crops' / (path.stem + '.json')
         if saved_crop is not None:
-            state['crop'] = crop_bbox(saved_crop, size)
+            state['crop'] = crop_bbox(saved_crop, state['resized_image_size'])
             state['crop_saved'] = True
         elif crop_path.exists():
             crop = read_json(crop_path)
             if crop['image'] != path.name:
                 raise ValueError('Crop does not belong to this image.')
-            state['crop'] = crop_bbox(crop['crop'], size)
+            if crop.get('image_resize'):
+                state['resized_image_size'] = validate_resized_image_size(
+                    crop['image_resize']['output_size'])
+            state['crop'] = crop_bbox(crop['crop'], state['resized_image_size'])
             state['crop_saved'] = True
         log.info('Loaded image %s; extracted source ky_hieu=%s', path.name, state['code'])
         return state
@@ -286,13 +294,22 @@ class Workflow:
         elif action == 'crop':
             if step != 6:
                 raise ValueError('Edit crop in Step 6.')
-            s['crop'] = validate_crop_coordinates(payload['bbox'], s['image_size'])
+            s['crop'] = validate_crop_coordinates(payload['bbox'], s['resized_image_size'])
+            s['crop_saved'] = False
+            s['saved'] = False
+        elif action == 'resize_image':
+            if step != 6:
+                raise ValueError('Resize the source image in Step 6.')
+            size = validate_resized_image_size(payload['size'])
+            s['resized_image_size'] = size
+            s['crop'] = constrain_crop(s['crop'], size)
             s['crop_saved'] = False
             s['saved'] = False
         elif action == 'save_crop':
             if step != 6:
                 raise ValueError('Save crop in Step 6.')
-            save_crop_coordinates(s['image'], s['crop'], s['image_size'], self.output / 'crops')
+            save_crop_coordinates(s['image'], s['crop'], s['resized_image_size'],
+                                  self.output / 'crops', source_size=s['image_size'])
             s['crop_saved'] = True
         else:
             raise ValueError('Invalid action: ' + action)

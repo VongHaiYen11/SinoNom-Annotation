@@ -80,6 +80,8 @@
 .annotation-canvas [data-corner] { cursor: nwse-resize; }
 .annotation-canvas [data-corner="1"],
 .annotation-canvas [data-corner="3"] { cursor: nesw-resize; }
+.source-image-outline { fill: none; stroke: #38bdf8; stroke-width: 2; stroke-dasharray: 8 6; pointer-events: none; }
+.source-image-resize-handle { fill: #38bdf8; stroke: #0b0d0f; stroke-width: 2; cursor: nwse-resize; }
 
 .status-legend { display: flex; justify-content: flex-end; gap: var(--space-6, 24px); padding: var(--space-4, 16px); border-top: 1px solid var(--color-border, #303237); font-size: 12px; }
 .status-legend span { display: inline-flex; align-items: center; gap: var(--space-2, 8px); }

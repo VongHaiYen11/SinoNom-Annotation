@@ -9,7 +9,8 @@ def new_state():
                 bounding_boxes={}, annotations={}, reading_order=[],
                 box_id_by_region={}, region_uid_by_box_id={}, selected_box_id=None,
                 revision=0, current_step=1,
-                detection_loaded=False, crop=None, crop_saved=False, saved=False,
+                detection_loaded=False, crop=None, resized_image_size=None,
+                crop_saved=False, saved=False,
                 workflow=dict(content_verified=False, bbox_valid=False,
                               alignment_valid=False, status_valid=False, reading_order_valid=False))
 

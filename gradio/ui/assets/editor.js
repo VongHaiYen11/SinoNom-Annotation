@@ -1,18 +1,19 @@
 // Only viewport zoom and in-progress gestures are local; Python owns all data.
 let pending = false, moving = null, dragged = null;
 let zoom = 100, image = props.value.image;
-const applyZoom = () => {
+const fitCanvas = (width, height) => {
   const svg = element.querySelector('.annotation-canvas');
   const viewport = element.querySelector('.image-viewport');
   if (!svg || !viewport) return;
-  const fit = Math.min((viewport.clientWidth - 40) / props.value.width,
-                       (viewport.clientHeight - 40) / props.value.height);
-  svg.style.width = `${props.value.width * fit * zoom / 100}px`;
-  svg.style.height = `${props.value.height * fit * zoom / 100}px`;
+  const fit = Math.min((viewport.clientWidth - 40) / width,
+                       (viewport.clientHeight - 40) / height);
+  svg.style.width = `${width * fit * zoom / 100}px`;
+  svg.style.height = `${height * fit * zoom / 100}px`;
   svg.style.maxWidth = 'none';
   const label = element.querySelector('.zoom-label');
   if (label) label.textContent = `${zoom}%`;
 };
+const applyZoom = () => fitCanvas(props.value.width, props.value.height);
 const send = (action, payload={}) => {
   if (pending) return;
   pending = true;
@@ -55,11 +56,42 @@ const drawPreview = (m, b) => {
     handle.setAttribute('cx', x); handle.setAttribute('cy', y);
   });
 };
+const constrainCrop = (box, width, height) => {
+  const cropWidth=Math.min(Math.max(1,box[2]-box[0]),width,props.value.max_crop_side);
+  const cropHeight=Math.min(Math.max(1,box[3]-box[1]),height,props.value.max_crop_side);
+  const x1=Math.min(Math.max(0,box[0]),width-cropWidth);
+  const y1=Math.min(Math.max(0,box[1]),height-cropHeight);
+  return [x1,y1,x1+cropWidth,y1+cropHeight];
+};
+const drawImageResizePreview = (m, size) => {
+  const [width,height]=size;
+  m.svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+  m.svg.style.aspectRatio=`${width}/${height}`;
+  const source=m.svg.querySelector('image');
+  source?.setAttribute('width',width); source?.setAttribute('height',height);
+  const outline=m.svg.querySelector('.source-image-outline');
+  outline?.setAttribute('width',width); outline?.setAttribute('height',height);
+  m.handle.setAttribute('x',Math.max(0,width-m.inset));
+  m.handle.setAttribute('y',Math.max(0,height-m.inset));
+  m.crop=constrainCrop(m.box,width,height);
+  const cropGroup=m.svg.querySelector('[data-box-id="crop"]');
+  drawPreview({group:cropGroup,rect:cropGroup?.querySelector('rect')},m.crop);
+  fitCanvas(width,height);
+};
 element.addEventListener('pointerdown', e => {
   if (pending || e.button !== 0) return;
   const svg=e.target.closest('.annotation-canvas'); if(!svg) return;
-  const group=e.target.closest('[data-region-uid],[data-box-id]');
   const mode=props.value.step;
+  const imageHandle=e.target.closest('[data-image-resize-handle]');
+  if(imageHandle && mode===6){
+    const bounds=svg.getBoundingClientRect();
+    moving={kind:'image',svg,handle:imageHandle,start:[e.clientX,e.clientY],
+      size:[props.value.width,props.value.height],box:[...props.value.boxes.crop.bbox],
+      units:[props.value.width/bounds.width,props.value.height/bounds.height],
+      inset:props.value.image_handle_inset};
+    svg.setPointerCapture(e.pointerId); e.preventDefault(); return;
+  }
+  const group=e.target.closest('[data-region-uid],[data-box-id]');
   const regionUid=group?.dataset.regionUid, id=regionUid || group?.dataset.boxId;
   const toggle = mode === 3 && (e.shiftKey || e.metaKey || e.ctrlKey);
   if (group && mode !== 6) showLocalSelection(group, toggle);
@@ -84,6 +116,11 @@ element.addEventListener('pointerdown', e => {
 });
 element.addEventListener('pointermove', e => {
   if(!moving) return;
+  if(moving.kind==='image'){
+    const width=Math.max(1,Math.round(moving.size[0]+(e.clientX-moving.start[0])*moving.units[0]));
+    const height=Math.max(1,Math.round(moving.size[1]+(e.clientY-moving.start[1])*moving.units[1]));
+    moving.result=[width,height]; drawImageResizePreview(moving,moving.result); return;
+  }
   const m=moving, p=point(e,m.svg), dx=p.x-m.p.x, dy=p.y-m.p.y;
   const w=props.value.width,h=props.value.height;
   let b=[...m.box];
@@ -106,6 +143,10 @@ element.addEventListener('pointermove', e => {
 });
 element.addEventListener('pointerup', () => {
   if(!moving)return; const m=moving; moving=null;
+  if(m.kind==='image'){
+    if(m.result) send('resize_image',{size:m.result});
+    return;
+  }
   if(m.result) send(props.value.step===6?'crop':m.id?'update':'add',
                     {...(m.regionUid?{uid:m.regionUid}:{id:m.id}),bbox:m.result});
   else if(m.id && props.value.step!==6) send('select',m.regionUid?{uid:m.regionUid}:{id:m.id});
@@ -113,6 +154,9 @@ element.addEventListener('pointerup', () => {
 });
 element.addEventListener('pointercancel',()=>{
   if (!moving) return;
+  if (moving.kind==='image') {
+    drawImageResizePreview(moving,moving.size); moving=null; return;
+  }
   if (moving.id) drawPreview(moving,moving.box); else moving.rect.remove();
   moving=null;
 });

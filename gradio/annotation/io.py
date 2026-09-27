@@ -66,9 +66,20 @@ def validate_document(doc, image, size):
             raise ValueError('Annotations contain missing or unknown box IDs.')
         if any(not isinstance(c, str) or characters(c) != [c] for c in doc['annotations'].values()):
             raise ValueError('Each annotation must contain one valid character.')
+    resized_size = size
+    if 'image_resize' in doc:
+        from crop.crop import image_resize
+        resize = doc['image_resize']
+        if not isinstance(resize, dict) or set(resize) != {
+                'source_size', 'output_size', 'scale_x', 'scale_y'}:
+            raise ValueError('Invalid image resize metadata.')
+        expected = image_resize(size, resize.get('output_size'))
+        if resize != expected:
+            raise ValueError('Image resize metadata does not match the image dimensions.')
+        resized_size = expected['output_size']
     if 'crop' in doc:
         from crop.crop import crop_bbox
-        crop_bbox(doc['crop'], size)
+        crop_bbox(doc['crop'], resized_size)
 
 
 def load_annotation(path, image, size):
@@ -100,11 +111,13 @@ def final_document(state):
     if not all(state['workflow'].values()) or not validate_bbox_text_count(state):
         raise ValueError('Complete all verification steps and match the box and character counts.')
     doc = {k: state[k] for k in ('image', 'bounding_boxes', 'reading_order', 'annotations')}
-    from crop.crop import crop_document, default_crop
+    from crop.crop import crop_document, default_crop, image_resize
+    resized_size = state.get('resized_image_size') or state['image_size']
     doc['crop'] = crop_document(
-        state['image'], state.get('crop') or default_crop(state['image_size']),
-        state['image_size']
+        state['image'], state.get('crop') or default_crop(resized_size),
+        resized_size
     )['crop']
+    doc['image_resize'] = image_resize(state['image_size'], resized_size)
     validate_document(doc, state['image'], state['image_size'])
     return doc
 

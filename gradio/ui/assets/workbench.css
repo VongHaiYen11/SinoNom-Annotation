@@ -217,6 +217,10 @@ body,
 /* Footer is a sibling after the complete two-column workspace. */
 #workflow-footer { display: grid; grid-template-columns: minmax(96px, auto) minmax(0, 1fr) minmax(96px, auto) minmax(96px, auto); align-items: center; flex: 0 0 auto !important; gap: var(--space-3) !important; width: 100%; margin: 0; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-panel); }
 #workflow-footer button { width: 100%; min-height: var(--button-height); }
+#back-button { grid-column: 1; }
+#footer-step { grid-column: 2; }
+#save-image { grid-column: 3; }
+#next-button { grid-column: 4; }
 #back-button button,
 button#back-button,
 #next-button button,
@@ -285,7 +289,6 @@ button#next-button::after { transform: rotate(180deg); }
 .font-picker label { color: var(--color-muted); font-size: 12px; }
 .font-picker select { width: 100%; min-height: var(--input-height); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-page); color: var(--color-text); font-size: 12px; }
 .font-picker .font-sample { margin: 0; color: var(--color-text); font-family: var(--han-nom-font), Arial, sans-serif; font-size: 24px; line-height: 1.8; }
-#status-table { overflow: auto; }
 #status-radio label:has(input[value="intact"]) { color: #22c55e; }
 #status-radio label:has(input[value="damaged"]) { color: #ef4444; }
 
@@ -313,9 +316,9 @@ button#next-button::after { transform: rotate(180deg); }
   .panel { height: auto; }
   #control-panel { padding: var(--space-4); }
   #workflow-footer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #workflow-footer > :nth-child(2) { grid-column: 1 / -1; grid-row: 1; }
-  #workflow-footer > :nth-child(1) { grid-column: 1; grid-row: 2; }
-  #workflow-footer > :nth-child(3),
-  #workflow-footer > :nth-child(4) { grid-column: 2; grid-row: 2; }
+  #footer-step { grid-column: 1 / -1; grid-row: 1; }
+  #back-button { grid-column: 1; grid-row: 2; }
+  #save-image,
+  #next-button { grid-column: 2; grid-row: 2; }
   .footer-step-label { font-size: 11px; }
 }

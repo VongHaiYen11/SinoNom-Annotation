@@ -8,7 +8,7 @@ from PIL import Image
 
 from .io import load_annotation, read_json
 from .text_extraction import validate_content_document
-from crop.crop import crop_document, crop_bbox, default_crop
+from crop.crop import crop_document, crop_bbox, default_crop, image_resize
 
 
 EXPORT_ARCHIVE_NAME = 'annotations.zip'
@@ -63,13 +63,19 @@ def collect_annotations(images, output_dir, allow_empty=False):
             # Legacy files stored crop separately. A missing legacy crop means full image.
             if 'crop' not in doc:
                 crop_path = Path(output_dir) / 'crops' / saved.name
-                bbox = default_crop(size)
+                resize = doc.get('image_resize') or image_resize(size, size)
+                bbox = default_crop(resize['output_size'])
                 if crop_path.exists():
                     crop = read_json(crop_path)
                     if crop['image'] != path.name:
                         raise ValueError('Crop belongs to another image.')
-                    bbox = crop_bbox(crop['crop'], size)
-                doc['crop'] = crop_document(path.name, bbox, size)['crop']
+                    if crop.get('image_resize'):
+                        resize = image_resize(size, crop['image_resize']['output_size'])
+                    bbox = crop_bbox(crop['crop'], resize['output_size'])
+                doc['crop'] = crop_document(path.name, bbox, resize['output_size'])['crop']
+                doc['image_resize'] = resize
+            elif 'image_resize' not in doc:
+                doc['image_resize'] = image_resize(size, size)
             documents.append(doc)
         except (ValueError, OSError, KeyError, TypeError) as exc:
             errors.append(f'{path.name}: {exc}')

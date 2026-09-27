@@ -166,17 +166,17 @@ def create_app(options):
                         rerun_confirm=gr.Checkbox(label='Replace all existing boxes')
                         detect=gr.Button('Run detection', interactive=not skip_detection)
                 with gr.Group(visible=False, elem_classes='section') as status_group:
-                    gr.Markdown('### Region Status')
-                    status_table=gr.Dataframe(headers=['Status'],datatype=['str'],value=[],interactive=False, label='Regions',elem_id='status-table')
                     status_id=gr.Dropdown(visible=False)
-                    status=gr.Radio(['intact','damaged'],value='intact',label='Status',elem_id='status-radio')
+                    status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
                     set_status=gr.Button('Update status', variant='primary')
-                with gr.Group(visible=False, elem_classes='section') as order_group:
-                    gr.Markdown('### Reading Order')
-                    order_text=gr.Textbox(label='Box IDs', placeholder='[1, 3, 2]')
-                    set_order=gr.Button('Apply order')
+                # Preserve callback slots without rendering the redundant region
+                # table or raw reading-order JSON in the control panel.
+                status_table=gr.State([])
+                order_group=gr.State(None)
+                order_text=gr.State('[]')
                 with gr.Group(visible=False, elem_classes='section') as crop_group:
                     gr.Markdown('### Crop')
+                    gr.Markdown('Drag the blue square to resize the source image. Drag the orange crop handles separately to adjust the crop frame.')
                     crop_coords=gr.Textbox(label='Coordinates [x1, y1, x2, y2]')
                     apply_crop=gr.Button('Apply crop')
                 summary=gr.HTML(panel_summary(initial['active']))
@@ -199,8 +199,8 @@ def create_app(options):
                 message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
         with gr.Row(elem_id='workflow-footer',elem_classes='button-group'):
             back=gr.Button('Back', interactive=False, scale=0, elem_id='back-button')
-            footer_label=gr.HTML(footer(initial['active']))
-            save=gr.Button('Save image',visible=False,variant='primary', scale=0)
+            footer_label=gr.HTML(footer(initial['active']), elem_id='footer-step')
+            save=gr.Button('Save image',visible=False,variant='primary', scale=0, elem_id='save-image')
             next_button=gr.Button('Next',variant='primary',interactive=False, scale=0, elem_id='next-button')
         # Preserve callback output slots while removing the normalized-text component.
         normalized=gr.State(None)
@@ -226,7 +226,7 @@ def create_app(options):
                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
                     gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected),*box['bbox'],
                     gr.update(visible=step==4),gr.update(choices=region_ids,value=selected),box['status'],
-                    gr.update(visible=step==5),json.dumps(s['reading_order']),gr.update(value=final,visible=step==7),
+                    None,json.dumps(s['reading_order']),gr.update(value=final,visible=step==7),
                     gr.update(visible=step==6),json.dumps(s.get('crop')),gr.update(visible=step==7),
                     panel_heading(s),panel_summary(s),footer(s),gr.update(visible=step==2 and has),
                     gr.update(interactive=has and step>1),gr.update(interactive=has and step<7,visible=step<7),
@@ -374,15 +374,7 @@ def create_app(options):
         def parse_action(c,a,key,value):
             try:return run(c,a,{key:json.loads(value)})
             except ValueError as exc:return render(c,'Invalid JSON: '+str(exc))
-        clear_loading_when_done(set_order.click(lambda c,v:parse_action(c,'reorder','order',v),[session,order_text],**event_args))
         clear_loading_when_done(apply_crop.click(lambda c,v:parse_action(c,'crop','bbox',v),[session,crop_coords],**event_args))
-        def select_status_row(ctx,evt:gr.SelectData):
-            row = evt.index[0] if isinstance(evt.index, (list, tuple)) else evt.index
-            uids = list(ctx['active']['regions'])
-            if not isinstance(row, int) or not 0 <= row < len(uids):
-                return render(ctx,'Select a valid region.')
-            return run(ctx,'select',dict(uid=uids[row]))
-        clear_loading_when_done(status_table.select(select_status_row,[session],**event_args))
         def on_action(ctx,evt:gr.EventData):
             return run(ctx,evt._data['action'],evt._data['payload'])
         clear_loading_when_done(board.action(on_action,[session],**event_args))

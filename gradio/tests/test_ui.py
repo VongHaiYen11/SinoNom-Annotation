@@ -220,7 +220,9 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(ctx['active']['regions'][damaged_uid]['status'],'damaged')
             result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],5)
-            self.assertTrue(result[18]['visible'])
+            # Reading order is edited directly on the draggable cards; the
+            # redundant raw Box IDs control is intentionally not rendered.
+            self.assertIsNone(result[18])
             self.assertIn('draggable="true"',result[8]['value']['markup'])
             mapping=dict(ctx['active']['annotations'])
             with self.assertLogs('app',level='ERROR'):
@@ -231,7 +233,10 @@ class GradioCallbacks(unittest.TestCase):
             result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],6)
             self.assertTrue(result[21]['visible'])
-            ctx=board_action(ctx,'crop',{'bbox':[5,10,95,90]})[0]
+            self.assertIn('data-image-resize-handle',result[8]['value']['markup'])
+            ctx=board_action(ctx,'resize_image',{'size':[120,80]})[0]
+            self.assertEqual(ctx['active']['resized_image_size'],[120,80])
+            ctx=board_action(ctx,'crop',{'bbox':[5,10,95,70]})[0]
             self.assertEqual(ctx['active']['annotations'],mapping)
             ctx=action('next')(ctx)[0]
             self.assertEqual(ctx['active']['current_step'],7)
@@ -240,9 +245,13 @@ class GradioCallbacks(unittest.TestCase):
             self.assertTrue(ctx['active']['saved'])
             self.assertTrue((root/'out/12305.json').exists())
             saved=json.loads((root/'out/12305.json').read_text())
-            self.assertEqual(set(saved),{'image','bounding_boxes','annotations','reading_order','crop'})
+            self.assertEqual(set(saved),{'image','bounding_boxes','annotations','reading_order','crop','image_resize'})
             self.assertEqual(saved['reading_order'],[1,3,2])
             self.assertEqual(saved['crop']['top_left'],[5,10])
+            self.assertEqual(saved['image_resize'],{
+                'source_size':[100,100], 'output_size':[120,80],
+                'scale_x':1.2, 'scale_y':0.8,
+            })
             export=next(f for f in functions if f.__name__=='save_folder')
             payload=json.loads(export())
             self.assertEqual(payload['name'],'annotations.zip')

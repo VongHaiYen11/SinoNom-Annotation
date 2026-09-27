@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 from annotation.bbox import validate_coordinates
 from annotation.io import atomic_write
 
@@ -16,6 +17,38 @@ def validate_crop_coordinates(bbox, size):
     if x2 - x1 > MAX_CROP_SIDE or y2 - y1 > MAX_CROP_SIDE:
         raise ValueError(f'Crop width and height cannot exceed {MAX_CROP_SIDE} pixels.')
     return [x1, y1, x2, y2]
+
+
+def validate_resized_image_size(size):
+    if (not isinstance(size, (list, tuple)) or len(size) != 2
+            or any(isinstance(value, bool) or not isinstance(value, (int, float))
+                   or not math.isfinite(value) for value in size)):
+        raise ValueError('Resized image size must contain two finite numbers.')
+    width, height = (round(value) for value in size)
+    if width < 1 or height < 1:
+        raise ValueError('Resized image width and height must be positive.')
+    return [width, height]
+
+
+def image_resize(source_size, output_size):
+    """Describe the independent, potentially non-uniform source resize."""
+    source_width, source_height = validate_resized_image_size(source_size)
+    output_width, output_height = validate_resized_image_size(output_size)
+    return dict(source_size=[source_width, source_height],
+                output_size=[output_width, output_height],
+                scale_x=round(output_width / source_width, 8),
+                scale_y=round(output_height / source_height, 8))
+
+
+def constrain_crop(bbox, size):
+    """Move or shrink a crop just enough to fit resized image bounds."""
+    width, height = validate_resized_image_size(size)
+    x1, y1, x2, y2 = bbox
+    crop_width = min(max(1, x2 - x1), width, MAX_CROP_SIDE)
+    crop_height = min(max(1, y2 - y1), height, MAX_CROP_SIDE)
+    x1 = min(max(0, x1), width - crop_width)
+    y1 = min(max(0, y1), height - crop_height)
+    return [x1, y1, x1 + crop_width, y1 + crop_height]
 
 
 def crop_document(image, bbox, size):
@@ -37,8 +70,9 @@ def crop_bbox(crop, size):
     return bbox
 
 
-def save_crop_coordinates(image, bbox, size, output_dir):
+def save_crop_coordinates(image, bbox, size, output_dir, source_size=None):
     doc = crop_document(image, bbox, size)
+    doc['image_resize'] = image_resize(source_size or size, size)
     path = Path(output_dir) / (Path(image).stem + '.json')
     atomic_write(path, doc)
     return path

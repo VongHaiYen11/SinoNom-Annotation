@@ -402,7 +402,7 @@ Open `http://127.0.0.1:7860`. For a remote environment:
 3. **🔲 Bounding Boxes** — Detect, add, move, resize or delete regions; public Box IDs are not assigned yet
 4. **🏷️ Status** — Select regions on the canvas and mark each one as `intact` or `damaged`
 5. **🔢 Reading Order** — Spatially order the regions, assign Box IDs `1..n`, align verified text and allow drag-and-drop reordering
-6. **✂️ Crop** — Set an independent rectangular crop using original-image coordinates; no crop side can exceed 4096 pixels
+6. **✂️ Crop** — Optionally resize the source image with the blue corner handle, then adjust the independent crop frame; no crop side can exceed 4096 pixels
 7. **✅ Review** — Inspect the final table/text/JSON and save the image object
 
 The Python state is authoritative. Before Reading Order, every editable region has a hidden `region_uid`; this allows selection, resize and status changes without exposing unstable Box IDs. Entering Reading Order spatially sorts the current regions, assigns contiguous public Box IDs from `1` to `n`, and aligns the verified Hán/Nôm text. Drag-and-drop then changes only `reading_order`, keeping each character attached to its Box ID.
@@ -415,7 +415,7 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 
 - **Save Content** updates the source JSON and adds/updates that image in the internal content registry. It does not download a file
 - **Next** on Content (Step 2) applies the currently displayed editor text and saves all draft content before entering Bounding Boxes (Step 3). If saving fails, it stays on Step 2 with the editor text preserved. Apply each edited section before switching sections; Next also includes those applied edits.
-- **Save Image** on Review commits bounding boxes, annotations, reading order and crop for that image
+- **Save Image** on Review commits bounding boxes, annotations, reading order, source-image resize metadata and crop for that image
 - **Save All** creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
   - `text_annotations.json` for images committed with **Save Image**
   - `inscription_content.json` for images committed with **Save Content**
@@ -463,6 +463,12 @@ This file contains only images committed with **Save Image** on the Review step.
       "1": "永",
       "2": "寺",
       "3": "樂"
+    },
+    "image_resize": {
+      "source_size": [1000, 1800],
+      "output_size": [900, 1600],
+      "scale_x": 0.9,
+      "scale_y": 0.88888889
     },
     "crop": {
       "top_left": [100, 200],
@@ -512,7 +518,7 @@ In this example, `12305` is the number of the corresponding inscription
 
 All JSON is written as UTF-8 with readable Unicode. Per-image annotation writes are atomic.
 
-Crop is stored as `top_left`, `top_right`, `bottom_right` and `bottom_left` in original-image coordinates. No crop side can exceed 4096 pixels. If an image is larger, its default crop is limited to 4096 pixels on each oversized side. Source updates use an in-process lock and baseline comparison; the application is intended to run as one server process, and concurrent edits of the same image should be avoided.
+Bounding boxes remain in original-image coordinates. `image_resize` records the independent source transformation into the Crop workspace; `scale_x` and `scale_y` may differ. Crop corners are stored in that resized-image coordinate system and are constrained inside `output_size`. The crop-frame behavior itself remains unchanged, including the 4096-pixel side limit. If the source is resized after positioning a crop, the frame is moved or reduced only as much as necessary to remain valid. Source updates use an in-process lock and baseline comparison; the application is intended to run as one server process, and concurrent edits of the same image should be avoided.
 
 ---
 
