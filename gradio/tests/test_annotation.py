@@ -12,7 +12,7 @@ from annotation.state import new_state, set_verified_content, refresh_bbox_valid
 from annotation.bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
 from annotation.text_alignment import count_annotation_characters, normalize_annotation_text
 from annotation.reading_order import update_reading_order, build_text_sequence, validate_reading_order
-from annotation.status import update_status, confirm_status
+from annotation.status import update_status, replace_statuses, confirm_status
 from annotation.io import (atomic_write, final_document,
                            final_source_mismatch_document, load_annotation,
                            read_json, save_annotation)
@@ -131,6 +131,20 @@ class Invariants(unittest.TestCase):
         s=state();uid=list(s['regions'])[1];old=deepcopy(s);update_status(s,uid,'damaged')
         old['regions'][uid]['status']='damaged'
         self.assertEqual(s,old)
+
+    def test_replace_statuses_updates_every_region_atomically(self):
+        s=aligned_state();uids=list(s['regions']);before=deepcopy(s)
+        statuses={uids[0]:'damaged',uids[1]:'intact',uids[2]:'damaged'}
+        replace_statuses(s,statuses)
+        self.assertEqual(
+            {uid:box['status'] for uid,box in s['regions'].items()}, statuses)
+        self.assertEqual(
+            {box_id:box['status'] for box_id,box in s['bounding_boxes'].items()},
+            {s['box_id_by_region'][uid]:status for uid,status in statuses.items()})
+        invalid=deepcopy(before)
+        with self.assertRaises(ValueError):
+            replace_statuses(invalid,{uids[0]:'damaged'})
+        self.assertEqual(invalid,before)
 
     def test_confirm_status_resynchronizes_public_box_status(self):
         s=aligned_state()

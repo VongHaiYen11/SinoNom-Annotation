@@ -1,5 +1,5 @@
 // Python owns persisted data. Browser-local state owns direct manipulation.
-let pending = false, moving = null, dragged = null;
+let pending = false, moving = null, dragged = null, syncingStatusControl = false;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null;
 let localReadingOrder = [];
@@ -43,7 +43,10 @@ const syncExternalControls = () => {
   }
   if (props.value.step === 4) {
     const status = root.querySelector(`#status-radio input[value="${active.status}"]`);
-    if (status && !status.checked) status.click();
+    if (status && !status.checked) {
+      syncingStatusControl = true;
+      try { status.click(); } finally { syncingStatusControl = false; }
+    }
   }
   if (props.value.step === 6 && localBoxes.crop) {
     setInputValue('#crop-coordinates', JSON.stringify(localBoxes.crop.bbox));
@@ -156,6 +159,9 @@ root.addEventListener('change', event => {
   if (!input || props.value.step !== 4 || !activeBoxId) return;
   renderLocalStatus(activeBoxId, input.value);
   syncExternalControls();
+  // Status is canonical annotation data, so persist each user edit instead of
+  // relying solely on the browser-local bridge at the Next boundary.
+  if (!syncingStatusControl) send('status', {id: activeBoxId, status: input.value});
 });
 
 const point = (event, svg, width=props.value.width, height=props.value.height) => {

@@ -16,7 +16,7 @@ from .text_extraction import (annotation_text, edit_content_field,
                               save_source_content, content_document, save_content_document)
 from .text_alignment import count_annotation_characters
 from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
-from .status import update_status, confirm_status
+from .status import update_status, replace_statuses, confirm_status
 from .reading_order import update_reading_order, validate_reading_order
 from .io import (atomic_write, final_document,
                  final_source_mismatch_document, load_annotation,
@@ -313,6 +313,10 @@ class Workflow:
             if step != 4:
                 raise ValueError('Edit status in Step 4.')
             update_status(s, payload.get('uid') or payload.get('id') or s['selected_region_uid'], payload['status'])
+        elif action == 'statuses':
+            if step != 4:
+                raise ValueError('Edit statuses in Step 4.')
+            replace_statuses(s, payload.get('statuses'))
         elif action == 'reorder':
             if step != 5:
                 raise ValueError('Edit reading order in Step 5.')

@@ -304,6 +304,7 @@ def create_app(options):
                 affected = {
                     'select': {0,2,8,10,11,12,13,14,16,17},
                     'status': {0,2,8,17,30},
+                    'statuses': {0,2,8,17,30},
                     'reorder': {0,2,8,19},
                     'crop': {0,2,8,22},
                     'field': {0,2,6,7},
@@ -411,19 +412,23 @@ def create_app(options):
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if ctx['active']['current_step'] == 4:
                 try:
-                    statuses = frontend_statuses(selection)
                     active, _ = frontend_selection(selection)
+                    statuses = {
+                        uid: box['status']
+                        for uid, box in ctx['active']['regions'].items()
+                    }
                     # The radio is a direct Next input and is therefore the
                     # freshest value when its bridge update and the click
                     # happen in the same browser tick.
                     if active:
                         statuses[active] = status_value
-                    updated = ctx['active']
-                    for uid, selected_status in statuses.items():
-                        updated = engine.apply(updated, 'status', {
-                            'id': uid,
-                            'status': selected_status,
-                        })
+                    # Every earlier radio edit is already persisted. Reconcile
+                    # the full canonical map atomically, using only the active
+                    # radio as a last-tick fallback; a stale browser bridge must
+                    # never overwrite statuses saved for other regions.
+                    updated = engine.apply(ctx['active'], 'statuses', {
+                        'statuses': statuses,
+                    })
                     ctx = dict(ctx, active=updated)
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
@@ -504,17 +509,6 @@ def create_app(options):
                 return active,selected
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local box selection is invalid.')
-        def frontend_statuses(value):
-            try:
-                parsed=json.loads(value or '{}')
-                statuses=parsed.get('statuses',{})
-                if (not isinstance(statuses,dict)
-                        or any(not isinstance(uid,str) or selected_status not in ('intact','damaged')
-                               for uid,selected_status in statuses.items())):
-                    raise ValueError
-                return statuses
-            except (ValueError,TypeError,AttributeError):
-                raise gr.Error('The local box statuses are invalid.')
         def frontend_boxes(value):
             try:
                 parsed=json.loads(value or '{}')

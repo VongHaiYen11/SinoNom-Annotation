@@ -26,6 +26,7 @@ class GradioCallbacks(unittest.TestCase):
         script=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
         self.assertNotIn("send('select'",script)
         self.assertNotIn("send('commit_boxes'",script)
+        self.assertIn("send('status'",script)
         self.assertIn('boxes: Object.fromEntries',script)
         self.assertIn("kind:'marquee'",script)
         self.assertIn('selectedIds = new Set()',script)
@@ -271,15 +272,22 @@ class GradioCallbacks(unittest.TestCase):
             self.assertNotIn('永',result[8]['value']['markup'])
             self.assertIn('data-box-id',result[8]['value']['markup'])
             self.assertIn('data-region-uid',result[8]['value']['markup'])
-            damaged_uid=list(ctx['active']['regions'])[1]
+            region_uids=list(ctx['active']['regions'])
+            first_damaged_uid,damaged_uid=region_uids[:2]
+            # Each completed radio edit is persisted before moving to another
+            # region. A lagging bridge must not be allowed to undo it on Next.
+            ctx=board_action(ctx,'status',{
+                'id':first_damaged_uid,'status':'damaged',
+            })[0]
             local_selection=json.dumps({
                 'active':damaged_uid,'selected':[damaged_uid],
                 # Simulate a bridge update arriving one tick behind the radio.
-                'statuses':{uid:'intact' for uid in ctx['active']['regions']},
+                'statuses':{uid:'intact' for uid in region_uids},
             })
             advance=next(f for f in functions if f.__name__=='next_with_progress')
             result=list(advance(ctx,None,None,None,'',local_selection,'damaged'))[-1]
             ctx=result[0]
+            self.assertEqual(ctx['active']['regions'][first_damaged_uid]['status'],'damaged')
             self.assertEqual(ctx['active']['regions'][damaged_uid]['status'],'damaged')
             self.assertEqual(ctx['active']['current_step'],5)
             # Reading order is edited on fixed Box ID slots and explicitly
@@ -317,6 +325,8 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(ctx['active']['current_step'],7)
             self.assertEqual(ctx['active']['reading_order'],[1,3,2])
             damaged_box_id=ctx['active']['box_id_by_region'][damaged_uid]
+            first_damaged_box_id=ctx['active']['box_id_by_region'][first_damaged_uid]
+            self.assertEqual(ctx['active']['bounding_boxes'][first_damaged_box_id]['status'],'damaged')
             self.assertEqual(ctx['active']['bounding_boxes'][damaged_box_id]['status'],'damaged')
             damaged_annotation=ctx['active']['annotations'][damaged_box_id]
             self.assertIn(f'{damaged_box_id} {damaged_annotation}',
