@@ -15,7 +15,7 @@ from .state import (new_state, set_verified_content, refresh_bbox_validation,
 from .text_extraction import (annotation_text, edit_content_field,
                               save_source_content, content_document, save_content_document)
 from .text_alignment import count_annotation_characters
-from .bbox import add_bbox, update_bbox, delete_bbox
+from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
 from .status import update_status, confirm_status
 from .reading_order import update_reading_order, validate_reading_order
 from .io import (atomic_write, final_document,
@@ -164,7 +164,7 @@ class Workflow:
         # record for these high-frequency canvas actions.
         if action == 'select':
             s = original.copy()
-        elif action in ('add', 'update', 'delete', 'detect'):
+        elif action in ('add', 'update', 'commit_boxes', 'delete', 'detect'):
             s = original.copy()
             s['regions'] = deepcopy(original['regions'])
             s['workflow'] = original['workflow'].copy()
@@ -221,7 +221,7 @@ class Workflow:
             refresh_bbox_validation(s)
             if s['workflow']['bbox_valid']:
                 s['source_mismatch'] = None
-        elif action in ('add', 'update', 'delete', 'detect'):
+        elif action in ('add', 'update', 'commit_boxes', 'delete', 'detect'):
             require(s, 'content_verified')
             if step != 3:
                 raise ValueError('Edit bounding boxes in Step 3.')
@@ -241,6 +241,8 @@ class Workflow:
                 s['selected_region_uids'] = [s['selected_region_uid']]
             elif action == 'update':
                 update_bbox(s, payload.get('uid') or payload.get('id') or s['selected_region_uid'], payload['bbox'])
+            elif action == 'commit_boxes':
+                update_bboxes(s, payload.get('boxes'), payload.get('active'), payload.get('selected'))
             else:
                 selected = payload.get('ids') or [payload.get('uid') or payload.get('id') or s['selected_region_uid']]
                 selected = list(dict.fromkeys(selected))

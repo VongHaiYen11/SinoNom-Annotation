@@ -153,12 +153,15 @@ def create_app(options):
                     with gr.Group(elem_classes='section'):
                         gr.Markdown('### Selected Region')
                         box_id=gr.Dropdown(visible=False)
+                        selection_bridge=gr.Textbox(value='{}',show_label=False,
+                                                    elem_id='selection-bridge',
+                                                    elem_classes='frontend-bridge')
                     with gr.Group(elem_classes='section'):
                         gr.Markdown('### Coordinates')
                         with gr.Row(elem_classes=['coordinate-row','field-group']):
-                            x1=gr.Number(label='x1', min_width=0);y1=gr.Number(label='y1', min_width=0)
+                            x1=gr.Number(label='x1', min_width=0,elem_id='bbox-x1');y1=gr.Number(label='y1', min_width=0,elem_id='bbox-y1')
                         with gr.Row(elem_classes=['coordinate-row','field-group']):
-                            x2=gr.Number(label='x2', min_width=0);y2=gr.Number(label='y2', min_width=0)
+                            x2=gr.Number(label='x2', min_width=0,elem_id='bbox-x2');y2=gr.Number(label='y2', min_width=0,elem_id='bbox-y2')
                         update=gr.Button('Update coordinates')
                     with gr.Group(elem_classes='section'):
                         gr.Markdown('### Box Actions')
@@ -184,7 +187,7 @@ def create_app(options):
                 with gr.Group(visible=False, elem_classes='section') as status_group:
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
-                    set_status=gr.Button('Update status', variant='primary')
+                    set_status=gr.Button('Update status', variant='primary',elem_id='set-status')
                 # Preserve callback slots without rendering the redundant region
                 # table or raw reading-order JSON in the control panel.
                 status_table=gr.State([])
@@ -389,9 +392,26 @@ def create_app(options):
                 return render(ctx,'Select a content section.')
             return run(ctx,'field',dict(path=parsed,value=value))
         clear_loading_when_done(apply_field.click(apply_content_field,[session,field,field_value],**event_args))
-        for button,action in [(add,'add'),(update,'update')]:
-            clear_loading_when_done(button.click(lambda c,i,a,b,d,e,op=action:run(c,op,dict(id=i,bbox=[a,b,d,e])),[session,box_id,x1,y1,x2,y2],**event_args))
-        clear_loading_when_done(delete.click(lambda c:run(c,'delete',dict(ids=c['active'].get('selected_region_uids', []))),[session],**event_args))
+        clear_loading_when_done(add.click(
+            lambda c,i,a,b,d,e,op='add':run(c,op,dict(id=i,bbox=[a,b,d,e])),
+            [session,box_id,x1,y1,x2,y2],**event_args))
+        def frontend_selection(value):
+            try:
+                parsed=json.loads(value or '{}')
+                active=parsed.get('active')
+                selected=parsed.get('selected',[])
+                if not isinstance(selected,list):raise ValueError
+                return active,selected
+            except (ValueError,TypeError,AttributeError):
+                raise gr.Error('The local box selection is invalid.')
+        def update_coordinates(ctx,selection,a,b,d,e):
+            active,_=frontend_selection(selection)
+            return run(ctx,'update',dict(id=active,bbox=[a,b,d,e]))
+        clear_loading_when_done(update.click(update_coordinates,
+            [session,selection_bridge,x1,y1,x2,y2],**event_args))
+        clear_loading_when_done(delete.click(
+            lambda c,v:run(c,'delete',dict(ids=frontend_selection(v)[1])),
+            [session,selection_bridge],**event_args))
         clear_loading_when_done(detect.click(lambda c,ok:run(c,'detect') if ok or not c['active']['detection_loaded'] else render(c,'Confirm replacement of existing boxes.'),[session,rerun_confirm],**event_args))
         def confirm_source_mismatch(ctx,issue_type,note):
             return run(ctx,'confirm_source_mismatch',dict(issue_type=issue_type,note=note))
@@ -403,14 +423,17 @@ def create_app(options):
             clear_source_mismatch,[session],**event_args))
         for selector in (box_id,status_id):
             clear_loading_when_done(selector.input(lambda c,i:run(c,'select',dict(id=i)),[session,selector],**event_args))
-        clear_loading_when_done(set_status.click(lambda c,i,v:run(c,'status',dict(id=i,status=v)),[session,status_id,status],**event_args))
+        clear_loading_when_done(set_status.click(
+            lambda c,s,v:run(c,'status',dict(id=frontend_selection(s)[0],status=v)),
+            [session,selection_bridge,status],**event_args))
         def parse_action(c,a,key,value):
             try:return run(c,a,{key:json.loads(value)})
             except ValueError as exc:return render(c,'Invalid JSON: '+str(exc))
         clear_loading_when_done(apply_crop.click(lambda c,v:parse_action(c,'crop','bbox',v),[session,crop_coords],**event_args))
         def on_action(ctx,evt:gr.EventData):
             return run(ctx,evt._data['action'],evt._data['payload'])
-        clear_loading_when_done(board.action(on_action,[session],**event_args))
+        board.action(on_action,[session],outputs=outputs,concurrency_id='annotation-actions',
+                     concurrency_limit=1,show_progress='hidden')
     return app
 
 

@@ -17,11 +17,22 @@ from annotation.state import new_state
 from annotation.io import atomic_write
 from annotation.text_extraction import content_fields
 from annotation.workflow import Workflow
-from ui.presentation import SECTION_LABELS
+from ui.presentation import SECTION_LABELS, header
 from PIL import Image
 
 
 class GradioCallbacks(unittest.TestCase):
+    def test_compact_header_has_all_steps_and_no_draft_status(self):
+        state=new_state();state.update(image='12305.jpg',current_step=2)
+        markup=header(state)
+        self.assertNotIn('Draft',markup)
+        self.assertNotIn('save-indicator',markup)
+        self.assertEqual(markup.count('class="stepper-item'),7)
+        self.assertEqual(markup.count('class="stepper-label"'),7)
+        self.assertIn('aria-current="step"',markup)
+        for label in ('Image','Content','Bounding Boxes','Status','Reading Order','Crop','Review'):
+            self.assertIn(f'>{label}</span>',markup)
+
     def test_cli_paths_override_config_and_missing_paths_use_config(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder).resolve()

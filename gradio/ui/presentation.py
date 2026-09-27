@@ -4,7 +4,7 @@ from pathlib import Path
 from annotation.text_alignment import count_annotation_characters
 from annotation.state import source_mismatch_confirmed
 from .fonts import FONT_CSS
-from .icons import ALERT, CHECK, CIRCLE, DOCUMENT
+from .icons import ALERT, CHECK, DOCUMENT
 
 APP_CSS = FONT_CSS + (Path(__file__).parent / 'assets/workbench.css').read_text()
 LABELS = ('Image', 'Content', 'Bounding Boxes', 'Status', 'Reading Order', 'Crop', 'Review')
@@ -23,18 +23,17 @@ def header(state):
                 workflow['content_verified'] and workflow['reading_order_valid'],
                 state['crop_saved'], state['saved']]
     filename = html.escape(state['image'] or 'No image selected')
-    status = 'Saved' if state['saved'] else 'Draft'
     steps = []
     for index, label in enumerate(LABELS, 1):
         active = index == step; done = complete[index - 1]
         cls = ' is-active' if active else ' is-complete' if done else ''
         current = ' aria-current="step"' if active else ''
         mark = CHECK if done and not active else str(index)
-        steps.append(f'<li class="stepper-item{cls}"{current}><span class="stepper-dot">{mark}</span>{label}</li>')
+        steps.append(f'''<li class="stepper-item{cls}"{current}>
+            <span class="stepper-dot">{mark}</span><span class="stepper-label">{label}</span></li>''')
     return f'''<header class="app-header">
       <div class="brand-lockup"><span class="brand-mark" aria-hidden="true">{DOCUMENT}</span>
-        <div><h1>Sino-Nôm Annotation Tool</h1><div class="file-name"><span class="file-dot"></span>{filename}</div></div></div>
-      <div class="save-indicator">{CHECK if state['saved'] else CIRCLE}<span>{status}</span></div>
+        <div><h1>Sino-Nôm Annotation Tool</h1><div class="file-name">{filename}</div></div></div>
     </header><nav aria-label="Annotation workflow"><ol class="stepper">{''.join(steps)}</ol></nav>'''
 
 

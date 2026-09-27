@@ -51,7 +51,8 @@ def snapshot(s):
         public_box = step not in (3, 4, 6)
         label=html.escape(key+' '+s['annotations'].get(key,'')) if public_box else ''
         dashed=' stroke-dasharray="5 4"' if b['status']=='damaged' else ''
-        identity_attr = f'data-region-uid="{key}"' if step in (3, 4) else f'data-box-id="{key}"'
+        identity_attr = (f'data-box-id="{key}" data-region-uid="{key}"'
+                         if step in (3, 4) else f'data-box-id="{key}"')
         markup+=f'''<g {identity_attr} class="{'selected-region' if multi_selected else ''}"><title>{'Region' if not public_box else label} · {b['status']}</title>
             <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{color}" fill-opacity="{'.16' if multi_selected else '.04'}" stroke="{color}" stroke-width="{'2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{dashed}/>
             {f'<text x="{x1+2*unit}" y="{max(15*unit,y1-4*unit)}" fill="{color}" font-size="{15*unit}" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{2*unit}">{label}</text>' if label else ''}'''
