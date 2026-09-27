@@ -40,6 +40,15 @@ class GradioCallbacks(unittest.TestCase):
         for label in ('Image','Content','Bounding Boxes','Status','Reading Order','Crop','Review'):
             self.assertIn(f'>{label}</span>',markup)
 
+    def test_sidebar_has_bounded_scroll_and_aligned_action_controls(self):
+        css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
+        self.assertIn('grid-template-rows: minmax(0, 1fr)',css)
+        self.assertIn('flex: 1 1 0',css)
+        self.assertIn('overflow-y: auto',css)
+        self.assertIn('grid-template-columns: repeat(2, minmax(0, 1fr))',css)
+        self.assertIn('#content-image-preview .preview-open {',css)
+        self.assertIn('white-space: nowrap',css)
+
     def test_cli_paths_override_config_and_missing_paths_use_config(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder).resolve()
