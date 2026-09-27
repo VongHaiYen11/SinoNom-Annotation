@@ -129,8 +129,8 @@ def create_app(options):
     initial=dict(active=new_state(), drafts={})
     with gr.Blocks(title='Sino-Nôm Annotation Tool', fill_width=True, analytics_enabled=False) as app:
         session=gr.State(initial)
-        with gr.Column(elem_id='header-stack'):
-            with gr.Row(elem_id='topbar'):
+        with gr.Column(elem_id='header-stack', scale=0):
+            with gr.Row(elem_id='topbar', scale=0):
                 progress=gr.HTML(app_identity(initial['active']), elem_id='app-chrome')
                 save_all=gr.Button('Save all', variant='primary', scale=0, elem_id='save-all')
             workflow_chrome=gr.HTML(workflow_progress(initial['active']),
@@ -138,7 +138,7 @@ def create_app(options):
         download_payload=gr.Textbox(visible=False)
         # This remains mounted across every callback, so only one loading modal is shown.
         loading_modal=gr.HTML(value=LOADING_HIDDEN, elem_id='global-loading-host')
-        with gr.Row(elem_id='workspace'):
+        with gr.Row(elem_id='workspace', scale=1):
             with gr.Column(elem_id='control-panel', min_width=0, elem_classes='panel'):
                 heading=gr.HTML(panel_heading(initial['active']))
                 with gr.Group(elem_classes=['section','sidebar-section','source-section']):

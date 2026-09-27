@@ -46,6 +46,8 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('#header-stack {',css)
         self.assertIn('#topbar {',css)
         self.assertIn('#workflow-chrome {',css)
+        self.assertIn('flex: 0 0 auto !important',css)
+        self.assertIn('flex: 1 1 0 !important',css)
         self.assertIn('grid-template-rows: minmax(0, 1fr)',css)
         self.assertIn('flex: 1 1 0',css)
         self.assertIn('overflow-y: auto',css)

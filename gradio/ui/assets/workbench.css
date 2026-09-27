@@ -137,11 +137,13 @@ body,
 /* Identity/action and workflow are separate Gradio widgets. */
 #header-stack {
   display: flex !important;
-  flex: 0 0 auto;
+  flex: 0 0 auto !important;
   flex-direction: column !important;
   gap: var(--space-2) !important;
   width: 100%;
   min-width: 0;
+  min-height: 0 !important;
+  height: auto !important;
   margin: 0;
   padding: 0;
   border: 0;
@@ -155,6 +157,8 @@ body,
   gap: var(--space-4) !important;
   width: 100%;
   min-width: 0;
+  min-height: 0;
+  height: auto;
   margin: 0;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border);
@@ -222,7 +226,7 @@ body,
   grid-template-columns: minmax(280px, var(--sidebar-width)) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   align-items: stretch !important;
-  flex: 1 1 0;
+  flex: 1 1 0 !important;
   gap: var(--panel-gap);
   width: 100%;
   min-height: 0;
