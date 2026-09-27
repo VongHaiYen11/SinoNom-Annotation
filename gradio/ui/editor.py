@@ -53,12 +53,16 @@ def snapshot(s):
         dashed=' stroke-dasharray="5 4"' if b['status']=='damaged' else ''
         identity_attr = (f'data-box-id="{key}" data-region-uid="{key}"'
                          if step in (3, 4) else f'data-box-id="{key}"')
-        markup+=f'''<g {identity_attr} class="{'selected-region' if multi_selected else ''}"><title>{'Region' if not public_box else label} · {b['status']}</title>
+        group_classes=' '.join(filter(None,(
+            'selected-region' if multi_selected else '',
+            'active-region' if key==selected_id else '',
+        )))
+        markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}</title>
             <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{color}" fill-opacity="{'.16' if multi_selected else '.04'}" stroke="{color}" stroke-width="{'2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{dashed}/>
             {f'<text x="{x1+2*unit}" y="{max(15*unit,y1-4*unit)}" fill="{color}" font-size="{15*unit}" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{2*unit}">{label}</text>' if label else ''}'''
-        # Resize handles belong only to the active region. Rendering handles on
-        # every region makes the canvas look as though all boxes are selected.
-        if step == 6 or (step == 3 and selected):
+        # Handles are pre-rendered for local selection changes; CSS exposes
+        # them only on the browser-local active region.
+        if step in (3, 6):
             for n,(x,y) in enumerate([(x1,y1),(x2,y1),(x2,y2),(x1,y2)]):
                 markup+=f'<circle data-corner="{n}" cx="{x}" cy="{y}" r="{6*unit}" fill="{color}" stroke="#17191c" stroke-width="{1.5*unit}"/>'
         markup+='</g>'

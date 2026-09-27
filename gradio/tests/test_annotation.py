@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from annotation.state import new_state, set_verified_content, refresh_bbox_validation, initialize_alignment
-from annotation.bbox import add_bbox, update_bbox, delete_bbox
+from annotation.bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
 from annotation.text_alignment import count_annotation_characters, normalize_annotation_text
 from annotation.reading_order import update_reading_order, build_text_sequence, validate_reading_order
 from annotation.status import update_status, confirm_status
@@ -84,6 +84,20 @@ class Invariants(unittest.TestCase):
         self.assertEqual(s['reading_order'],[])
         refresh_bbox_validation(s);confirm_status(s);initialize_alignment(s)
         self.assertEqual(set(s['bounding_boxes']),{'1','2','3'})
+
+    def test_frontend_batch_box_commit_is_atomic(self):
+        s=aligned_state();uids=list(s['regions']);before=deepcopy(s)
+        update_bboxes(s,{uids[0]:[1,1,8,8],uids[1]:[11,1,18,8]},
+                      active=uids[1],selected=[uids[0],uids[1]])
+        self.assertEqual(s['regions'][uids[0]]['bbox'],[1,1,8,8])
+        self.assertEqual(s['regions'][uids[1]]['bbox'],[11,1,18,8])
+        self.assertEqual(s['selected_region_uids'],[uids[0],uids[1]])
+        self.assertEqual(s['selected_region_uid'],uids[1])
+        self.assertEqual(s['annotations'],{})
+        invalid=deepcopy(before)
+        with self.assertRaises(ValueError):
+            update_bboxes(invalid,{uids[0]:[2,2,7,7],uids[1]:[0,0,101,10]})
+        self.assertEqual(invalid,before)
 
     def test_reorder_preserves_mapping(self):
         s=aligned_state();before=deepcopy(s['annotations'])

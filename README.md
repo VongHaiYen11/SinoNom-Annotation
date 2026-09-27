@@ -411,6 +411,8 @@ The normal path still requires exactly one source character per box. A confirmed
 
 If a region is added, deleted, moved or resized after alignment, the Box ID mapping, annotations and reading order are invalidated and rebuilt on the next Reading Order entry. Status remains attached to each surviving region. Hidden `region_uid` values are never written to output JSON.
 
+Bounding-box manipulation is frontend-first. Every rendered region carries its stable internal ID, while selection, Ctrl/Cmd multi-selection, selection rectangles, dragging, resizing, group movement and deselection remain in browser-local state with immediate SVG updates. A drag or resize sends one validated batch commit only after pointer-up; ordinary selection never calls Python and never opens the loading modal. Drag empty canvas space to select regions, or Alt/Option-drag to draw a new region. The coordinate, status and delete controls consume the current local selection only when their explicit action button is used.
+
 Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengXian and PMingLiU fonts. PMingLiU-ExtB is included as a fallback for extended CJK characters that may be missing from the primary fonts. The font picker affects only how Hán/Nôm characters are displayed; it never changes the stored Unicode text, character count, annotation mapping or reading order.
 
 ### Saving

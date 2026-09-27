@@ -22,6 +22,13 @@ from PIL import Image
 
 
 class GradioCallbacks(unittest.TestCase):
+    def test_canvas_script_keeps_selection_local_and_commits_geometry_once(self):
+        script=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
+        self.assertNotIn("send('select'",script)
+        self.assertIn("send('commit_boxes'",script)
+        self.assertIn("kind:'marquee'",script)
+        self.assertIn('selectedIds = new Set()',script)
+
     def test_compact_header_has_all_steps_and_no_draft_status(self):
         state=new_state();state.update(image='12305.jpg',current_step=2)
         markup=header(state)
@@ -193,6 +200,8 @@ class GradioCallbacks(unittest.TestCase):
             functions=[f.fn for f in app.fns.values() if f.fn]
             open_image=next(f for f in functions if f.__name__=='open_image')
             on_action=next(f for f in functions if f.__name__=='on_action')
+            update_coordinates=next(f for f in functions if f.__name__=='update_coordinates')
+            apply_status=next(f for f in functions if f.__name__=='apply_status')
             def board_action(ctx,name,payload):
                 s=ctx['active']
                 event=gr.EventData(None,dict(action=name,payload=dict(payload,revision=s['revision'],image=s['image'])))
@@ -218,16 +227,26 @@ class GradioCallbacks(unittest.TestCase):
             self.assertIn('fixture model unavailable',result[2]['value'])
             add=action('add')
             for x in (0,20,40):ctx=add(ctx,None,x,0,x+10,10)[0]
+            first_uid=list(ctx['active']['regions'])[0]
+            ctx=board_action(ctx,'commit_boxes',{
+                'boxes':{first_uid:[1,1,11,11]},
+                'active':first_uid,'selected':[first_uid],
+            })[0]
+            self.assertEqual(ctx['active']['regions'][first_uid]['bbox'],[1,1,11,11])
+            local_selection=json.dumps({'active':first_uid,'selected':[first_uid]})
+            ctx=update_coordinates(ctx,local_selection,2,2,12,12)[0]
+            self.assertEqual(ctx['active']['regions'][first_uid]['bbox'],[2,2,12,12])
             result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],4)
             self.assertTrue(result[15]['visible'])
             self.assertNotIn('source-preview',result[8]['value']['markup'])
             self.assertNotIn('data-card',result[8]['value']['markup'])
             self.assertNotIn('永',result[8]['value']['markup'])
-            self.assertNotIn('data-box-id',result[8]['value']['markup'])
+            self.assertIn('data-box-id',result[8]['value']['markup'])
+            self.assertIn('data-region-uid',result[8]['value']['markup'])
             damaged_uid=list(ctx['active']['regions'])[1]
-            ctx=board_action(ctx,'select',{'uid':damaged_uid})[0]
-            ctx=board_action(ctx,'status',{'uid':damaged_uid,'status':'damaged'})[0]
+            local_selection=json.dumps({'active':damaged_uid,'selected':[damaged_uid]})
+            ctx=apply_status(ctx,local_selection,'damaged')[0]
             self.assertEqual(ctx['active']['regions'][damaged_uid]['status'],'damaged')
             result=action('next')(ctx);ctx=result[0]
             self.assertEqual(ctx['active']['current_step'],5)

@@ -165,7 +165,7 @@ def create_app(options):
                         update=gr.Button('Update coordinates')
                     with gr.Group(elem_classes='section'):
                         gr.Markdown('### Box Actions')
-                        gr.Markdown('Click a box to select and adjust it. Shift/Ctrl/Cmd-click adds or removes it from the deletion selection.')
+                        gr.Markdown('Click to select, Ctrl/Cmd-click for multi-selection, drag empty space for a selection rectangle, and drag selected boxes to move them together. Alt/Option-drag empty space draws a new box.')
                         with gr.Row(elem_classes='button-group'):
                             add=gr.Button('Add box', min_width=0);delete=gr.Button('Delete selected', elem_id='delete-box', min_width=0)
                     with gr.Accordion('Detection', open=False, elem_classes='section'):
@@ -406,6 +406,7 @@ def create_app(options):
                 raise gr.Error('The local box selection is invalid.')
         def update_coordinates(ctx,selection,a,b,d,e):
             active,_=frontend_selection(selection)
+            if not active:raise gr.Error('Select a bounding box first.')
             return run(ctx,'update',dict(id=active,bbox=[a,b,d,e]))
         clear_loading_when_done(update.click(update_coordinates,
             [session,selection_bridge,x1,y1,x2,y2],**event_args))
@@ -423,9 +424,12 @@ def create_app(options):
             clear_source_mismatch,[session],**event_args))
         for selector in (box_id,status_id):
             clear_loading_when_done(selector.input(lambda c,i:run(c,'select',dict(id=i)),[session,selector],**event_args))
+        def apply_status(ctx,selection,value):
+            active,_=frontend_selection(selection)
+            if not active:raise gr.Error('Select a bounding box first.')
+            return run(ctx,'status',dict(id=active,status=value))
         clear_loading_when_done(set_status.click(
-            lambda c,s,v:run(c,'status',dict(id=frontend_selection(s)[0],status=v)),
-            [session,selection_bridge,status],**event_args))
+            apply_status,[session,selection_bridge,status],**event_args))
         def parse_action(c,a,key,value):
             try:return run(c,a,{key:json.loads(value)})
             except ValueError as exc:return render(c,'Invalid JSON: '+str(exc))

@@ -1,60 +1,134 @@
-// Only viewport zoom and in-progress gestures are local; Python owns all data.
+// Python owns persisted data. Browser-local state owns direct manipulation.
 let pending = false, moving = null, dragged = null;
-let zoom = 100, image = props.value.image;
-const fitCanvas = (width, height) => {
+let image = props.value.image, localContext = '';
+let localBoxes = {}, selectedIds = new Set(), activeBoxId = null;
+const imageTransform = {zoom: 100, width: props.value.width, height: props.value.height};
+
+const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map(
+  ([id, box]) => [id, {...box, bbox: [...box.bbox]}]
+));
+const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-box-id]')].find(
+  group => group.dataset.boxId === String(id)
+);
+const root = element.closest('.gradio-container') || document;
+const setInputValue = (selector, value) => {
+  const input = root.querySelector(`${selector} input, ${selector} textarea`);
+  if (!input) return;
+  const prototype = input.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+  if (setter) setter.call(input, String(value)); else input.value = String(value);
+  input.dispatchEvent(new Event('input', {bubbles: true}));
+  input.dispatchEvent(new Event('change', {bubbles: true}));
+};
+const syncExternalControls = () => {
+  setInputValue('#selection-bridge', JSON.stringify({
+    active: activeBoxId,
+    selected: [...selectedIds],
+  }));
+  const active = activeBoxId && localBoxes[activeBoxId];
+  if (!active) return;
+  if (props.value.step === 3) {
+    ['#bbox-x1','#bbox-y1','#bbox-x2','#bbox-y2'].forEach(
+      (selector, index) => setInputValue(selector, active.bbox[index])
+    );
+  }
+  if (props.value.step === 4) {
+    const status = root.querySelector(`#status-radio input[value="${active.status}"]`);
+    if (status && !status.checked) status.click();
+  }
+};
+const renderSelection = (sync=true) => {
+  element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
+    const id = group.dataset.boxId;
+    const selected = selectedIds.has(id);
+    const active = id === activeBoxId;
+    group.classList.toggle('selected-region', selected);
+    group.classList.toggle('active-region', active);
+    const rect = group.querySelector('rect:not([data-image-resize-handle])');
+    if (rect) {
+      rect.setAttribute('fill-opacity', selected ? '.16' : '.04');
+      rect.setAttribute('stroke-width', active ? '2.5' : selected ? '2' : '1.5');
+    }
+  });
+  element.querySelectorAll('[data-card]').forEach(card => {
+    card.classList.toggle('active', card.dataset.boxId === activeBoxId);
+    card.setAttribute('aria-pressed', String(card.dataset.boxId === activeBoxId));
+  });
+  if (sync) syncExternalControls();
+};
+const hydrateLocalState = () => {
+  const context = `${props.value.image || ''}:${props.value.step}`;
+  const preserveSelection = context === localContext;
+  localBoxes = cloneBoxes(props.value.boxes);
+  imageTransform.width = props.value.width;
+  imageTransform.height = props.value.height;
+  if (preserveSelection) {
+    selectedIds = new Set([...selectedIds].filter(id => localBoxes[id]));
+    if (!localBoxes[activeBoxId]) activeBoxId = selectedIds.values().next().value || null;
+  } else {
+    selectedIds = new Set((props.value.selectedIds || []).map(String).filter(id => localBoxes[id]));
+    activeBoxId = localBoxes[props.value.selected] ? String(props.value.selected) : selectedIds.values().next().value || null;
+    localContext = context;
+  }
+  renderSelection();
+};
+
+const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => {
   const svg = element.querySelector('.annotation-canvas');
   const viewport = element.querySelector('.image-viewport');
   if (!svg || !viewport) return;
   const fit = Math.min((viewport.clientWidth - 40) / width,
                        (viewport.clientHeight - 40) / height);
-  svg.style.width = `${width * fit * zoom / 100}px`;
-  svg.style.height = `${height * fit * zoom / 100}px`;
+  svg.style.width = `${width * fit * imageTransform.zoom / 100}px`;
+  svg.style.height = `${height * fit * imageTransform.zoom / 100}px`;
   svg.style.maxWidth = 'none';
   const label = element.querySelector('.zoom-label');
-  if (label) label.textContent = `${zoom}%`;
+  if (label) label.textContent = `${imageTransform.zoom}%`;
 };
-const applyZoom = () => fitCanvas(props.value.width, props.value.height);
+const applyZoom = () => fitCanvas();
 const send = (action, payload={}) => {
   if (pending) return;
   pending = true;
-  element.style.opacity = '.65';
   element.setAttribute('aria-busy', 'true');
-  trigger('action', {action, payload: {...payload, revision: props.value.revision, image: props.value.image}});
-};
-const showLocalSelection = (group, toggle=false) => {
-  if (!group) return;
-  element.querySelectorAll('[data-region-uid],[data-box-id]').forEach(candidate => {
-    const active = toggle && candidate === group ? !candidate.classList.contains('selected-region') : candidate === group;
-    candidate.classList.toggle('selected-region', active);
-    const rect = candidate.querySelector('rect');
-    if (rect) {
-      rect.setAttribute('fill-opacity', active ? '.16' : '.04');
-      rect.setAttribute('stroke-width', active ? '2.5' : '1.5');
-    }
-  });
+  trigger('action', {action, payload: {
+    ...payload, revision: props.value.revision, image: props.value.image,
+  }});
 };
 watch('value', () => {
   pending = false; moving = null; dragged = null;
-  element.style.opacity = '1'; element.setAttribute('aria-busy', 'false');
-  if (image !== props.value.image) { zoom = 100; image = props.value.image; }
+  element.setAttribute('aria-busy', 'false');
+  if (image !== props.value.image) {
+    imageTransform.zoom = 100;
+    image = props.value.image;
+  }
+  hydrateLocalState();
   requestAnimationFrame(applyZoom);
 });
+hydrateLocalState();
 const resizeObserver = new ResizeObserver(() => requestAnimationFrame(applyZoom));
 resizeObserver.observe(element);
-const point = (e, svg) => {
-  const p = svg.createSVGPoint(); p.x=e.clientX; p.y=e.clientY;
+
+const point = (event, svg, width=props.value.width, height=props.value.height) => {
+  const p = svg.createSVGPoint(); p.x=event.clientX; p.y=event.clientY;
   const at = p.matrixTransform(svg.getScreenCTM().inverse());
-  return {x: Math.max(0, Math.min(at.x, props.value.width)),
-          y: Math.max(0, Math.min(at.y, props.value.height))};
+  return {x: Math.max(0, Math.min(at.x, width)),
+          y: Math.max(0, Math.min(at.y, height))};
 };
-const drawPreview = (m, b) => {
-  m.rect.setAttribute('x',b[0]); m.rect.setAttribute('y',b[1]);
-  m.rect.setAttribute('width',Math.max(0,b[2]-b[0])); m.rect.setAttribute('height',Math.max(0,b[3]-b[1]));
-  const corners = [[b[0],b[1]], [b[2],b[1]], [b[2],b[3]], [b[0],b[3]]];
-  m.group?.querySelectorAll('[data-corner]').forEach(handle => {
+const drawPreview = (group, box) => {
+  const rect = group?.querySelector('rect:not([data-image-resize-handle])');
+  if (!rect) return;
+  rect.setAttribute('x',box[0]); rect.setAttribute('y',box[1]);
+  rect.setAttribute('width',Math.max(0,box[2]-box[0]));
+  rect.setAttribute('height',Math.max(0,box[3]-box[1]));
+  const corners = [[box[0],box[1]], [box[2],box[1]], [box[2],box[3]], [box[0],box[3]]];
+  group.querySelectorAll('[data-corner]').forEach(handle => {
     const [x,y] = corners[Number(handle.dataset.corner)];
-    handle.setAttribute('cx', x); handle.setAttribute('cy', y);
+    handle.setAttribute('cx',x); handle.setAttribute('cy',y);
   });
+};
+const drawLocalBox = (id, box) => {
+  if (localBoxes[id]) localBoxes[id].bbox = [...box];
+  drawPreview(groupFor(id), box);
 };
 const constrainCrop = (box, width, height) => {
   const cropWidth=Math.min(Math.max(1,box[2]-box[0]),width,props.value.max_crop_side);
@@ -63,139 +137,249 @@ const constrainCrop = (box, width, height) => {
   const y1=Math.min(Math.max(0,box[1]),height-cropHeight);
   return [x1,y1,x1+cropWidth,y1+cropHeight];
 };
-const drawImageResizePreview = (m, size) => {
+const drawImageResizePreview = (state, size) => {
   const [width,height]=size;
-  m.svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
-  m.svg.style.aspectRatio=`${width}/${height}`;
-  const source=m.svg.querySelector('image');
+  imageTransform.width=width; imageTransform.height=height;
+  state.svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+  state.svg.style.aspectRatio=`${width}/${height}`;
+  const source=state.svg.querySelector('image');
   source?.setAttribute('width',width); source?.setAttribute('height',height);
-  const outline=m.svg.querySelector('.source-image-outline');
+  const outline=state.svg.querySelector('.source-image-outline');
   outline?.setAttribute('width',width); outline?.setAttribute('height',height);
-  m.handle.setAttribute('x',Math.max(0,width-m.inset));
-  m.handle.setAttribute('y',Math.max(0,height-m.inset));
-  m.crop=constrainCrop(m.box,width,height);
-  const cropGroup=m.svg.querySelector('[data-box-id="crop"]');
-  drawPreview({group:cropGroup,rect:cropGroup?.querySelector('rect')},m.crop);
+  state.handle.setAttribute('x',Math.max(0,width-state.inset));
+  state.handle.setAttribute('y',Math.max(0,height-state.inset));
+  state.crop=constrainCrop(state.box,width,height);
+  drawPreview(groupFor('crop'),state.crop);
   fitCanvas(width,height);
 };
-element.addEventListener('pointerdown', e => {
-  if (pending || e.button !== 0) return;
-  const svg=e.target.closest('.annotation-canvas'); if(!svg) return;
+const setSelection = (ids, active=null, sync=true) => {
+  selectedIds = new Set(ids.filter(id => localBoxes[id]));
+  activeBoxId = active && localBoxes[active] ? active : selectedIds.values().next().value || null;
+  renderSelection(sync);
+};
+const createOverlayRect = (svg, className) => {
+  const rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
+  rect.setAttribute('class',className); rect.setAttribute('vector-effect','non-scaling-stroke');
+  svg.appendChild(rect); return rect;
+};
+const normalizedRect = (start,end) => [
+  Math.min(start.x,end.x),Math.min(start.y,end.y),
+  Math.max(start.x,end.x),Math.max(start.y,end.y),
+];
+const drawOverlayRect = (rect, box) => {
+  rect.setAttribute('x',box[0]); rect.setAttribute('y',box[1]);
+  rect.setAttribute('width',box[2]-box[0]); rect.setAttribute('height',box[3]-box[1]);
+};
+
+element.addEventListener('pointerdown', event => {
+  if (pending || event.button !== 0) return;
+  const svg=event.target.closest('.annotation-canvas'); if(!svg) return;
   const mode=props.value.step;
-  const imageHandle=e.target.closest('[data-image-resize-handle]');
+  const imageHandle=event.target.closest('[data-image-resize-handle]');
   if(imageHandle && mode===6){
     const bounds=svg.getBoundingClientRect();
-    moving={kind:'image',svg,handle:imageHandle,start:[e.clientX,e.clientY],
-      size:[props.value.width,props.value.height],box:[...props.value.boxes.crop.bbox],
+    moving={kind:'image',svg,handle:imageHandle,start:[event.clientX,event.clientY],
+      size:[props.value.width,props.value.height],box:[...localBoxes.crop.bbox],
       units:[props.value.width/bounds.width,props.value.height/bounds.height],
       inset:props.value.image_handle_inset};
-    svg.setPointerCapture(e.pointerId); e.preventDefault(); return;
+    svg.setPointerCapture(event.pointerId); event.preventDefault(); return;
   }
-  const group=e.target.closest('[data-region-uid],[data-box-id]');
-  const regionUid=group?.dataset.regionUid, id=regionUid || group?.dataset.boxId;
-  const toggle = mode === 3 && (e.shiftKey || e.metaKey || e.ctrlKey);
-  if (group && mode !== 6) showLocalSelection(group, toggle);
-  if (group && mode === 3 && (toggle || id !== props.value.selected)) {
-    send('select', {...(regionUid?{uid:regionUid}:{id}), ...(toggle?{toggle:true}:{})});
-    return;
+
+  const group=event.target.closest('[data-box-id]');
+  const id=group?.dataset.boxId;
+  const toggle=event.ctrlKey || event.metaKey;
+  if ([3,4,5,7].includes(mode)) {
+    if (group) {
+      if (toggle) {
+        const next=new Set(selectedIds);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        setSelection([...next],next.has(id)?id:[...next].at(-1));
+        event.preventDefault(); return;
+      }
+      if (!selectedIds.has(id)) setSelection([id],id);
+      else {activeBoxId=id; renderSelection();}
+      if (mode !== 3) {event.preventDefault(); return;}
+      const p=point(event,svg);
+      const corner=event.target.dataset.corner;
+      if (corner !== undefined) {
+        moving={kind:'resize',svg,id,corner:Number(corner),p,box:[...localBoxes[id].bbox]};
+      } else {
+        const ids=[...selectedIds];
+        moving={kind:'drag',svg,p,ids,boxes:Object.fromEntries(ids.map(
+          boxId => [boxId,[...localBoxes[boxId].bbox]]
+        ))};
+      }
+    } else {
+      const p=point(event,svg);
+      if (mode===3 && event.altKey) {
+        moving={kind:'add',svg,p,rect:createOverlayRect(svg,'selection-marquee')};
+      } else {
+        moving={kind:'marquee',svg,p,baseline:toggle?new Set(selectedIds):new Set(),
+          rect:createOverlayRect(svg,'selection-marquee')};
+        if (!toggle) setSelection([],null);
+      }
+    }
+    svg.setPointerCapture(event.pointerId); event.preventDefault(); return;
   }
-  if(group && ![3,6].includes(mode)) {
-    send('select',regionUid?{uid:regionUid}:{id}); return;
+
+  if (mode!==6) return;
+  const p=point(event,svg);
+  if (group) {
+    moving={kind:'crop',svg,id:'crop',p,box:[...localBoxes.crop.bbox],
+      corner:event.target.dataset.corner};
+  } else {
+    moving={kind:'crop-new',svg,p,rect:createOverlayRect(svg,'selection-marquee')};
   }
-  if(![3,6].includes(mode)) return;
-  const p=point(e,svg);
-  const box=id ? [...props.value.boxes[id].bbox] : [p.x,p.y,p.x,p.y];
-  moving={svg,id,regionUid,group,box,p,corner:e.target.dataset.corner,rect:group?.querySelector('rect')};
-  if(!id){
-    moving.rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
-    moving.rect.setAttribute('fill','#ff7a1a22'); moving.rect.setAttribute('stroke','#ff7a1a');
-    moving.rect.setAttribute('stroke-width','2'); moving.rect.setAttribute('vector-effect','non-scaling-stroke');
-    svg.appendChild(moving.rect);
-  }
-  svg.setPointerCapture(e.pointerId); e.preventDefault();
+  svg.setPointerCapture(event.pointerId); event.preventDefault();
 });
-element.addEventListener('pointermove', e => {
+
+element.addEventListener('pointermove', event => {
   if(!moving) return;
   if(moving.kind==='image'){
-    const width=Math.max(1,Math.round(moving.size[0]+(e.clientX-moving.start[0])*moving.units[0]));
-    const height=Math.max(1,Math.round(moving.size[1]+(e.clientY-moving.start[1])*moving.units[1]));
+    const width=Math.max(1,Math.round(moving.size[0]+(event.clientX-moving.start[0])*moving.units[0]));
+    const height=Math.max(1,Math.round(moving.size[1]+(event.clientY-moving.start[1])*moving.units[1]));
     moving.result=[width,height]; drawImageResizePreview(moving,moving.result); return;
   }
-  const m=moving, p=point(e,m.svg), dx=p.x-m.p.x, dy=p.y-m.p.y;
-  const w=props.value.width,h=props.value.height;
-  let b=[...m.box];
-  if(!m.id) b=[Math.min(m.p.x,p.x),Math.min(m.p.y,p.y),Math.max(m.p.x,p.x),Math.max(m.p.y,p.y)];
-  else if(m.corner !== undefined){const n=Number(m.corner); if(n===0||n===3)b[0]+=dx;else b[2]+=dx; if(n===0||n===1)b[1]+=dy;else b[3]+=dy;}
-  else {const tx=Math.max(-b[0],Math.min(dx,w-b[2])),ty=Math.max(-b[1],Math.min(dy,h-b[3]));b=[b[0]+tx,b[1]+ty,b[2]+tx,b[3]+ty];}
-  b=b.map((v,i)=>Math.max(0,Math.min(v,i%2?h:w)));
-  if(props.value.step===6){
-    const limit=props.value.max_crop_side;
-    if(!m.id){
-      if(b[2]-b[0]>limit) {if(p.x<m.p.x)b[0]=b[2]-limit;else b[2]=b[0]+limit;}
-      if(b[3]-b[1]>limit) {if(p.y<m.p.y)b[1]=b[3]-limit;else b[3]=b[1]+limit;}
-    } else if(m.corner!==undefined){
-      const n=Number(m.corner);
-      if(b[2]-b[0]>limit) {if(n===0||n===3)b[0]=b[2]-limit;else b[2]=b[0]+limit;}
-      if(b[3]-b[1]>limit) {if(n===0||n===1)b[1]=b[3]-limit;else b[3]=b[1]+limit;}
+  const state=moving, p=point(event,state.svg), dx=p.x-state.p.x, dy=p.y-state.p.y;
+  const width=props.value.width,height=props.value.height;
+  if(state.kind==='marquee' || state.kind==='add' || state.kind==='crop-new'){
+    const box=normalizedRect(state.p,p);
+    if(state.kind==='crop-new'){
+      const limit=props.value.max_crop_side;
+      if(box[2]-box[0]>limit){if(p.x<state.p.x)box[0]=box[2]-limit;else box[2]=box[0]+limit;}
+      if(box[3]-box[1]>limit){if(p.y<state.p.y)box[1]=box[3]-limit;else box[3]=box[1]+limit;}
     }
-  }
-  m.result=b; drawPreview(m,b);
-});
-element.addEventListener('pointerup', () => {
-  if(!moving)return; const m=moving; moving=null;
-  if(m.kind==='image'){
-    if(m.result) send('resize_image',{size:m.result});
+    state.result=box; drawOverlayRect(state.rect,box);
+    if(state.kind==='marquee'){
+      const hits=Object.entries(localBoxes).filter(([,candidate])=>{
+        const b=candidate.bbox;
+        return b[0]<=box[2] && b[2]>=box[0] && b[1]<=box[3] && b[3]>=box[1];
+      }).map(([id])=>id);
+      setSelection([...new Set([...state.baseline,...hits])],hits.at(-1)||[...state.baseline].at(-1),false);
+    }
     return;
   }
-  if(m.result) send(props.value.step===6?'crop':m.id?'update':'add',
-                    {...(m.regionUid?{uid:m.regionUid}:{id:m.id}),bbox:m.result});
-  else if(m.id && props.value.step!==6) send('select',m.regionUid?{uid:m.regionUid}:{id:m.id});
-  else if(!m.id) m.rect.remove();
+  if(state.kind==='drag'){
+    const boxes=Object.values(state.boxes);
+    const tx=Math.max(-Math.min(...boxes.map(b=>b[0])),Math.min(dx,width-Math.max(...boxes.map(b=>b[2]))));
+    const ty=Math.max(-Math.min(...boxes.map(b=>b[1])),Math.min(dy,height-Math.max(...boxes.map(b=>b[3]))));
+    state.result={};
+    state.ids.forEach(id=>{
+      const b=state.boxes[id];
+      state.result[id]=[b[0]+tx,b[1]+ty,b[2]+tx,b[3]+ty];
+      drawLocalBox(id,state.result[id]);
+    });
+    return;
+  }
+  let box=[...state.box];
+  if(state.kind==='resize'){
+    const corner=state.corner;
+    if(corner===0||corner===3)box[0]+=dx;else box[2]+=dx;
+    if(corner===0||corner===1)box[1]+=dy;else box[3]+=dy;
+  } else if(state.kind==='crop'){
+    if(state.corner!==undefined){
+      const corner=Number(state.corner);
+      if(corner===0||corner===3)box[0]+=dx;else box[2]+=dx;
+      if(corner===0||corner===1)box[1]+=dy;else box[3]+=dy;
+    } else {
+      const tx=Math.max(-box[0],Math.min(dx,width-box[2]));
+      const ty=Math.max(-box[1],Math.min(dy,height-box[3]));
+      box=[box[0]+tx,box[1]+ty,box[2]+tx,box[3]+ty];
+    }
+  }
+  box=box.map((value,index)=>Math.max(0,Math.min(value,index%2?height:width)));
+  if(state.kind==='resize' || (state.kind==='crop' && state.corner!==undefined)){
+    const corner=Number(state.corner);
+    if(corner===0||corner===3)box[0]=Math.min(box[0],box[2]-1);else box[2]=Math.max(box[2],box[0]+1);
+    if(corner===0||corner===1)box[1]=Math.min(box[1],box[3]-1);else box[3]=Math.max(box[3],box[1]+1);
+  }
+  if(state.kind==='crop'){
+    const limit=props.value.max_crop_side;
+    const corner=Number(state.corner);
+    if(box[2]-box[0]>limit){if(corner===0||corner===3)box[0]=box[2]-limit;else box[2]=box[0]+limit;}
+    if(box[3]-box[1]>limit){if(corner===0||corner===1)box[1]=box[3]-limit;else box[3]=box[1]+limit;}
+  }
+  state.result=box;
+  if(state.kind==='resize') drawLocalBox(state.id,box); else drawPreview(groupFor('crop'),box);
 });
+
+element.addEventListener('pointerup', () => {
+  if(!moving)return;
+  const state=moving; moving=null;
+  if(state.kind==='image'){
+    if(state.result) send('resize_image',{size:state.result});
+    return;
+  }
+  if(state.kind==='marquee'){
+    state.rect.remove(); syncExternalControls(); return;
+  }
+  if(state.kind==='add'){
+    state.rect.remove();
+    if(state.result && state.result[2]>state.result[0] && state.result[3]>state.result[1]) send('add',{bbox:state.result});
+    return;
+  }
+  if(state.kind==='drag' && state.result){
+    syncExternalControls();
+    send('commit_boxes',{boxes:state.result,active:activeBoxId,selected:[...selectedIds]}); return;
+  }
+  if(state.kind==='resize' && state.result && state.result[2]>state.result[0] && state.result[3]>state.result[1]){
+    syncExternalControls();
+    send('commit_boxes',{boxes:{[state.id]:state.result},active:activeBoxId,selected:[...selectedIds]}); return;
+  }
+  if(state.kind==='crop-new'){
+    state.rect.remove();
+    if(state.result && state.result[2]>state.result[0] && state.result[3]>state.result[1]) send('crop',{bbox:state.result});
+    return;
+  }
+  if(state.kind==='crop' && state.result) send('crop',{bbox:state.result});
+});
+
 element.addEventListener('pointercancel',()=>{
   if (!moving) return;
-  if (moving.kind==='image') {
-    drawImageResizePreview(moving,moving.size); moving=null; return;
-  }
-  if (moving.id) drawPreview(moving,moving.box); else moving.rect.remove();
-  moving=null;
+  const state=moving; moving=null;
+  if(state.kind==='image') drawImageResizePreview(state,state.size);
+  else if(state.kind==='drag') Object.entries(state.boxes).forEach(([id,box])=>drawLocalBox(id,box));
+  else if(state.kind==='resize') drawLocalBox(state.id,state.box);
+  else if(state.kind==='crop') drawPreview(groupFor('crop'),state.box);
+  else state.rect?.remove();
+  if(state.kind==='marquee') setSelection([...state.baseline],[...state.baseline].at(-1));
 });
+
 const clearDrag = () => {
   element.querySelectorAll('.dragging,.drop-target').forEach(card=>card.classList.remove('dragging','drop-target'));
   dragged=null;
 };
-element.addEventListener('dragstart',e=>{
-  const card=e.target.closest('[data-card]');
-  if(!card || pending || props.value.step!==5) {e.preventDefault();return;}
-  dragged=card; card.classList.add('dragging'); e.dataTransfer.effectAllowed='move';
-  e.dataTransfer.setData('text/plain',card.dataset.boxId);
+element.addEventListener('dragstart',event=>{
+  const card=event.target.closest('[data-card]');
+  if(!card || pending || props.value.step!==5){event.preventDefault();return;}
+  dragged=card; card.classList.add('dragging'); event.dataTransfer.effectAllowed='move';
+  event.dataTransfer.setData('text/plain',card.dataset.boxId);
 });
-element.addEventListener('dragover',e=>{
-  const target=e.target.closest('[data-card]');
-  if (!target || !dragged || pending) return;
-  e.preventDefault(); e.dataTransfer.dropEffect='move';
+element.addEventListener('dragover',event=>{
+  const target=event.target.closest('[data-card]');
+  if(!target || !dragged || pending)return;
+  event.preventDefault(); event.dataTransfer.dropEffect='move';
   element.querySelectorAll('.drop-target').forEach(card=>card.classList.remove('drop-target'));
   target.classList.add('drop-target');
 });
-element.addEventListener('drop',e=>{
-  const target=e.target.closest('[data-card]');
-  if(!target || !dragged || pending || props.value.step!==5) return;
-  e.preventDefault();
-  if (target === dragged) {clearDrag(); return;}
-  const order=[...element.querySelectorAll('[data-card]')].map(c=>Number(c.dataset.boxId));
-  const from=order.indexOf(Number(dragged.dataset.boxId)), to=order.indexOf(Number(target.dataset.boxId));
-  const [id]=order.splice(from,1); order.splice(to,0,id);
-  clearDrag();
-  // Do not reorder the DOM until the server accepts this ID sequence.
-  send('reorder',{order});
+element.addEventListener('drop',event=>{
+  const target=event.target.closest('[data-card]');
+  if(!target || !dragged || pending || props.value.step!==5)return;
+  event.preventDefault();
+  if(target===dragged){clearDrag();return;}
+  const order=[...element.querySelectorAll('[data-card]')].map(card=>Number(card.dataset.boxId));
+  const from=order.indexOf(Number(dragged.dataset.boxId)),to=order.indexOf(Number(target.dataset.boxId));
+  const [id]=order.splice(from,1);order.splice(to,0,id);
+  clearDrag();send('reorder',{order});
 });
 element.addEventListener('dragend',clearDrag);
-element.addEventListener('click', e => {
-  const control=e.target.closest('[data-zoom]');
-  if (control) {
-    zoom=control.dataset.zoom==='fit'?100:Math.max(50,Math.min(300,zoom+(control.dataset.zoom==='in'?25:-25)));
-    applyZoom(); return;
+element.addEventListener('click', event => {
+  const control=event.target.closest('[data-zoom]');
+  if(control){
+    imageTransform.zoom=control.dataset.zoom==='fit'?100:Math.max(50,Math.min(300,
+      imageTransform.zoom+(control.dataset.zoom==='in'?25:-25)));
+    applyZoom();return;
   }
-  const card=e.target.closest('[data-card]');
-  if(card && !pending && props.value.selected!==card.dataset.boxId) send('select',{id:card.dataset.boxId});
+  const card=event.target.closest('[data-card]');
+  if(card && !pending)setSelection([card.dataset.boxId],card.dataset.boxId);
 });
