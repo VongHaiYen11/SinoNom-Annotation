@@ -106,7 +106,8 @@ def parser():
     p.add_argument('--iou-thres', type=float, default=.2)
     p.add_argument('--show-detection-logs', action='store_true',
                    help='Show stdout/stderr from the packaged OCR detector process.')
-    p.add_argument('--port', type=int, default=7860)
+    p.add_argument('--port', type=int, default=None,
+                   help='Server port. When omitted, Gradio selects the first available port.')
     p.add_argument('--server-name', default='127.0.0.1')
     p.add_argument('--share', action='store_true', help='Create a public Gradio link.')
     return p

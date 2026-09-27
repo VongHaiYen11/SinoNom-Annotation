@@ -382,11 +382,23 @@ python gradio/app.py \
 To review the UI or annotate manually without loading detection models:
 
 ```bash
-python gradio/app.py \
+./run_gradio_no_detection.sh
+```
+
+This repository-local launcher uses `.venv`, loads `configs/tap_1.json`, and disables
+automatic detection. Additional Gradio CLI options can be appended, for example
+`./run_gradio_no_detection.sh --port 7861`.
+
+When `--port` is omitted, Gradio automatically selects the first available local port,
+so an existing process on port `7860` does not prevent the app from starting.
+
+For custom data paths, either edit the config or override individual paths:
+
+```bash
+./run_gradio_no_detection.sh \
   --image-dir /path/to/images \
   --source-json /path/to/extracted-source.json \
-  --output-dir /path/to/annotations \
-  --skip-detection
+  --output-dir /path/to/annotations
 ```
 
 Open `http://127.0.0.1:7860`. For a remote environment:

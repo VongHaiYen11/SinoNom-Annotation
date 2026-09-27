@@ -47,10 +47,9 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('#topbar {',css)
         self.assertIn('#workflow-chrome {',css)
         self.assertIn('flex: 0 0 auto !important',css)
-        self.assertIn('flex: 1 1 0 !important',css)
-        self.assertIn('grid-template-rows: minmax(0, 1fr)',css)
-        self.assertIn('flex: 1 1 0',css)
-        self.assertIn('overflow-y: auto',css)
+        self.assertIn('grid-template-rows: auto auto auto',css)
+        self.assertIn('min-height: 100dvh',css)
+        self.assertIn('overflow: visible',css)
         self.assertIn('grid-template-columns: repeat(2, minmax(0, 1fr))',css)
         self.assertIn('#content-image-preview .preview-open {',css)
         self.assertIn('white-space: nowrap',css)
@@ -79,6 +78,10 @@ class GradioCallbacks(unittest.TestCase):
             ])
             resolve_app_paths(explicit)
             self.assertEqual(explicit.source_json,'source.json')
+
+    def test_cli_lets_gradio_choose_an_available_port_by_default(self):
+        self.assertIsNone(parser().parse_args([]).port)
+        self.assertEqual(parser().parse_args(['--port','7861']).port,7861)
 
     def test_content_editor_only_selected_face_sections(self):
         titles=['Nguyên văn chữ Hán Nôm','Phiên âm Hán Việt','Dịch nghĩa','Toát yếu','Chú thích']
