@@ -15,8 +15,7 @@ from annotation.state import new_state, source_mismatch_confirmed
 from annotation.workflow import Workflow
 from annotation.io import (final_document, final_source_mismatch_document,
                            load_image_list, read_json)
-from annotation.text_extraction import (content_fields, annotation_text,
-                                        CONTENT_TITLES, normalize_content_titles)
+from annotation.text_extraction import content_fields, normalize_content_titles
 from annotation.text_alignment import count_annotation_characters
 from annotation.export import (collect_annotations, collect_content_documents,
                                collect_source_mismatches, save_export_archive)
@@ -98,12 +97,6 @@ def resolve_app_paths(options):
     paths_complete = all(
         getattr(options, name, None) for name in ('image_dir', 'source_json', 'output_dir'))
     config_path = Path(options.config).expanduser().resolve()
-    # A fully explicit standalone invocation can still run without a config.
-    # When the config exists, it remains authoritative for the content schema
-    # even if all three path values were overridden on the command line.
-    if paths_complete and not config_path.exists():
-        options.content_titles = CONTENT_TITLES
-        return options
     try:
         config = read_json(config_path)
     except OSError as exc:
@@ -122,7 +115,13 @@ def resolve_app_paths(options):
     if not isinstance(content_config, dict):
         raise ValueError("Config field 'records.content' must be an object.")
     options.content_titles = normalize_content_titles(
-        content_config.get('section_headings', CONTENT_TITLES))
+        content_config.get('section_headings'))
+    options.annotation_title = content_config.get('start_heading')
+    if (not isinstance(options.annotation_title, str) or
+            not options.annotation_title.strip()):
+        raise ValueError('Config field records.content.start_heading must be a non-empty string.')
+    if options.annotation_title not in options.content_titles:
+        raise ValueError('Config start_heading must also appear in section_headings.')
     if not options.image_dir:
         options.image_dir = _config_relative(config_path, gradio_paths.get('image_dir'), 'gradio.image_dir')
     if not options.source_json:

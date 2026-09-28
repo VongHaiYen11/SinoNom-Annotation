@@ -131,6 +131,10 @@ class GradioCallbacks(unittest.TestCase):
             config.write_text(json.dumps({
                 'paths': {'output_json': 'source.json'},
                 'gradio': {'image_dir': 'images', 'output_dir': 'annotations'},
+                'records': {'content': {
+                    'start_heading': 'Nguyên văn chữ Hán Nôm',
+                    'section_headings': ['Nguyên văn chữ Hán Nôm'],
+                }},
             }))
             override=root/'override-images'
             options=parser().parse_args([
@@ -146,8 +150,8 @@ class GradioCallbacks(unittest.TestCase):
                 '--config',str(missing),'--image-dir','images',
                 '--source-json','source.json','--output-dir','annotations',
             ])
-            resolve_app_paths(explicit)
-            self.assertEqual(explicit.source_json,'source.json')
+            with self.assertRaisesRegex(ValueError, 'Cannot read app config'):
+                resolve_app_paths(explicit)
 
     def test_cli_lets_gradio_choose_an_available_port_by_default(self):
         self.assertIsNone(parser().parse_args([]).port)
@@ -168,7 +172,8 @@ class GradioCallbacks(unittest.TestCase):
             atomic_write(source,original)
             config=root/'config.json'
             atomic_write(config,{
-                'records': {'content': {'section_headings': titles}},
+                'records': {'content': {
+                    'start_heading': titles[0], 'section_headings': titles}},
             })
             options=parser().parse_args(['--config',str(config),
                                         '--image-dir',str(root),'--source-json',str(source),

@@ -14,7 +14,7 @@ from .state import (new_state, set_verified_content, refresh_bbox_validation,
                     source_mismatch_confirmed)
 from .text_extraction import (annotation_text, edit_content_field,
                               save_source_content, content_document, save_content_document,
-                              CONTENT_TITLES, normalize_content_titles)
+                              normalize_content_titles)
 from .text_alignment import count_annotation_characters
 from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
 from .status import (update_status, replace_statuses, confirm_status,
@@ -62,8 +62,8 @@ def _load_regions(state, document):
 class Workflow:
     def __init__(self, options):
         self.options = options
-        self.content_titles = normalize_content_titles(
-            getattr(options, 'content_titles', CONTENT_TITLES))
+        self.content_titles = normalize_content_titles(options.content_titles)
+        self.annotation_title = options.annotation_title
         self.output = Path(options.output_dir)
         self._preview_cache = tempfile.TemporaryDirectory(prefix='vietnamica-preview-')
         self.preview_dir = Path(self._preview_cache.name)
@@ -94,7 +94,7 @@ class Workflow:
         record_index, face_index = matches[0]
         record = deepcopy(records[record_index])
         # Keep the same schema validation as the public extraction adapter.
-        annotation_text(record, code)
+        annotation_text(record, code, self.annotation_title)
         return dict(record=record, record_index=record_index, face_index=face_index, code=code)
 
     def open_image(self, path):
@@ -194,12 +194,14 @@ class Workflow:
             s['draft_content'] = deepcopy(s['source_baseline'] if action == 'undo' else s['source_content'])
             s['workflow']['content_verified'] = False
         elif action == 'save_content':
-            text = annotation_text(s['draft_content'], s['code'])
+            text = annotation_text(s['draft_content'], s['code'], self.annotation_title)
             if not count_annotation_characters(text):
                 raise ValueError('Annotation text contains no characters after normalization.')
             content_doc = content_document(
                 s['image'], s['code'], s['draft_content'], self.content_titles)
-            save_source_content(self.options.source_json, s['image'], s['source_baseline'], s['draft_content'])
+            save_source_content(
+                self.options.source_json, s['image'], s['source_baseline'],
+                s['draft_content'], self.annotation_title)
             # The persisted source changed; refresh lazily on the next image open.
             self._source_records = None
             self._source_mtime_ns = None

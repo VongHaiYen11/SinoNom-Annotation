@@ -10,7 +10,7 @@ from PIL import Image
 from annotation.export import (collect_annotations, collect_content_documents,
                                collect_source_mismatches, save_export_archive)
 from annotation.io import atomic_write, read_json
-from annotation.text_extraction import CONTENT_TITLES, content_fields
+from annotation.text_extraction import content_fields
 from annotation.workflow import Workflow
 
 
@@ -28,7 +28,11 @@ class FolderExport(unittest.TestCase):
                 {'tieu_de': 'Nguyên văn chữ Hán Nôm', 'van_ban': '永寺'}]}
             for code in (1, 2)]}])
         self.output = self.root / 'out'
-        self.engine = Workflow(SimpleNamespace(output_dir=self.output, source_json=self.source))
+        self.content_titles = ('Nguyên văn chữ Hán Nôm',)
+        self.engine = Workflow(SimpleNamespace(
+            output_dir=self.output, source_json=self.source,
+            content_titles=self.content_titles,
+            annotation_title='Nguyên văn chữ Hán Nôm'))
 
     def complete(self, image):
         e = self.engine
@@ -50,9 +54,8 @@ class FolderExport(unittest.TestCase):
         saved = read_json(registry)[0]
         self.assertEqual(saved['image'], '1.png')
         self.assertEqual(saved['inscription_code'], '1')
-        self.assertEqual(list(saved['content']), list(CONTENT_TITLES))
+        self.assertEqual(list(saved['content']), list(self.content_titles))
         self.assertEqual(saved['content']['Nguyên văn chữ Hán Nôm'], '永寺')
-        self.assertIsNone(saved['content']['Dịch nghĩa'])
         self.assertEqual(collect_content_documents(self.images, self.output), [saved])
         with self.assertRaisesRegex(ValueError, 'No images have been saved'):
             self.export()

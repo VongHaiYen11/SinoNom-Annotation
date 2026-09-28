@@ -233,19 +233,26 @@ class Integration(unittest.TestCase):
             {'ky_hieu':'12305','chuyen_muc':[{'tieu_de':'Nguyên văn chữ Hán Nôm','van_ban':'永寺樂'}]},
             {'ky_hieu':'12306','chuyen_muc':[{'tieu_de':'Nguyên văn chữ Hán Nôm','van_ban':'文'}]}]}
         atomic_write(self.source,[self.record,{'so_van_bia':2,'noi_dung':[]}])
-        self.engine=Workflow(SimpleNamespace(output_dir=self.root/'out',source_json=self.source))
+        self.engine=Workflow(SimpleNamespace(
+            output_dir=self.root/'out',source_json=self.source,
+            content_titles=('Nguyên văn chữ Hán Nôm',),
+            annotation_title='Nguyên văn chữ Hán Nôm'))
 
     def tearDown(self):self.tmp.cleanup()
 
     def test_extraction_and_source_conflict(self):
-        located=extract_source_content('12305.jpg',self.source)
+        located=extract_source_content('12305.jpg',self.source,'Nguyên văn chữ Hán Nôm')
         self.assertEqual(located['record'],self.record)
-        with self.assertRaises(ValueError):extract_source_content('001.jpg',self.source)
+        with self.assertRaises(ValueError):
+            extract_source_content('001.jpg',self.source,'Nguyên văn chữ Hán Nôm')
         updated=deepcopy(self.record);updated['extra']['keep']=43
-        save_source_content(self.source,self.image.name,self.record,updated)
+        save_source_content(
+            self.source,self.image.name,self.record,updated,'Nguyên văn chữ Hán Nôm')
         records=read_json(self.source);self.assertEqual(records[0]['extra']['keep'],43)
         self.assertEqual(records[1],{'so_van_bia':2,'noi_dung':[]})
-        with self.assertRaises(ValueError):save_source_content(self.source,self.image.name,self.record,updated)
+        with self.assertRaises(ValueError):
+            save_source_content(
+                self.source,self.image.name,self.record,updated,'Nguyên văn chữ Hán Nôm')
 
     def test_full_workflow_roundtrip_and_edit(self):
         e=self.engine;s=e.open_image(self.image);s=e.apply(s,'save_content');s=e.apply(s,'next')
