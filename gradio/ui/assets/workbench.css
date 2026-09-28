@@ -469,9 +469,7 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 
 #control-panel .coordinate-row { flex-wrap: nowrap; }
 #control-panel .coordinate-row > * { min-width: 0 !important; }
-.suspicious-control { align-items: center; justify-content: space-between; gap: var(--space-3) !important; }
-.suspicious-control .prose { flex: 1; margin: 0; }
-.suspicious-control .prose p { margin: 0; color: var(--color-text); font-size: 12px; font-weight: 600; }
+.suspicious-control { align-items: center; justify-content: flex-end; gap: 0 !important; }
 #suspicious-toggle { flex: 0 0 auto; width: auto; min-width: 0; }
 #suspicious-toggle input[type="checkbox"] {
   appearance: none;

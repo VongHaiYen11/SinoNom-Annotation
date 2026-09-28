@@ -291,7 +291,6 @@ def create_app(options):
                     apply_order=gr.Button('Apply Changes',variant='primary',
                                           elem_id='apply-reading-order')
                     with gr.Row(elem_classes='suspicious-control'):
-                        gr.Markdown('Suspicious')
                         suspicious_toggle=gr.Checkbox(
                             value=False,label='Suspicious annotation',show_label=False,
                             interactive=False,container=False,elem_id='suspicious-toggle')
