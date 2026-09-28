@@ -239,7 +239,7 @@ def create_app(options):
                           <li><kbd>Ctrl/Cmd + Click</kbd><span>Add or remove individual boxes from the current selection.</span></li>
                           <li><kbd>Alt/Option + Drag</kbd><span>Create a new bounding box.</span></li>
                         </ul>
-                    </section>''')
+                    </section>''', elem_id='selection-guide-host')
                     delete=gr.Button('Delete Selected', size='sm', min_width=0,
                                      elem_id='delete-box')
                     detect_confirm=gr.Checkbox(value=False,visible=False)

@@ -158,6 +158,8 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('grid-template-columns: repeat(2, minmax(0, 1fr))',css)
         self.assertIn('.selection-guide {',css)
         self.assertIn('.selection-guide kbd {',css)
+        self.assertIn('#selection-guide-host {',css)
+        self.assertIn("elem_id='selection-guide-host'",app_source)
         self.assertIn('#control-panel .sidebar-step-stack > * {',css)
         self.assertIn('.sidebar-step-stack > * > button { width: 100% !important;',css)
         self.assertIn('Selection Guide',app_source)
