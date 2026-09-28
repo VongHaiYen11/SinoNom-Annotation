@@ -24,18 +24,20 @@
   - [⚙️ Installation](#️-installation)
   - [📄 PDF Text Extraction](#-pdf-text-extraction)
     - [Configuration](#configuration)
-      - [Preparing Reference Fonts](#preparing-reference-fonts)
       - [Config file](#config-file)
       - [Input and output paths](#input-and-output-paths)
       - [Font decoding](#font-decoding)
+      - [Preparing reference fonts](#preparing-reference-fonts)
       - [Page filtering](#page-filtering)
       - [Inscription parsing](#inscription-parsing)
   - [🔍 Detection Models](#-detection-models)
+    - [Difference from the original AutoHDR fusion](#difference-from-the-original-autohdr-fusion)
   - [🖥️ Gradio Annotation App](#️-gradio-annotation-app)
     - [Workflow](#workflow)
     - [Saving](#saving)
     - [Gradio Output Format](#gradio-output-format)
       - [`text_annotations.json`](#text_annotationsjson)
+      - [`source_mismatches.json`](#source_mismatchesjson)
       - [`inscription_content.json`](#inscription_contentjson)
   - [📦 Outputs](#-outputs)
   - [🗂️ Repository Layout](#️-repository-layout)
@@ -441,7 +443,7 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 - **Next** on Reading Order assigns the visible text-card sequence to spatially sorted boxes before Status review
 - **Next** on Status commits the complete canonical status map before entering Crop
 - **Next** on Crop commits the current local orange frame; oversized crops are scaled only when the output document is built
-- **Save Image** on Review commits either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image
+- **Save Annotation** on Review commits either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image
 - **Save All** creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
   - `text_annotations.json` for images committed with **Save Image**
   - `inscription_content.json` for images committed with **Save Content**

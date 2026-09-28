@@ -45,10 +45,11 @@
   background: var(--color-panel, #17191c);
   color: #e4e4e7;
   cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 .toolbar-tools button svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: square; stroke-linejoin: miter; stroke-width: 2; vector-effect: non-scaling-stroke; }
-.toolbar-tools button:hover { background: var(--color-panel-hover, #282b30); }
+.toolbar-tools button:hover { border-color: #4a4d53; background: var(--color-panel-hover, #282b30); }
 
 .image-viewport {
   display: grid;

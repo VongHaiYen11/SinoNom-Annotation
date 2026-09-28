@@ -186,7 +186,7 @@ def create_app(options):
         with gr.Column(elem_id='header-stack', scale=0):
             with gr.Row(elem_id='topbar', scale=0):
                 progress=gr.HTML(app_identity(initial['active']), elem_id='app-chrome')
-                save_all=gr.Button('Save all', variant='primary', scale=0, elem_id='save-all')
+                save_all=gr.Button('Download All', variant='primary', scale=0, elem_id='save-all')
             workflow_chrome=gr.HTML(workflow_progress(initial['active']),
                                     elem_id='workflow-chrome')
         download_payload=gr.Textbox(visible=False)
@@ -211,7 +211,7 @@ def create_app(options):
                               elem_classes=['section','sidebar-section','content-tools']) as content_actions:
                     gr.Markdown('### Content actions')
                     with gr.Column(elem_classes=['button-group','sidebar-action-stack']):
-                        save_content=gr.Button('Save content',variant='primary',min_width=0)
+                        save_content=gr.Button('Save Content',variant='primary',min_width=0)
                         undo=gr.Button('Undo changes',min_width=0)
                 with gr.Group(visible=False, elem_classes=['section','sidebar-step-stack']) as box_group:
                     box_id=gr.Dropdown(visible=False)
@@ -297,7 +297,7 @@ def create_app(options):
                         field=gr.Dropdown(label='Section')
                         field_value=gr.Textbox(label='Content',lines=8, elem_classes='han-nom-text')
                         with gr.Row(elem_classes='button-group'):
-                            apply_field=gr.Button('Apply content', variant='primary')
+                            apply_field=gr.Button('Save change', variant='primary')
                         with gr.Accordion('Content JSON', open=False, elem_classes='section'):
                             content_preview=gr.Code(
                                 label='Content', language='json', interactive=False,
@@ -309,7 +309,7 @@ def create_app(options):
         with gr.Row(visible=False, elem_id='workflow-footer',elem_classes='button-group') as workflow_footer:
             back=gr.Button('Back', interactive=False, scale=0, elem_id='back-button')
             footer_label=gr.HTML(footer(initial['active']), elem_id='footer-step')
-            save=gr.Button('Save image',visible=False,variant='primary', scale=0, elem_id='save-image')
+            save=gr.Button('Save Annotation',visible=False,variant='primary', scale=0, elem_id='save-image')
             next_button=gr.Button('Next',variant='primary',interactive=False, scale=0, elem_id='next-button')
         # Preserve callback output slots while removing the normalized-text component.
         normalized=gr.State(None)

@@ -1,4 +1,10 @@
 /* Shared application tokens and centered page shell. */
+:root,
+body,
+.gradio-container {
+  color-scheme: dark;
+}
+
 body,
 .gradio-container {
   background: #0b0d0f !important;
@@ -515,6 +521,18 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 .gradio-container button:focus-visible,
 .gradio-container input:focus-visible,
 .gradio-container textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: var(--space-1); }
+.gradio-container button {
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.gradio-container button:not(:disabled):hover {
+  border-color: #4a4d53;
+  background: var(--color-panel-hover);
+}
+.gradio-container button.primary:not(:disabled):hover,
+.gradio-container #save-all:not(:disabled):hover {
+  border-color: #e96c0d !important;
+  background: #e96c0d !important;
+}
 .gradio-container button:disabled { cursor: not-allowed; opacity: 40%; }
 .frontend-bridge { display: none !important; }
 
