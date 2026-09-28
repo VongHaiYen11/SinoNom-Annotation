@@ -225,7 +225,7 @@ body,
   display: grid;
   grid-template-columns: minmax(280px, var(--sidebar-width)) minmax(0, 1fr);
   grid-template-rows: auto;
-  align-items: stretch !important;
+  align-items: start !important;
   height: auto;
   gap: var(--panel-gap);
   width: 100%;
@@ -235,7 +235,7 @@ body,
   overflow: visible;
 }
 
-.panel { align-self: stretch; min-width: 0; height: auto; overflow: visible; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-panel); }
+.panel { align-self: start; min-width: 0; height: auto; overflow: visible; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-panel); }
 #control-panel {
   display: flex !important;
   flex-direction: column !important;

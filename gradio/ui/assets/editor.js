@@ -135,18 +135,24 @@ const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => 
   const svg = element.querySelector('.annotation-canvas');
   const viewport = element.querySelector('.image-viewport');
   if (!svg || !viewport) return;
-  // Measure the viewport's content box. Its size is layout-contained in CSS,
-  // so zooming the SVG cannot enlarge the viewport and feed a different base
-  // size into the next zoom level.
+  // 100% fits the workspace width. The viewport then grows to the complete
+  // rendered image height, so only horizontal overflow needs an inner scroll.
   const style = getComputedStyle(viewport);
   const availableWidth = Math.max(1, viewport.clientWidth
     - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
-  const availableHeight = Math.max(1, viewport.clientHeight
-    - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom));
-  const fit = Math.min(availableWidth / width, availableHeight / height);
-  svg.style.width = `${width * fit * imageTransform.zoom / 100}px`;
-  svg.style.height = `${height * fit * imageTransform.zoom / 100}px`;
+  const fit = availableWidth / width;
+  const renderedWidth = width * fit * imageTransform.zoom / 100;
+  const renderedHeight = height * fit * imageTransform.zoom / 100;
+  const verticalPadding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+  const scrollbarAllowance = renderedWidth > availableWidth + .5 ? 16 : 0;
+  const fullViewportHeight = renderedHeight + verticalPadding + scrollbarAllowance;
+  const sidebar = root.querySelector('#control-panel');
+  const sidebarHeight = sidebar && !matchMedia('(max-width: 700px)').matches
+    ? sidebar.getBoundingClientRect().height : Infinity;
+  svg.style.width = `${renderedWidth}px`;
+  svg.style.height = `${renderedHeight}px`;
   svg.style.maxWidth = 'none';
+  viewport.style.height = `${Math.max(1, Math.min(fullViewportHeight, sidebarHeight))}px`;
   const label = element.querySelector('.zoom-label');
   if (label) label.textContent = `${imageTransform.zoom}%`;
 };
@@ -174,6 +180,8 @@ watch('value', () => {
 hydrateLocalState();
 const resizeObserver = new ResizeObserver(() => requestAnimationFrame(applyZoom));
 resizeObserver.observe(element);
+const sidebar = root.querySelector('#control-panel');
+if (sidebar) resizeObserver.observe(sidebar);
 
 root.addEventListener('change', event => {
   const color=event.target.closest('#bbox-color-palette input');

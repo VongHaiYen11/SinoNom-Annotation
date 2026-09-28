@@ -52,17 +52,17 @@
 
 .image-viewport {
   display: grid;
-  place-items: center;
-  flex: 1 1 clamp(320px, 56dvh, 800px);
-  height: clamp(320px, 56dvh, 800px);
-  min-height: clamp(320px, 56dvh, 800px);
-  overflow: auto;
+  align-items: start;
+  justify-items: safe center;
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: auto;
   padding: var(--space-6, 24px);
   background-color: var(--color-page, #0b0d0f);
   background-image: radial-gradient(#303237 0.65px, transparent 0.65px);
   background-size: 12px 12px;
   box-sizing: border-box;
-  contain: layout size;
 }
 
 .annotation-canvas {
