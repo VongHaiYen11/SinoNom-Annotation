@@ -80,10 +80,14 @@ class GradioCallbacks(unittest.TestCase):
 
     def test_apply_and_next_snapshot_visible_text_cards(self):
         source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
-        self.assertIn("document.querySelector('#annotation-board .order-chips')",source)
+        self.assertIn("document.querySelector('#annotation-board')",source)
+        self.assertIn("board?.querySelector('.order-chips')",source)
         self.assertIn("snapshot.textSequence = [...cards.querySelectorAll('[data-order-chip]')]",source)
-        self.assertIn('snapshot_text_sequence_js(5)',source)
-        self.assertIn('snapshot_text_sequence_js(1)',source)
+        self.assertIn("snapshot.crop = bbox",source)
+        self.assertIn("snapshot.boxes = boxes",source)
+        self.assertIn('snapshot_board_state_js(5)',source)
+        self.assertIn('snapshot_board_state_js(1)',source)
+        self.assertIn("label='Outline color',interactive=True",source)
 
     def test_compact_header_has_all_steps_and_no_draft_status(self):
         state=new_state();state.update(image='12305.jpg',current_step=2)
@@ -318,7 +322,13 @@ class GradioCallbacks(unittest.TestCase):
             local_selection=json.dumps({'active':first_uid,'selected':[first_uid]})
             ctx=update_coordinates(ctx,local_selection,2,2,12,12)[0]
             self.assertEqual(ctx['active']['regions'][first_uid]['bbox'],[2,2,12,12])
-            result=action('next')(ctx);ctx=result[0]
+            # A first-time manual coordinate edit is a direct Next input; it
+            # must not require Update coordinates or a Back/Next round trip.
+            advance=next(f for f in functions if f.__name__=='next_with_progress')
+            result=list(advance(
+                ctx,None,None,None,'',local_selection,'intact',3,3,13,13,None))[-1]
+            ctx=result[0]
+            self.assertEqual(ctx['active']['regions'][first_uid]['bbox'],[3,3,13,13])
             self.assertEqual(ctx['active']['current_step'],4)
             self.assertTrue(result[18]['visible'])
             self.assertIn('source-preview',result[8]['value']['markup'])
@@ -372,7 +382,6 @@ class GradioCallbacks(unittest.TestCase):
                 'active':damaged_box_id,'selected':[damaged_box_id],
                 'statuses':{uid:'intact' for uid in region_uids},
             })
-            advance=next(f for f in functions if f.__name__=='next_with_progress')
             result=list(advance(ctx,None,None,None,'',local_selection,'damaged'))[-1]
             ctx=result[0]
             self.assertEqual(ctx['active']['regions'][first_damaged_uid]['status'],'damaged')
@@ -380,9 +389,13 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(ctx['active']['current_step'],6)
             self.assertTrue(result[21]['visible'])
             self.assertNotIn('data-image-resize-handle',result[8]['value']['markup'])
-            ctx=board_action(ctx,'crop',{'bbox':[5,10,95,70]})[0]
+            # Typed crop coordinates are committed by Next without Apply crop.
+            result=list(advance(
+                ctx,None,None,None,'','{}','intact',None,None,None,None,
+                json.dumps([5,10,95,70])))[-1]
+            ctx=result[0]
             self.assertEqual(ctx['active']['annotations'],mapping)
-            result=action('next')(ctx);ctx=result[0]
+            self.assertEqual(ctx['active']['crop'],[5,10,95,70])
             self.assertEqual(ctx['active']['current_step'],7)
             self.assertEqual(ctx['active']['reading_order'],[1,2,3])
             self.assertEqual(ctx['active']['bounding_boxes'][first_damaged_box_id]['status'],'damaged')

@@ -454,7 +454,9 @@ button#confirm-source-mismatch:hover { background: #e96c0d !important; }
   border-radius: var(--radius-sm) !important;
   background: var(--color-page) !important;
   font-size: 11px !important;
+  cursor: pointer !important;
 }
+#bbox-color-palette input { cursor: pointer !important; }
 #bbox-color-palette label:has(input:checked) {
   border-color: var(--color-accent) !important;
   background: #302116 !important;

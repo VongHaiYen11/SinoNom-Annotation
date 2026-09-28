@@ -49,20 +49,37 @@ SHOW_LOADING_JS = """(...args) => {
     document.getElementById('global-loading')?.classList.add('is-visible');
     return args;
 }"""
-def snapshot_text_sequence_js(selection_index):
-    """Build a click preprocessor that submits the cards exactly as displayed."""
+
+
+def snapshot_board_state_js(selection_index):
+    """Submit the live board state instead of a potentially stale bridge."""
     return f"""(...args) => {{
         document.getElementById('global-loading')?.classList.add('is-visible');
-        const cards = document.querySelector('#annotation-board .order-chips');
+        const board = document.querySelector('#annotation-board');
+        const cards = board?.querySelector('.order-chips');
+        let snapshot = {{}};
+        try {{ snapshot = JSON.parse(args[{selection_index}] || '{{}}'); }} catch (_) {{}}
         if (cards) {{
-            let snapshot = {{}};
-            try {{ snapshot = JSON.parse(args[{selection_index}] || '{{}}'); }} catch (_) {{}}
             snapshot.textSequence = [...cards.querySelectorAll('[data-order-chip]')]
                 .map(card => card.dataset.character);
-            args[{selection_index}] = JSON.stringify(snapshot);
         }}
+        const groups = [...(board?.querySelectorAll('.annotation-canvas [data-box-id]') || [])];
+        const boxes = {{}};
+        for (const group of groups) {{
+            const id = group.dataset.boxId;
+            const rect = group.querySelector('rect:not([data-image-resize-handle])');
+            if (!rect) continue;
+            const x = Number(rect.getAttribute('x')), y = Number(rect.getAttribute('y'));
+            const bbox = [x, y, x + Number(rect.getAttribute('width')),
+                          y + Number(rect.getAttribute('height'))];
+            if (id === 'crop') snapshot.crop = bbox; else boxes[id] = bbox;
+        }}
+        if (Object.keys(boxes).length) snapshot.boxes = boxes;
+        args[{selection_index}] = JSON.stringify(snapshot);
         return args;
     }}"""
+
+
 HIDE_LOADING_JS = """() => {
     document.getElementById('global-loading')?.classList.remove('is-visible');
 }"""
@@ -221,7 +238,7 @@ def create_app(options):
                                 elem_classes='sidebar-help')
                     box_color=gr.Radio(
                         ['White','Cyan','Amber','Violet','Pink'],
-                        value='White',label='Outline color',
+                        value='White',label='Outline color',interactive=True,
                        elem_id='bbox-color-palette')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','selection-section']) as status_group:
@@ -407,7 +424,8 @@ def create_app(options):
             clear_loading_when_done(button.click(lambda c,a=action:run(c,a),[session],**event_args))
         def next_step(ctx, path=None, value=None, auto_detect=True,
                       issue_type=None, mismatch_note_value='', selection='{}',
-                      status_value='intact'):
+                      status_value='intact', x1_value=None, y1_value=None,
+                      x2_value=None, y2_value=None, crop_coordinates=None):
             if ctx['active']['current_step'] == 2 and path is not None:
                 try:
                     updated = engine.apply(ctx['active'], 'field',
@@ -422,6 +440,20 @@ def create_app(options):
                 try:
                     boxes = frontend_boxes(selection)
                     active, selected = frontend_selection(selection)
+                    if not boxes:
+                        boxes = {
+                            uid: list(region['bbox'])
+                            for uid, region in ctx['active']['regions'].items()
+                        }
+                    active = active or ctx['active'].get('selected_region_uid')
+                    if any(coordinate is not None for coordinate in
+                           (x1_value,y1_value,x2_value,y2_value)):
+                        if not active or any(coordinate is None for coordinate in
+                                             (x1_value,y1_value,x2_value,y2_value)):
+                            raise ValueError('Select a box and enter all four coordinates.')
+                        boxes[active] = [x1_value,y1_value,x2_value,y2_value]
+                        if active not in selected:
+                            selected = [*selected,active]
                     if boxes:
                         updated = engine.apply(ctx['active'], 'commit_boxes', {
                             'boxes': boxes,
@@ -479,7 +511,9 @@ def create_app(options):
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if ctx['active']['current_step'] == 6:
                 try:
-                    crop_value = frontend_crop(selection)
+                    crop_value = (sidebar_crop(crop_coordinates)
+                                  if crop_coordinates not in (None,'')
+                                  else frontend_crop(selection))
                     if crop_value is not None:
                         updated = engine.apply(ctx['active'], 'crop', {
                             'bbox': crop_value,
@@ -495,11 +529,14 @@ def create_app(options):
             return result
         def next_with_progress(ctx, path=None, value=None, issue_type=None,
                                mismatch_note_value='', selection='{}',
-                               status_value='intact'):
+                               status_value='intact', x1_value=None, y1_value=None,
+                               x2_value=None, y2_value=None, crop_coordinates=None):
             result = next_step(
                 ctx, path, value, auto_detect=False, issue_type=issue_type,
                 mismatch_note_value=mismatch_note_value, selection=selection,
-                status_value=status_value)
+                status_value=status_value, x1_value=x1_value,
+                y1_value=y1_value, x2_value=x2_value, y2_value=y2_value,
+                crop_coordinates=crop_coordinates)
             state = result[0]['active']
             needs_detection = (state['current_step'] == 3 and
                                not state['detection_loaded'] and not skip_detection)
@@ -514,8 +551,8 @@ def create_app(options):
         clear_loading_when_done(next_button.click(
             next_with_progress,
             [session,field,field_value,mismatch_type,mismatch_note,
-             selection_bridge,status],
-            **dict(event_args,js=snapshot_text_sequence_js(5))))
+             selection_bridge,status,x1,y1,x2,y2,crop_coords],
+            **dict(event_args,js=snapshot_board_state_js(5))))
         def choose_field(ctx,path):
             if not path:return ''
             s=ctx['active']
@@ -565,6 +602,16 @@ def create_app(options):
                 return crop_value
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local crop frame is invalid.')
+        def sidebar_crop(value):
+            try:
+                parsed=json.loads(value) if isinstance(value,str) else value
+                if (not isinstance(parsed,list) or len(parsed) != 4
+                        or any(isinstance(item,bool) or not isinstance(item,(int,float))
+                               for item in parsed)):
+                    raise ValueError
+                return parsed
+            except (ValueError,TypeError):
+                raise gr.Error('Crop coordinates must be [x1, y1, x2, y2].')
         def frontend_text_sequence(value):
             try:
                 parsed=json.loads(value or '{}')
@@ -609,7 +656,7 @@ def create_app(options):
             return run(ctx,'reorder_text',{'sequence':sequence})
         clear_loading_when_done(apply_order.click(
             apply_reading_order,[session,selection_bridge],
-            **dict(event_args,js=snapshot_text_sequence_js(1))))
+            **dict(event_args,js=snapshot_board_state_js(1))))
         def on_action(ctx,evt:gr.EventData):
             return run(ctx,evt._data['action'],evt._data['payload'])
         board.action(on_action,[session],outputs=outputs,concurrency_id='annotation-actions',
