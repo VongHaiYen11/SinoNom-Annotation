@@ -447,7 +447,7 @@ def create_app(options):
             fn=None, inputs=[box_color], outputs=None, show_progress='hidden',
             js="""(color) => {
                 document.querySelector('#annotation-board')?.dispatchEvent(
-                    new CustomEvent('bbox-color-change', {detail: color})
+                    new CustomEvent('bbox-color-change', {detail: color, bubbles: true})
                 );
             }""")
         def clear_loading_when_done(event):

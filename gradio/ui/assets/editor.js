@@ -41,7 +41,7 @@ const handleAnnotationColor = target => {
   applyAnnotationColor();
   return true;
 };
-element.addEventListener('bbox-color-change', event => {
+root.addEventListener('bbox-color-change', event => {
   const value=event.detail;
   if(!annotationColors[value])return;
   annotationColor=annotationColors[value];
