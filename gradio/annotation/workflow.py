@@ -20,12 +20,15 @@ from .text_alignment import count_annotation_characters
 from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
 from .status import (update_status, replace_statuses, confirm_status,
                      synchronize_missing_statuses)
-from .reading_order import (update_reading_order, update_text_sequence,
-                            validate_reading_order)
+from .reading_order import (update_text_sequence,
+                            update_text_tokens, restore_suspicious_tokens,
+                            token_id_for_box, validate_reading_order)
 from .io import (atomic_write, final_document,
                  final_source_mismatch_document, load_annotation,
                  load_source_mismatch, read_json, save_annotation,
-                 save_source_mismatch, validate_document,
+                 save_source_mismatch, save_suspicious_details,
+                 load_suspicious_details, source_mismatch_type,
+                 canonical_issue_type, validate_document,
                  validate_source_mismatch_type)
 from .detection_adapter import detect
 from crop.crop import (save_crop_coordinates, crop_bbox, default_crop,
@@ -35,10 +38,12 @@ log = logging.getLogger(__name__)
 
 
 def _source_mismatch_from_document(document):
-    return {key: deepcopy(document[key]) for key in (
+    result = {key: deepcopy(document[key]) for key in (
         'source_text', 'source_character_count', 'bounding_box_count',
-        'issue_type', 'note',
+        'note',
     )}
+    result['issue_type'] = source_mismatch_type(document)
+    return result
 
 
 def fingerprint(text):
@@ -57,7 +62,8 @@ def _load_regions(state, document):
         state['region_uid_by_box_id'][box_id] = uid
     state['bounding_boxes'] = deepcopy(document['bounding_boxes'])
     state['annotations'] = deepcopy(document.get('annotations', {}))
-    state['reading_order'] = list(document['reading_order'])
+    # Saved `annotations` contain the final character -> Box mapping.
+    state['reading_order'] = list(map(int, document['bounding_boxes']))
 
 
 class Workflow:
@@ -86,6 +92,8 @@ class Workflow:
         content_path = self.output / '.state' / 'content.json'
         self._startup_files[content_path] = (
             content_path.read_bytes() if content_path.exists() else None)
+        suspicious_path = self.output / 'suspicious_details.json'
+        self._startup_suspicious = load_suspicious_details(self.output)
         image_root = Path(getattr(options, 'image_dir', ''))
         for image_path in image_root.iterdir() if image_root.is_dir() else ():
             if not image_path.is_file():
@@ -143,12 +151,22 @@ class Workflow:
         if restored_entry is not None:
             current_content.append(restored_entry)
 
+        suspicious_path = self.output / 'suspicious_details.json'
+        current_suspicious = load_suspicious_details(self.output)
+        identifier = str(located['code'])
+        if identifier in self._startup_suspicious:
+            current_suspicious[identifier] = deepcopy(self._startup_suspicious[identifier])
+        else:
+            current_suspicious.pop(identifier, None)
+
         targets = {
             Path(self.options.source_json): json.dumps(
                 current_source, ensure_ascii=False, indent=2).encode('utf-8'),
             content_path: (json.dumps(current_content, ensure_ascii=False, indent=2).encode('utf-8')
                            if current_content or self._startup_files.get(content_path) is not None
                            else None),
+            suspicious_path: (json.dumps(current_suspicious, ensure_ascii=False, indent=2).encode('utf-8')
+                              if current_suspicious else None),
         }
         targets.update({path: self._startup_files.get(path)
                         for path in self._image_persistence_paths(image_path.stem)})
@@ -233,7 +251,7 @@ class Workflow:
             doc = (load_source_mismatch(persisted, path.name, size) if is_mismatch
                    else load_annotation(persisted, path.name, size))
             hydrate_doc=doc
-            if is_mismatch and doc.get('issue_type') == 'other':
+            if is_mismatch and source_mismatch_type(doc) == 'other':
                 hydrate_doc={
                     'bounding_boxes':{
                         key:{'bbox':list(box['bbox']),'status':'intact'}
@@ -247,7 +265,8 @@ class Workflow:
                     doc['image_resize']['output_size'])
             _load_regions(state, hydrate_doc)
             if is_mismatch:
-                if doc.get('issue_type') == 'other':
+                mismatch_type = source_mismatch_type(doc)
+                if mismatch_type == 'other':
                     state['source_mismatch']={
                         'source_text':state['annotation_text'],
                         'source_character_count':count_annotation_characters(state['annotation_text']),
@@ -255,18 +274,27 @@ class Workflow:
                         'issue_type':'other','note':doc['note']}
                 else:
                     state['source_mismatch'] = _source_mismatch_from_document(doc)
-                    if doc.get('issue_type') == 'extra_source_characters':
+                    if mismatch_type == 'extra_text':
                         state['text_sequence']=list(doc['text_sequence'])
                         state['source_mismatch']['excluded_characters']=list(doc['excluded_characters'])
             state['detection_loaded'] = True
             state['loaded_document'] = deepcopy(doc)
+            state['loaded_is_mismatch'] = is_mismatch
             state['loaded_region_uid_by_box_id'] = deepcopy(state['region_uid_by_box_id'])
             meta = (self.output / '.state' /
                     ('source_mismatches' if is_mismatch else '') / (path.stem + '.json'))
             if meta.exists():
                 sidecar = read_json(meta)
-                if sidecar.get('document_hash') == fingerprint(json.dumps(doc, sort_keys=True, ensure_ascii=False)):
+                normalized_hash = fingerprint(json.dumps(doc, sort_keys=True, ensure_ascii=False))
+                if sidecar.get('document_hash') == normalized_hash:
                     state['loaded_meta'] = sidecar
+        suspicious = load_suspicious_details(self.output).get(str(state['code']))
+        if suspicious:
+            known = set(state['bounding_boxes'])
+            restored_ids = [str(box_id) for box_id in suspicious['box_ids']]
+            if any(box_id not in known for box_id in restored_ids):
+                raise ValueError('Suspicious details reference an unknown Box ID.')
+            state['loaded_suspicious_box_ids'] = restored_ids
         state['crop'] = default_crop(state['resized_image_size'])
         crop_path = self.output / 'crops' / (path.stem + '.json')
         if saved_crop is not None:
@@ -335,6 +363,7 @@ class Workflow:
             self._source_locations = None
             save_content_document(content_doc, self.output, self.verification_titles)
             loaded_mapping = deepcopy(s.get('loaded_region_uid_by_box_id', {}))
+            loaded_suspicious = list(s.get('loaded_suspicious_box_ids', []))
             text_changed = text != s['annotation_text']
             set_verified_content(s, s['draft_content'], text)
             if text_changed:
@@ -344,32 +373,42 @@ class Workflow:
             meta = s.pop('loaded_meta', None)
             if meta and meta.get('text_hash') == fingerprint(text) and 'loaded_document' in s:
                 document = deepcopy(s['loaded_document'])
-                if document.get('issue_type') == 'other':
+                mismatch_type = (source_mismatch_type(document)
+                                 if s.get('loaded_is_mismatch') else None)
+                if mismatch_type == 'other':
                     s['bounding_boxes']={key:{'bbox':list(box['bbox']),'status':'intact'}
                                              for key,box in document['bounding_boxes'].items()}
                     s['reading_order']=list(map(int,document['bounding_boxes']))
                     s['annotations']={}
                 else:
                     s['bounding_boxes'] = document['bounding_boxes']
-                    s['reading_order'] = document['reading_order']
+                    s['reading_order'] = list(map(int, document['bounding_boxes']))
                     s['annotations'] = document.get('annotations', {})
                 s['region_uid_by_box_id'] = loaded_mapping
                 s['box_id_by_region'] = {uid: box_id for box_id, uid in loaded_mapping.items()}
-                if 'issue_type' in document:
-                    if document['issue_type'] == 'other':
+                s['text_sequence']=(list(document.get('text_sequence',[]))
+                                    or [s['annotations'][str(box_id)]
+                                        for box_id in s['reading_order']]
+                                    if s['annotations'] else [])
+                s['text_token_ids']=[str(index) for index in range(1,len(s['text_sequence'])+1)]
+                restore_suspicious_tokens(s,loaded_suspicious)
+                if mismatch_type:
+                    if mismatch_type == 'other':
                         s['source_mismatch']={
                             'source_text':text,'source_character_count':count_annotation_characters(text),
                             'bounding_box_count':len(s['regions']),
                             'issue_type':'other','note':document['note']}
                     else:
                         s['source_mismatch'] = _source_mismatch_from_document(document)
-                    if document['issue_type'] == 'extra_source_characters':
+                    if mismatch_type == 'extra_text':
                         s['text_sequence']=list(document['text_sequence'])
                         s['source_mismatch']['excluded_characters']=list(document['excluded_characters'])
                 s['workflow'].update(bbox_valid=True, alignment_valid=True)
                 synchronize_missing_statuses(s)
             s.pop('loaded_document', None)
             s.pop('loaded_region_uid_by_box_id', None)
+            s.pop('loaded_is_mismatch', None)
+            s.pop('loaded_suspicious_box_ids', None)
             refresh_bbox_validation(s)
             if (s['workflow']['bbox_valid'] and not (
                     s.get('source_mismatch')
@@ -419,7 +458,7 @@ class Workflow:
                 raise ValueError('Confirm a source mismatch in Step 3.')
             require(s, 'content_verified')
             refresh_bbox_validation(s)
-            issue_type = payload.get('issue_type')
+            issue_type = canonical_issue_type(payload.get('issue_type'))
             if s['workflow']['bbox_valid'] and issue_type != 'other':
                 raise ValueError('Source mismatch can only be confirmed when the counts differ.')
             note = payload.get('note', '')
@@ -469,6 +508,20 @@ class Workflow:
                     raise ValueError('Box does not exist.')
                 s['selected_box_id'] = key
                 s['selected_region_uid'] = s['region_uid_by_box_id'].get(key)
+                s['selected_token_id'] = token_id_for_box(s, key)
+        elif action == 'suspicious':
+            if step != 4:
+                raise ValueError('Mark suspicious annotations in Step 4.')
+            token_id = str(payload.get('token_id') or '')
+            if token_id not in set(map(str,s.get('text_token_ids',[]))):
+                raise ValueError('Select an annotation first.')
+            suspicious = set(map(str, s.get('suspicious_token_ids', [])))
+            if bool(payload.get('value')):
+                suspicious.add(token_id)
+            else:
+                suspicious.discard(token_id)
+            s['suspicious_token_ids'] = sorted(suspicious, key=int)
+            s['saved'] = False
         elif action == 'status':
             if step != 5:
                 raise ValueError('Edit status in Step 5.')
@@ -478,14 +531,13 @@ class Workflow:
             if step != 5:
                 raise ValueError('Edit statuses in Step 5.')
             replace_statuses(s, payload.get('statuses'))
-        elif action == 'reorder':
-            if step != 4:
-                raise ValueError('Edit reading order in Step 4.')
-            update_reading_order(s, payload['order'])
         elif action == 'reorder_text':
             if step != 4:
-                raise ValueError('Edit reading order in Step 4.')
-            update_text_sequence(s, payload['sequence'])
+                raise ValueError('Edit character assignment in Step 4.')
+            if payload.get('token_order') is None:
+                update_text_sequence(s, payload['sequence'])
+            else:
+                update_text_tokens(s,payload['sequence'],payload['token_order'])
         elif action == 'next':
             if step == 1:
                 s['current_step'] = 2
@@ -507,7 +559,7 @@ class Workflow:
             elif step == 4:
                 require(s, 'alignment_valid')
                 if not validate_reading_order(s):
-                    raise ValueError('Invalid reading order.')
+                    raise ValueError('Invalid coordinate-slot order.')
                 s['workflow']['reading_order_valid'] = True
                 s['current_step'] = 5
             elif step == 5:
@@ -528,6 +580,7 @@ class Workflow:
             mismatch = source_mismatch_confirmed(s)
             path = (save_source_mismatch(s, self.output) if mismatch
                     else save_annotation(s, self.output))
+            save_suspicious_details(s, self.output)
             document = (final_source_mismatch_document(s) if mismatch else final_document(s))
             meta_root = self.output / '.state' / ('source_mismatches' if mismatch else '')
             atomic_write(meta_root / path.name,

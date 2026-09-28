@@ -172,6 +172,10 @@
 .order-chip.damaged { border-color: #ef4444; border-style: dashed; }
 .order-chip.unknown { border-color: #f59e0b; border-style: dotted; background: #302116; }
 .order-chip:hover { border-color: var(--color-accent, #ff7a1a); background: #302116; }
+.order-chip.suspicious { border-color: #facc15; background: #a16207; color: #fff; }
+.order-chip.suspicious:hover { border-color: #fde047; background: #ca8a04; color: #fff; }
+.order-chip.selected-chip { outline: 2px solid var(--color-accent, #ff7a1a); outline-offset: 2px; }
+.order-chip.suspicious.selected-chip { border-color: #fde047; outline-color: #fff; }
 .order-chip.excluded:hover { border-color: #71717a; background: #303033; color: #a1a1aa; }
 .order-chip.dragging {
   border: 2px dashed var(--color-accent, #ff7a1a);

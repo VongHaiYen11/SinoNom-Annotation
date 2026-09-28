@@ -414,16 +414,18 @@ Open the local URL printed by Gradio (normally `http://127.0.0.1:7860`; a later 
 1. **🖼️ Image** — Select an image from the configured folder
 2. **📝 Content** — Verify and save the five configured sections: original Hán/Nôm, Sino-Vietnamese transcription, translation, summary and notes
 3. **🔲 Bounding Boxes** — Detect regions, use Alt/Option-drag to add one, move/resize locally, or delete selected regions; compare box/character counts and record a source mismatch only when the extracted source is known to be wrong
-4. **🔢 Reading Order** — Spatially order the regions, assign Box IDs `1..n`, and drag text-only cards onto that box sequence
+4. **🔢 Character Assignment** — Use the detector's already-sorted coordinate slots, drag text tokens to correct their box assignment, and flag questionable content as Suspicious
 5. **🏷️ Status** — Review the final box/character mapping and mark ordinary boxes `intact` or `damaged`; `MISS` boxes are automatically `unknown`
 6. **✂️ Crop** — Adjust the orange crop frame on the original image; when its longest side exceeds 4096 pixels, export scales it down proportionally and records the scale factors
 7. **✅ Review** — Inspect the annotated canvas, final text/JSON and save the image object
 
 The browser keeps transient geometry, selection, text-sequence and crop edits for responsive interaction; Next validates and commits the relevant local snapshot to the authoritative Python state. Detection and Reading Order deliberately render every box with a neutral white outline, regardless of the detector's stored status; condition colors are revealed only in Status and Review. Before Reading Order, every editable region has a hidden `region_uid`, so edits do not depend on unstable public Box IDs. Entering Reading Order spatially sorts the committed regions with the detection-stage algorithm and assigns contiguous Box IDs from `1` to `n`. The editor renders only the annotation text as compact, horizontally flowing cards that wrap across rows; Box IDs are not shown on the cards. Dragging moves the text card itself and reflows nearby cards locally, with no Python callback during pointer movement. Dropping synchronizes the visible character sequence to the Gradio bridge. **Apply Changes** assigns that sequence to the spatially sorted boxes and redraws the canvas, while Next also commits the visible sequence before continuing.
 
-The normal path requires exactly one source character per box. When there are more boxes than source characters, selecting `missing_source_characters` creates enough `MISS` tags to make the tag count equal the box count; those tags can be reordered with normal characters and are written to `annotations`. A box currently assigned `MISS` is always given the derived status `unknown` and is rendered yellow from the Status stage onward. Moving `MISS` transfers that derived status to its new box; ordinary boxes remain editable as `intact` or `damaged`. Other problems can be recorded as `wrong_source_content` or `other` without inventing a character mapping. Selecting a mismatch type is sufficient for Next to confirm it automatically; the explicit Confirm button remains available. Changing source text or adding, deleting, or detecting boxes clears the confirmation.
+The normal path requires exactly one source character per box. When there are more boxes than source characters, selecting `missing_text` creates enough `MISS` tags to make the tag count equal the box count; `extra_text` handles extra source characters. These tags can be reordered with normal characters and are written to `annotations`. A box currently assigned `MISS` is always given the derived status `unknown` and is rendered yellow from the Status stage onward. Other source problems use `other` with a required note. Legacy mismatch names are normalized when loaded.
 
-If a region is added, deleted, moved or resized before alignment, Next commits the final geometry and builds the Box ID mapping, annotations and reading order. Status remains attached to each surviving region. Hidden `region_uid` values are never written to output JSON.
+In Reading Order, clicking a box selects its assigned chip and clicking a chip selects its box. Boxes are read-only in this step. The compact **Suspicious** toggle marks the selected character token for later QA without changing its content, geometry, status, or inclusion in the dataset. Suspicious chips use a yellow background and the box currently receiving that token uses a yellow outline/fill; selection remains a separate visual state. The flag moves with its character token when cards are reordered and is persisted only by **Save Annotation**. `suspicious_details.json` resolves the token back to its currently assigned Box ID at save time.
+
+If a region is added, deleted, moved or resized before alignment, Next commits the final geometry and builds the Box ID and annotation mapping. Status remains attached to each surviving region. Hidden `region_uid` and token IDs are never written to output JSON.
 
 Bounding-box manipulation is frontend-first. Selection, Ctrl/Cmd multi-selection, selection rectangles, dragging, resizing, group movement, valid coordinate typing and deselection update the SVG-local geometry immediately. Repeated edits stay local—even after pointer-up or selecting another box—and Next reads the live SVG and submits one validated geometry snapshot. **Delete selected** first commits that same live snapshot and the active coordinate fields, then deletes the selected regions, so unrelated local changes survive its board refresh. Alt/Option-drag follows the same transaction rule: it commits every existing local box before creating the new region. Detection and manually entered coordinates via **Update coordinates** also commit immediately. Coordinates typed without pressing **Update coordinates** are submitted directly by Next and override the selected box in that snapshot. There is no separate Add Box button. In Bounding Boxes and Reading Order, the sidebar offers a visual-only five-color outline palette (White, Cyan, Amber, Violet and Pink); this preference never changes or replaces stored statuses.
 
@@ -448,6 +450,7 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
   - `text_annotations.json` for images committed with **Save Image**
   - `inscription_content.json` for images committed with **Save Content**
   - `source_mismatches.json` for images explicitly confirmed as source errors
+  - `suspicious_details.json` for saved images containing suspicious Box IDs
 
 > **Note**
 >
@@ -461,14 +464,17 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 annotations.zip
 ├── text_annotations.json
 ├── inscription_content.json
-└── source_mismatches.json
+├── source_mismatches.json
+└── suspicious_details.json
 ```
 
-Each file is a UTF-8 JSON array with one object per committed image. If no image has been committed for one category, its corresponding file is omitted from the ZIP.
+The three existing datasets are UTF-8 JSON arrays with one object per committed image. `suspicious_details.json` is an object keyed by inscription identifier. If a category has no committed data, its corresponding file is omitted from the ZIP.
 
 #### `text_annotations.json`
 
 This file contains only images committed with **Save Image** on the Review step. Box IDs are contiguous from `1` to `n`. Applying the Reading Order editor never moves box geometry or its manually reviewed status; it assigns the arranged text cards to boxes in the detection-stage spatial order.
+
+When at least one box is suspicious, the record also contains `"issue_type": ["suspicious_content"]`; the affected Box IDs are stored only in `suspicious_details.json`.
 
 ```json
 [
@@ -488,11 +494,10 @@ This file contains only images committed with **Save Image** on the Review step.
         "status": "intact"
       }
     },
-    "reading_order": [1, 3, 2],
     "annotations": {
       "1": "永",
-      "2": "寺",
-      "3": "樂"
+      "2": "樂",
+      "3": "寺"
     },
     "image_resize": {
       "source_size": [5000, 3000],
@@ -510,11 +515,11 @@ This file contains only images committed with **Save Image** on the Review step.
 ]
 ```
 
-The final text is built by following `reading_order`. In this example, `[1, 3, 2]` maps `永`, `寺`, `樂` onto boxes `1`, `3`, `2`, so both the canvas labels and final text remain `永寺樂`.
+The `annotations` object is the final character-to-box mapping. Annotation files do not write a redundant `reading_order` field.
 
 #### `source_mismatches.json`
 
-This optional file contains completed images whose source-character count cannot validly be aligned to the bounding boxes. Records with missing source characters include `MISS` annotations; other mismatch records retain the source text, boxes, statuses, reading order, resize and crop without a character mapping.
+This optional file contains completed images whose source-character count cannot validly be aligned to the bounding boxes. Records with missing source characters include `MISS` annotations; other mismatch records retain the source text, boxes, statuses, resize and crop without a character mapping.
 
 For example, four boxes aligned against three source characters may contain:
 
@@ -522,18 +527,17 @@ For example, four boxes aligned against three source characters may contain:
 {
   "source_character_count": 3,
   "bounding_box_count": 4,
-  "issue_type": "missing_source_characters",
-  "reading_order": [1, 2, 4, 3],
+  "issue_type": ["missing_text"],
   "annotations": {
     "1": "永",
-    "2": "寺",
-    "3": "樂",
-    "4": "MISS"
+    "2": "MISS",
+    "3": "寺",
+    "4": "樂"
   }
 }
 ```
 
-Moving the `MISS` chip changes `reading_order`, identifying where the absent source character belongs without shifting subsequent characters onto the wrong boxes. Its destination box is saved with `"status": "unknown"` and rendered yellow. A `wrong_source_content` or `other` record deliberately omits `annotations`, as shown below.
+Moving the `MISS` chip changes its final Box ID assignment and shifts the intervening token assignments. Its destination box is saved with `"status": "unknown"` and rendered yellow. An `other` record deliberately omits `annotations`.
 
 ```json
 [
@@ -543,13 +547,12 @@ Moving the `MISS` chip changes `reading_order`, identifying where the absent sou
     "source_text": "永寺樂",
     "source_character_count": 3,
     "bounding_box_count": 2,
-    "issue_type": "wrong_source_content",
+    "issue_type": ["other"],
     "note": "The extracted source does not match the inscription face.",
     "bounding_boxes": {
       "1": {"bbox": [120, 350, 180, 420], "status": "intact"},
       "2": {"bbox": [120, 450, 180, 520], "status": "damaged"}
     },
-    "reading_order": [1, 2],
     "image_resize": {
       "source_size": [1000, 1800],
       "output_size": [1000, 1800],
@@ -564,6 +567,20 @@ Moving the `MISS` chip changes `reading_order`, identifying where the absent sou
     }
   }
 ]
+```
+
+#### `suspicious_details.json`
+
+This optional object is keyed by the existing inscription identifier. It contains one consolidated record per saved image with suspicious annotations; character content and geometry remain in the normal annotation document.
+
+```json
+{
+  "12305": {
+    "issue_type": "suspicious_content",
+    "box_ids": [2, 5],
+    "note": "Content may be incorrect."
+  }
+}
 ```
 
 #### `inscription_content.json`
@@ -592,9 +609,10 @@ This file contains only images committed with **Save Content**. It stores the im
 
 ```text
 annotations/
-├── 12305.json          # Boxes, statuses, annotations, reading order and crop
+├── 12305.json          # Boxes, statuses, final annotations and crop
 ├── source_mismatches/
-│   └── 12306.json      # Source issue plus boxes/status/order; MISS annotations when applicable
+│   └── 12306.json      # Source issue plus boxes/status; MISS annotations when applicable
+├── suspicious_details.json # Suspicious Box IDs keyed by inscription identifier
 ├── annotations.zip     # Save All archive, also downloaded by the browser
 └── .state/
     ├── 12305.json      # Text/document fingerprints used to verify committed data

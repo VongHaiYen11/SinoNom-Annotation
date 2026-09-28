@@ -3,24 +3,44 @@ import os
 import tempfile
 from pathlib import Path
 from .bbox import validate_coordinates
-from .reading_order import validate_reading_order
 from .text_alignment import MISSING_ANNOTATION, validate_bbox_text_count, characters
 
 
-SOURCE_MISMATCH_TYPES = {
-    'missing_source_characters',
-    'extra_source_characters',
-    'wrong_source_content',
-    'other',
-}
+SOURCE_MISMATCH_TYPES = {'missing_text', 'extra_text', 'other'}
+SUSPICIOUS_NOTE = 'Content may be incorrect.'
+
+
+def canonical_issue_type(value):
+    return value
+
+
+def issue_types(value):
+    values = value if isinstance(value, list) else [value]
+    if (not values or any(not isinstance(item, str) for item in values)):
+        raise ValueError('Issue types must be a non-empty string array.')
+    normalized = [canonical_issue_type(item) for item in values]
+    if len(normalized) != len(set(normalized)):
+        raise ValueError('Issue types must not contain duplicates.')
+    return normalized
+
+
+def source_mismatch_type(document):
+    values = issue_types(document.get('issue_type'))
+    mismatch = [value for value in values if value != 'suspicious_content']
+    if len(mismatch) != 1 or mismatch[0] not in SOURCE_MISMATCH_TYPES:
+        raise ValueError('A source mismatch must contain exactly one mismatch issue type.')
+    if any(value not in SOURCE_MISMATCH_TYPES | {'suspicious_content'} for value in values):
+        raise ValueError('Invalid issue type.')
+    return mismatch[0]
 
 
 def validate_source_mismatch_type(issue_type, character_count, box_count):
+    issue_type = canonical_issue_type(issue_type)
     if issue_type not in SOURCE_MISMATCH_TYPES:
         raise ValueError('Invalid source mismatch issue type.')
-    if issue_type == 'missing_source_characters' and character_count >= box_count:
+    if issue_type == 'missing_text' and character_count >= box_count:
         raise ValueError('Missing source characters requires more boxes than source characters.')
-    if issue_type == 'extra_source_characters' and character_count <= box_count:
+    if issue_type == 'extra_text' and character_count <= box_count:
         raise ValueError('Extra source characters requires more characters than boxes.')
 
 
@@ -64,9 +84,12 @@ def load_image_list(folder):
     return images
 
 
-def validate_document(doc, image, size, allow_legacy_missing_status=False):
+def validate_document(doc, image, size):
     if doc['image'] != image or not isinstance(doc['bounding_boxes'], dict):
         raise ValueError('Annotation does not belong to this image.')
+    if ('issue_type' in doc and 'inscription_code' not in doc
+            and issue_types(doc['issue_type']) != ['suspicious_content']):
+        raise ValueError('Normal annotations may only contain suspicious_content.')
     for key, box in doc['bounding_boxes'].items():
         if not key.isdecimal() or int(key) < 1 or str(int(key)) != key:
             raise ValueError('Box IDs must be canonical positive integers.')
@@ -76,8 +99,6 @@ def validate_document(doc, image, size, allow_legacy_missing_status=False):
     expected_ids = {str(index) for index in range(1, len(doc['bounding_boxes']) + 1)}
     if set(doc['bounding_boxes']) != expected_ids:
         raise ValueError('Box IDs must be contiguous from 1 to n.')
-    if not validate_reading_order(doc):
-        raise ValueError('Invalid reading order.')
     if 'annotations' in doc:
         if set(doc['annotations']) != set(doc['bounding_boxes']):
             raise ValueError('Annotations contain missing or unknown box IDs.')
@@ -86,7 +107,7 @@ def validate_document(doc, image, size, allow_legacy_missing_status=False):
             raise ValueError('Each annotation must contain one valid character.')
     for key, box in doc['bounding_boxes'].items():
         missing = doc.get('annotations', {}).get(key) == MISSING_ANNOTATION
-        if ((missing and box['status'] != 'unknown' and not allow_legacy_missing_status)
+        if ((missing and box['status'] != 'unknown')
                 or (not missing and box['status'] == 'unknown')):
             raise ValueError('MISS boxes must be unknown; other boxes cannot be unknown.')
     resized_size = size
@@ -107,33 +128,22 @@ def validate_document(doc, image, size, allow_legacy_missing_status=False):
 
 def load_annotation(path, image, size):
     doc = read_json(path)
-    if isinstance(doc, dict) and isinstance(doc.get('bounding_boxes'), dict):
-        keys = set(doc['bounding_boxes'])
-        expected = {str(index) for index in range(1, len(keys) + 1)}
-        if keys != expected:
-            order = doc.get('reading_order', [])
-            if (len(order) != len(keys) or len(set(order)) != len(order)
-                    or {str(box_id) for box_id in order} != keys):
-                raise ValueError('Legacy annotation has an invalid reading order.')
-            old_ids = [str(box_id) for box_id in order]
-            doc['bounding_boxes'] = {
-                str(index): doc['bounding_boxes'][old_id]
-                for index, old_id in enumerate(old_ids, 1)
-            }
-            if 'annotations' in doc:
-                doc['annotations'] = {
-                    str(index): doc['annotations'][old_id]
-                    for index, old_id in enumerate(old_ids, 1)
-                }
-            doc['reading_order'] = list(range(1, len(old_ids) + 1))
+    required = {'image', 'bounding_boxes', 'annotations', 'image_resize', 'crop'}
+    allowed = required | {'issue_type'}
+    if not isinstance(doc, dict) or not required.issubset(doc) or not set(doc).issubset(allowed):
+        raise ValueError('Invalid annotation document schema.')
+    if isinstance(doc, dict) and 'issue_type' in doc:
+        doc['issue_type'] = issue_types(doc['issue_type'])
     validate_document(doc, image, size)
     return doc
 
 
-def validate_source_mismatch_document(doc, image, size, allow_legacy_missing_status=False):
-    if isinstance(doc, dict) and doc.get('issue_type') == 'other':
-        required = {'image','inscription_code','issue_type','note','bounding_boxes'}
-        if set(doc) != required or doc.get('image') != image:
+def validate_source_mismatch_document(doc, image, size):
+    mismatch_type = source_mismatch_type(doc) if isinstance(doc, dict) else None
+    minimal_other_keys = {'image','inscription_code','issue_type','note','bounding_boxes'}
+    if (isinstance(doc, dict) and mismatch_type == 'other'
+            and set(doc) == minimal_other_keys):
+        if doc.get('image') != image:
             raise ValueError('Invalid Other source mismatch document.')
         if doc.get('inscription_code') != Path(image).stem:
             raise ValueError('Source mismatch does not belong to this inscription.')
@@ -150,7 +160,7 @@ def validate_source_mismatch_document(doc, image, size, allow_legacy_missing_sta
     required_keys = {
         'image', 'inscription_code', 'source_text', 'source_character_count',
         'bounding_box_count', 'issue_type', 'note', 'bounding_boxes',
-        'reading_order', 'image_resize', 'crop',
+        'image_resize', 'crop',
     }
     allowed_keys = required_keys | {'annotations','text_sequence','excluded_characters'}
     if (not isinstance(doc, dict) or not required_keys.issubset(doc)
@@ -171,17 +181,17 @@ def validate_source_mismatch_document(doc, image, size, allow_legacy_missing_sta
     if doc['source_character_count'] == doc['bounding_box_count']:
         raise ValueError('Source mismatch counts must differ.')
     validate_source_mismatch_type(
-        doc['issue_type'], doc['source_character_count'], doc['bounding_box_count'])
+        mismatch_type, doc['source_character_count'], doc['bounding_box_count'])
     if not isinstance(doc['note'], str):
         raise ValueError('Source mismatch note must be a string.')
     annotations = doc.get('annotations')
-    if doc['issue_type'] == 'missing_source_characters':
+    if mismatch_type == 'missing_text':
         if not isinstance(annotations, dict):
             raise ValueError('Missing-source documents require annotations.')
         missing_count = doc['bounding_box_count'] - doc['source_character_count']
         if list(annotations.values()).count(MISSING_ANNOTATION) != missing_count:
             raise ValueError('Missing-source annotations contain an invalid MISS count.')
-    elif doc['issue_type'] == 'extra_source_characters':
+    elif mismatch_type == 'extra_text':
         sequence=doc.get('text_sequence');excluded=doc.get('excluded_characters')
         excess=doc['source_character_count']-doc['bounding_box_count']
         if (not isinstance(annotations,dict) or not isinstance(sequence,list)
@@ -193,22 +203,23 @@ def validate_source_mismatch_document(doc, image, size, allow_legacy_missing_sta
             raise ValueError('Extra-source text sequence does not match source content.')
     elif annotations is not None:
         raise ValueError('This mismatch type cannot contain annotations.')
-    validate_document(doc, image, size, allow_legacy_missing_status)
+    validate_document(doc, image, size)
     return doc
 
 
 def load_source_mismatch(path, image, size):
-    # Older exports predate the derived `unknown` status. Preserve their exact
-    # bytes/fingerprint on load; the workflow normalizes MISS statuses before
-    # the Reading Order screen is shown and all new exports are strict.
-    return validate_source_mismatch_document(
-        read_json(path), image, size, allow_legacy_missing_status=True)
+    doc = read_json(path)
+    doc['issue_type'] = issue_types(doc.get('issue_type'))
+    return validate_source_mismatch_document(doc, image, size)
 
 
 def final_document(state):
     if not all(state['workflow'].values()) or not validate_bbox_text_count(state):
         raise ValueError('Complete all verification steps and match the box and character counts.')
-    doc = {k: state[k] for k in ('image', 'bounding_boxes', 'reading_order', 'annotations')}
+    doc = {k: state[k] for k in ('image', 'bounding_boxes', 'annotations')}
+    from .reading_order import suspicious_box_ids
+    if suspicious_box_ids(state):
+        doc['issue_type'] = ['suspicious_content']
     from crop.crop import auto_scale_crop, crop_document, default_crop, image_resize
     source_crop = state.get('crop') or default_crop(state['image_size'])
     scaled_crop, resized_size = auto_scale_crop(source_crop, state['image_size'])
@@ -223,12 +234,16 @@ def final_document(state):
 def final_source_mismatch_document(state):
     from .state import source_mismatch_confirmed
     issue = state['source_mismatch'] or {}
-    if issue.get('issue_type') == 'other':
+    mismatch_type = canonical_issue_type(issue.get('issue_type'))
+    from .reading_order import suspicious_box_ids
+    has_suspicious=bool(suspicious_box_ids(state))
+    if mismatch_type == 'other':
         if not source_mismatch_confirmed(state) or not issue.get('note','').strip():
             raise ValueError('Confirm Other with a note before saving.')
         return validate_source_mismatch_document({
             'image':state['image'],'inscription_code':str(state['code']),
-            'issue_type':'other','note':issue['note'],
+            'issue_type':['other'] + (['suspicious_content'] if has_suspicious else []),
+            'note':issue['note'],
             'bounding_boxes':{
                 str(index):{'bbox':list(state['regions'][uid]['bbox'])}
                 for index,uid in enumerate(state_order(state),1)
@@ -243,14 +258,13 @@ def final_source_mismatch_document(state):
         'source_text': state['annotation_text'],
         'source_character_count': issue['source_character_count'],
         'bounding_box_count': issue['bounding_box_count'],
-        'issue_type': issue['issue_type'],
+        'issue_type': [mismatch_type] + (['suspicious_content'] if has_suspicious else []),
         'note': issue['note'],
         'bounding_boxes': state['bounding_boxes'],
-        'reading_order': state['reading_order'],
     }
-    if issue['issue_type'] in ('missing_source_characters','extra_source_characters'):
+    if mismatch_type in ('missing_text','extra_text'):
         doc['annotations'] = state['annotations']
-    if issue['issue_type'] == 'extra_source_characters':
+    if mismatch_type == 'extra_text':
         doc['text_sequence']=list(state['text_sequence'])
         doc['excluded_characters']=list(issue['excluded_characters'])
     from crop.crop import auto_scale_crop, crop_document, default_crop, image_resize
@@ -283,4 +297,46 @@ def save_source_mismatch(state, output_dir):
     path = Path(output_dir) / 'source_mismatches' / (Path(state['image']).stem + '.json')
     atomic_write(path, doc)
     (Path(output_dir) / (Path(state['image']).stem + '.json')).unlink(missing_ok=True)
+    return path
+
+
+def load_suspicious_details(output_dir):
+    path = Path(output_dir) / 'suspicious_details.json'
+    if not path.exists():
+        return {}
+    document = read_json(path)
+    if not isinstance(document, dict):
+        raise ValueError('Suspicious details must be an object keyed by inscription ID.')
+    for identifier, record in document.items():
+        if (not isinstance(identifier, str) or not isinstance(record, dict)
+                or set(record) != {'issue_type', 'box_ids', 'note'}
+                or record.get('issue_type') != 'suspicious_content'
+                or record.get('note') != SUSPICIOUS_NOTE
+                or not isinstance(record.get('box_ids'), list)
+                or any(type(box_id) is not int or box_id < 1 for box_id in record['box_ids'])
+                or record['box_ids'] != sorted(set(record['box_ids']))):
+            raise ValueError(f'Invalid suspicious details for {identifier}.')
+    return document
+
+
+def save_suspicious_details(state, output_dir):
+    document = load_suspicious_details(output_dir)
+    identifier = str(state['code'])
+    from .reading_order import suspicious_box_ids
+    box_ids = sorted({int(box_id) for box_id in suspicious_box_ids(state)})
+    if any(str(box_id) not in state['bounding_boxes'] for box_id in box_ids):
+        raise ValueError('Suspicious details contain an unknown Box ID.')
+    if box_ids:
+        document[identifier] = {
+            'issue_type': 'suspicious_content',
+            'box_ids': box_ids,
+            'note': SUSPICIOUS_NOTE,
+        }
+    else:
+        document.pop(identifier, None)
+    path = Path(output_dir) / 'suspicious_details.json'
+    if document:
+        atomic_write(path, document)
+    else:
+        path.unlink(missing_ok=True)
     return path

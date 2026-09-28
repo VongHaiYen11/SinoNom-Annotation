@@ -11,8 +11,9 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from annotation.state import new_state, set_verified_content, refresh_bbox_validation, initialize_alignment
 from annotation.bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
 from annotation.text_alignment import count_annotation_characters, normalize_annotation_text
-from annotation.reading_order import (update_reading_order, update_text_sequence,
-                                      build_text_sequence, validate_reading_order)
+from annotation.reading_order import (update_text_sequence, update_text_tokens,
+                                      build_text_sequence, suspicious_box_ids,
+                                      validate_reading_order)
 from annotation.status import update_status, replace_statuses, confirm_status
 from annotation.io import (atomic_write, final_document,
                            final_source_mismatch_document, load_annotation,
@@ -100,17 +101,21 @@ class Invariants(unittest.TestCase):
             update_bboxes(invalid,{uids[0]:[2,2,7,7],uids[1]:[0,0,101,10]})
         self.assertEqual(invalid,before)
 
-    def test_reorder_assigns_source_characters_by_order(self):
+    def test_reorder_assigns_character_tokens_to_coordinate_slots(self):
         s=aligned_state()
         statuses={key:box['status'] for key,box in s['bounding_boxes'].items()}
-        update_reading_order(s,[1,3,2])
-        self.assertEqual(s['annotations'],{'1':'永','3':'寺','2':'樂'})
+        geometry=deepcopy(s['bounding_boxes'])
+        update_text_tokens(s,['永','樂','寺'],['1','3','2'])
+        self.assertEqual(s['annotations'],{'1':'永','2':'樂','3':'寺'})
+        self.assertEqual(s['reading_order'],[1,2,3])
+        self.assertEqual(s['bounding_boxes'],geometry)
         self.assertEqual(
             {key:box['status'] for key,box in s['bounding_boxes'].items()},
             statuses)
-        self.assertEqual(build_text_sequence(s),'永寺樂')
-        for order in ([1,3],[1,3,3],[1,3,5],['1',2,3],[True,2,3]):
-            with self.assertRaises(ValueError):update_reading_order(s,order)
+        self.assertEqual(build_text_sequence(s),'永樂寺')
+        for token_order in (['1','3'],['1','3','3'],['1','3','5']):
+            with self.assertRaises(ValueError):
+                update_text_tokens(s,['永','樂','寺'],token_order)
 
     def test_text_sequence_is_assigned_to_spatially_sorted_boxes(self):
         s=aligned_state()
@@ -125,24 +130,44 @@ class Invariants(unittest.TestCase):
         for sequence in (['永','樂'],['永','樂','樂'],['永','樂',3],None):
             with self.assertRaises(ValueError):update_text_sequence(s,sequence)
 
+    def test_suspicious_identity_follows_duplicate_character_token(self):
+        s=aligned_state('永永寺')
+        geometry=deepcopy(s['bounding_boxes'])
+        s['suspicious_token_ids']=['2']
+        s['selected_token_id']='2';s['selected_box_id']='2'
+        self.assertEqual(suspicious_box_ids(s),['2'])
+        update_text_tokens(s,['永','永','寺'],['2','1','3'])
+        self.assertEqual(s['suspicious_token_ids'],['2'])
+        self.assertEqual(suspicious_box_ids(s),['1'])
+        self.assertEqual(s['selected_box_id'],'1')
+        self.assertEqual(s['bounding_boxes'],geometry)
+
+    def test_larger_token_shift_reassigns_every_intervening_slot(self):
+        s=aligned_state('甲乙丙丁',4)
+        geometry=deepcopy(s['bounding_boxes'])
+        update_text_tokens(s,['丁','甲','乙','丙'],['4','1','2','3'])
+        self.assertEqual(s['annotations'],{
+            '1':'丁','2':'甲','3':'乙','4':'丙',
+        })
+        self.assertEqual(s['bounding_boxes'],geometry)
+
     def test_missing_source_alignment_adds_reorderable_miss_tags(self):
         s=state(n=5)
         s['source_mismatch']={
             'source_text':s['annotation_text'], 'source_character_count':3,
-            'bounding_box_count':5, 'issue_type':'missing_source_characters', 'note':''}
+            'bounding_box_count':5, 'issue_type':'missing_text', 'note':''}
         confirm_status(s);initialize_alignment(s)
         self.assertEqual(list(s['annotations'].values()),['永','寺','樂','MISS','MISS'])
-        update_reading_order(s,[1,4,2,3,5])
+        update_text_sequence(s,['永','MISS','寺','樂','MISS'])
         self.assertEqual(s['annotations'],{
-            '1':'永','4':'寺','2':'樂','3':'MISS','5':'MISS'})
-        self.assertEqual(build_text_sequence(s),'永寺樂MISSMISS')
-        self.assertEqual(s['bounding_boxes']['3']['status'],'unknown')
+            '1':'永','2':'MISS','3':'寺','4':'樂','5':'MISS'})
+        self.assertEqual(build_text_sequence(s),'永MISS寺樂MISS')
+        self.assertEqual(s['bounding_boxes']['2']['status'],'unknown')
         self.assertEqual(s['bounding_boxes']['5']['status'],'unknown')
         self.assertTrue(all(s['bounding_boxes'][key]['status'] != 'unknown'
-                            for key in ('1','2','4')))
+                            for key in ('1','3','4')))
         with self.assertRaises(ValueError):
-            update_status(s,s['region_uid_by_box_id']['3'],'damaged')
-        update_text_sequence(s,['永','MISS','寺','樂','MISS'])
+            update_status(s,s['region_uid_by_box_id']['2'],'damaged')
         self.assertEqual(s['reading_order'],[1,2,3,4,5])
         self.assertEqual(s['annotations']['2'],'MISS')
         self.assertEqual(s['annotations']['5'],'MISS')
@@ -154,11 +179,33 @@ class Invariants(unittest.TestCase):
         s['code']='12305'
         document=final_source_mismatch_document(s)
         self.assertEqual(document['annotations']['2'],'MISS')
-        legacy=deepcopy(document);legacy['bounding_boxes']['2']['status']='intact'
+        self.assertNotIn('reading_order',document)
+        invalid=deepcopy(document);invalid['bounding_boxes']['2']['status']='intact'
         with tempfile.TemporaryDirectory() as folder:
-            path=Path(folder)/'legacy.json';atomic_write(path,legacy)
-            loaded=load_source_mismatch(path,'12305.png',[100,100])
-        self.assertEqual(loaded['bounding_boxes']['3']['status'],'intact')
+            path=Path(folder)/'invalid.json';atomic_write(path,invalid)
+            with self.assertRaises(ValueError):
+                load_source_mismatch(path,'12305.png',[100,100])
+
+    def test_source_mismatch_combines_suspicious_issue_without_geometry_changes(self):
+        s=state(n=2)
+        s['source_mismatch']={
+            'source_text':s['annotation_text'],'source_character_count':3,
+            'bounding_box_count':2,'issue_type':'extra_text','note':''}
+        confirm_status(s);initialize_alignment(s)
+        geometry=deepcopy(s['bounding_boxes'])
+        s['suspicious_token_ids']=['1']
+        s['workflow']['reading_order_valid']=True
+        confirm_status(s);s['code']='12305'
+        document=final_source_mismatch_document(s)
+        self.assertEqual(document['issue_type'],['extra_text','suspicious_content'])
+        self.assertEqual(document['bounding_boxes'],geometry)
+
+        invalid=deepcopy(document)
+        invalid['issue_type']='extra_source_characters'
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'invalid.json';atomic_write(path,invalid)
+            with self.assertRaises(ValueError):
+                load_source_mismatch(path,'12305.png',[100,100])
 
     def test_status_only(self):
         s=state();uid=list(s['regions'])[1];old=deepcopy(s);update_status(s,uid,'damaged')
@@ -218,7 +265,7 @@ class Invariants(unittest.TestCase):
     def test_save_guards(self):
         s=state()
         with self.assertRaises(ValueError):final_document(s)
-        confirm_status(s);initialize_alignment(s);update_reading_order(s,[1,3,2]);s['workflow']['reading_order_valid']=True;confirm_status(s)
+        confirm_status(s);initialize_alignment(s);update_text_sequence(s,['永','樂','寺']);s['workflow']['reading_order_valid']=True;confirm_status(s)
         self.assertEqual(final_document(s)['annotations']['2'],'樂')
         del s['annotations']['2']
         with self.assertRaises(ValueError):final_document(s)
@@ -268,6 +315,7 @@ class Integration(unittest.TestCase):
         with Image.open(content_preview_path) as content_preview:
             self.assertLessEqual(max(content_preview.size),1600)
             self.assertEqual(content_preview.format,'JPEG')
+
         detected={'image':self.image.name,
                   'bounding_boxes':{str(i+1):dict(bbox=[i*10,0,i*10+9,9],status='intact') for i in range(3)},
                   'reading_order':[1,2,3]}
@@ -277,14 +325,14 @@ class Integration(unittest.TestCase):
         self.assertTrue(s['workflow']['alignment_valid'])
         damaged_uid=list(s['regions'])[1]
         mapping=deepcopy(s['annotations'])
-        s=e.apply(s,'reorder',{'order':[1,3,2]});s=e.apply(s,'next')
+        s=e.apply(s,'reorder_text',{'sequence':['永','樂','寺'],'token_order':['1','3','2']});s=e.apply(s,'next')
         self.assertEqual(s['current_step'],5)
         damaged_box_id=s['box_id_by_region'][damaged_uid]
         s=e.apply(s,'status',{'id':damaged_box_id,'status':'damaged'})
         s=e.apply(s,'next')
         self.assertEqual(s['current_step'],6)
         self.assertNotEqual(s['annotations'],mapping)
-        self.assertEqual(s['annotations'],{'1':'永','3':'寺','2':'樂'})
+        self.assertEqual(s['annotations'],{'1':'永','2':'樂','3':'寺'})
         before_crop=deepcopy(final_document(s))
         s=e.apply(s,'crop',{'bbox':[1,2,90,95]});s=e.apply(s,'save_crop')
         self.assertEqual({k:v for k,v in final_document(s).items() if k!='crop'},
@@ -294,11 +342,12 @@ class Integration(unittest.TestCase):
         self.assertFalse((self.root/'out/12305.json').exists())
         s=e.apply(s,'next');self.assertEqual(s['current_step'],7)
         s=e.apply(s,'save')
-        self.assertEqual(build_text_sequence(s),'永寺樂')
+        self.assertEqual(build_text_sequence(s),'永樂寺')
         doc=read_json(self.root/'out/12305.json')
         self.assertNotIn('region_uid',json.dumps(doc))
         loaded=e.open_image(self.image);self.assertEqual(loaded['annotations'],doc['annotations'])
-        loaded=e.apply(loaded,'save_content');self.assertEqual(loaded['reading_order'],[1,3,2])
+        loaded=e.apply(loaded,'save_content');self.assertEqual(loaded['reading_order'],[1,2,3])
+        self.assertEqual(loaded['annotations'],{'1':'永','2':'樂','3':'寺'})
         self.assertTrue(loaded['crop_saved'])
         self.assertEqual(loaded['crop'],[1,2,90,95])
         s=e.apply(s,'back');self.assertEqual(s['current_step'],6)
@@ -315,6 +364,39 @@ class Integration(unittest.TestCase):
         s=e.apply(s,'next');self.assertEqual(s['current_step'],4)
         self.assertEqual(s['annotations'],{'1':'永','2':'樂','3':'寺','4':'文'})
 
+    def test_suspicious_roundtrip_reorder_and_removal(self):
+        e=self.engine;s=e.open_image(self.image)
+        s=e.apply(s,'save_content');s=e.apply(s,'next')
+        for x in (0,20,40):
+            s=e.apply(s,'add',{'bbox':[x,0,x+10,10]})
+        s=e.apply(s,'next')
+        geometry=deepcopy(s['bounding_boxes'])
+        s=e.apply(s,'select',{'id':'2'})
+        s=e.apply(s,'suspicious',{'token_id':'2','value':True})
+        self.assertFalse((self.root/'out/suspicious_details.json').exists())
+        s=e.apply(s,'reorder_text',{'sequence':['樂','永','寺']})
+        self.assertEqual(s['suspicious_token_ids'],['2'])
+        self.assertEqual(suspicious_box_ids(s),['3'])
+        self.assertEqual(s['bounding_boxes'],geometry)
+        for _ in range(3):s=e.apply(s,'next')
+        s=e.apply(s,'save')
+        self.assertEqual(read_json(self.root/'out/12305.json')['issue_type'],
+                         ['suspicious_content'])
+        self.assertEqual(read_json(self.root/'out/suspicious_details.json'),{
+            '12305':{'issue_type':'suspicious_content','box_ids':[3],
+                     'note':'Content may be incorrect.'}})
+
+        reopened=e.open_image(self.image)
+        reopened=e.apply(reopened,'save_content')
+        self.assertEqual(suspicious_box_ids(reopened),['3'])
+        reopened=e.apply(reopened,'next');reopened=e.apply(reopened,'next')
+        reopened=e.apply(reopened,'select',{'id':'3'})
+        reopened=e.apply(reopened,'suspicious',{'token_id':'3','value':False})
+        for _ in range(3):reopened=e.apply(reopened,'next')
+        e.apply(reopened,'save')
+        self.assertNotIn('issue_type',read_json(self.root/'out/12305.json'))
+        self.assertFalse((self.root/'out/suspicious_details.json').exists())
+
     def test_seven_step_gates_and_crop_independence(self):
         e=self.engine;s=e.open_image(self.image)
         s=e.apply(s,'save_content');s=e.apply(s,'next')
@@ -322,10 +404,12 @@ class Integration(unittest.TestCase):
         with self.assertRaises(ValueError):e.apply(s,'next')
         s=e.apply(s,'add',{'bbox':[40,0,50,10]})
         s=e.apply(s,'next');self.assertEqual(s['current_step'],4)
-        s=e.apply(s,'reorder',{'order':[1,3,2]})
-        with self.assertRaises(ValueError):e.apply(s,'reorder',{'order':[1,1,2]})
+        s=e.apply(s,'reorder_text',{'sequence':['永','樂','寺'],'token_order':['1','3','2']})
+        with self.assertRaises(ValueError):
+            e.apply(s,'reorder_text',{'sequence':['永','樂','寺'],'token_order':['1','1','2']})
         s=e.apply(s,'next');self.assertEqual(s['current_step'],5)
-        with self.assertRaises(ValueError):e.apply(s,'reorder',{'order':[1,2,3]})
+        with self.assertRaises(ValueError):
+            e.apply(s,'reorder_text',{'sequence':['永','寺','樂'],'token_order':['1','2','3']})
         s=e.apply(s,'next');self.assertEqual(s['current_step'],6)
         with self.assertRaises(ValueError):e.apply(s,'save')
         with self.assertRaises(ValueError):e.apply(s,'crop',{'bbox':[0,0,101,100]})
@@ -367,19 +451,20 @@ class Integration(unittest.TestCase):
             e.apply(s,'next')
         with self.assertRaisesRegex(ValueError,'matches the count difference'):
             e.apply(s,'confirm_source_mismatch',{
-                'issue_type':'missing_source_characters','note':''})
+                'issue_type':'missing_text','note':''})
         s=e.apply(s,'confirm_source_mismatch',{
-            'issue_type':'wrong_source_content','note':'PDF source does not match the image'})
+            'issue_type':'extra_text','note':'PDF contains an extra character'})
         s=e.apply(s,'next')
         self.assertEqual(s['current_step'],4)
-        self.assertEqual(s['annotations'],{})
-        s=e.apply(s,'reorder',{'order':[2,1]})
+        self.assertEqual(s['annotations'],{'1':'永','2':'寺'})
+        s=e.apply(s,'reorder_text',{'sequence':['寺','永','樂'],'token_order':['2','1','3']})
         s=e.apply(s,'next');s=e.apply(s,'next')
         document=final_source_mismatch_document(s)
-        self.assertNotIn('annotations',document)
+        self.assertIn('annotations',document)
         self.assertEqual(document['source_character_count'],3)
         self.assertEqual(document['bounding_box_count'],2)
-        self.assertEqual(document['reading_order'],[2,1])
+        self.assertNotIn('reading_order',document)
+        self.assertEqual(document['annotations'],{'1':'寺','2':'永'})
         s=e.apply(s,'next')
         s=e.apply(s,'save')
         mismatch_path=self.root/'out/source_mismatches/12305.json'
@@ -388,7 +473,7 @@ class Integration(unittest.TestCase):
 
         reopened=e.open_image(self.image)
         reopened=e.apply(reopened,'save_content');reopened=e.apply(reopened,'next')
-        self.assertEqual(reopened['source_mismatch']['issue_type'],'wrong_source_content')
+        self.assertEqual(reopened['source_mismatch']['issue_type'],'extra_text')
         reopened=e.apply(reopened,'add',{'bbox':[40,0,50,10]})
         self.assertIsNone(reopened['source_mismatch'])
         self.assertTrue(reopened['workflow']['bbox_valid'])
@@ -405,7 +490,7 @@ class Integration(unittest.TestCase):
         for x in (0,20):
             s=e.apply(s,'add',{'bbox':[x,0,x+10,10]})
         s=e.apply(s,'confirm_source_mismatch',{
-            'issue_type':'extra_source_characters','note':''})
+            'issue_type':'extra_text','note':''})
         s=e.apply(s,'next')
         self.assertEqual(s['current_step'],4)
         self.assertEqual(s['text_sequence'],['永','寺','樂'])
@@ -479,16 +564,14 @@ class Integration(unittest.TestCase):
         self.source.write_text('{"1":{},"1":{}}')
         with self.assertRaises(ValueError):read_json(self.source)
 
-    def test_legacy_gapped_box_ids_are_migrated_on_load(self):
-        path=self.root/'legacy.json'
+    def test_old_annotation_schema_is_rejected(self):
+        path=self.root/'old.json'
         atomic_write(path,dict(image=self.image.name,
             bounding_boxes={'1':{'bbox':[0,0,9,9],'status':'intact'},
                             '3':{'bbox':[20,0,29,9],'status':'damaged'}},
             reading_order=[3,1],annotations={'1':'寺','3':'永'}))
-        loaded=load_annotation(path,self.image.name,[100,100])
-        self.assertEqual(set(loaded['bounding_boxes']),{'1','2'})
-        self.assertEqual(loaded['reading_order'],[1,2])
-        self.assertEqual(loaded['annotations'],{'1':'永','2':'寺'})
+        with self.assertRaises(ValueError):
+            load_annotation(path,self.image.name,[100,100])
 
     def test_existing_annotation_without_matching_sidecar_realigns_later(self):
         s=aligned_state();s['workflow']['reading_order_valid']=True

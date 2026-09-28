@@ -7,15 +7,13 @@ import zipfile
 
 from PIL import Image
 
-from .io import load_annotation, load_source_mismatch, read_json
+from .io import load_annotation, load_source_mismatch, load_suspicious_details, read_json
 from .text_extraction import validate_content_document
-from crop.crop import crop_document, crop_bbox, default_crop, image_resize
-
-
 EXPORT_ARCHIVE_NAME = 'annotations.zip'
 
 
-def save_export_archive(annotations, content, output_dir, source_mismatches=None):
+def save_export_archive(annotations, content, output_dir, source_mismatches=None,
+                        suspicious_details=None):
     """Persist the Save-all payload as one ZIP and return its path."""
     documents = {}
     if annotations:
@@ -24,6 +22,8 @@ def save_export_archive(annotations, content, output_dir, source_mismatches=None
         documents['inscription_content.json'] = content
     if source_mismatches:
         documents['source_mismatches.json'] = source_mismatches
+    if suspicious_details:
+        documents['suspicious_details.json'] = suspicious_details
     if not documents:
         raise ValueError('No image or content records have been saved yet.')
 
@@ -63,22 +63,6 @@ def collect_annotations(images, output_dir, allow_empty=False):
                 digest = hashlib.sha256(json.dumps(doc, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
                 if meta.get('document_hash') != digest:
                     raise ValueError('Saved annotation was changed outside the Review save flow.')
-            # Legacy files stored crop separately. A missing legacy crop means full image.
-            if 'crop' not in doc:
-                crop_path = Path(output_dir) / 'crops' / saved.name
-                resize = doc.get('image_resize') or image_resize(size, size)
-                bbox = default_crop(resize['output_size'])
-                if crop_path.exists():
-                    crop = read_json(crop_path)
-                    if crop['image'] != path.name:
-                        raise ValueError('Crop belongs to another image.')
-                    if crop.get('image_resize'):
-                        resize = image_resize(size, crop['image_resize']['output_size'])
-                    bbox = crop_bbox(crop['crop'], resize['output_size'])
-                doc['crop'] = crop_document(path.name, bbox, resize['output_size'])['crop']
-                doc['image_resize'] = resize
-            elif 'image_resize' not in doc:
-                doc['image_resize'] = image_resize(size, size)
             documents.append(doc)
         except (ValueError, OSError, KeyError, TypeError) as exc:
             errors.append(f'{path.name}: {exc}')
@@ -87,6 +71,15 @@ def collect_annotations(images, output_dir, allow_empty=False):
     if not documents and not allow_empty:
         raise ValueError('No images have been saved from Review yet.')
     return documents
+
+
+def collect_suspicious_details(images, output_dir):
+    details = load_suspicious_details(output_dir)
+    identifiers = {path.stem for path in map(Path, images)}
+    unknown = set(details) - identifiers
+    if unknown:
+        raise ValueError('Suspicious details reference unknown images: ' + ', '.join(sorted(unknown)))
+    return {identifier: deepcopy(details[identifier]) for identifier in sorted(details)}
 
 
 def collect_source_mismatches(images, output_dir, allow_empty=False):

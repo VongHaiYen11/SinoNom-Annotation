@@ -1,8 +1,8 @@
 """Render the canvas and cards from the accepted Python state snapshot."""
 import html
 from pathlib import Path
-from annotation.reading_order import build_text_sequence
-from annotation.state import source_mismatch_confirmed
+from annotation.reading_order import build_text_sequence, suspicious_box_ids
+from annotation.state import source_mismatch_confirmed, spatial_box_order
 from annotation.text_alignment import MISSING_ANNOTATION
 from .icons import ARROW_RIGHT, DOCUMENT
 
@@ -54,11 +54,14 @@ def snapshot(s):
         '''
     # Scale labels/handles to image size so full-resolution scans remain editable.
     unit=max(w,h)/900
+    suspicious_boxes=set(suspicious_box_ids(s)) if step == 4 else set()
     for key,b in boxes.items():
         x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6; multi_selected=key in selected_ids
+        suspicious = key in suspicious_boxes
         # Detection and reading-order review are intentionally status-neutral.
         # The stored detector status is revealed only from the Status step on.
-        color=('#ff7a1a' if step==6 else '#f4f4f5' if step in (3,4) or other_mismatch
+        color=('#ff7a1a' if step==6 else '#facc15' if suspicious
+               else '#f4f4f5' if step in (3,4) or other_mismatch
                else '#f59e0b' if b['status']=='unknown'
                else '#ef4444' if b['status']=='damaged' else '#22c55e')
         public_box = step not in (3, 6) and not other_mismatch
@@ -71,9 +74,10 @@ def snapshot(s):
         group_classes=' '.join(filter(None,(
             'selected-region' if multi_selected else '',
             'active-region' if key==selected_id else '',
+            'suspicious-region' if suspicious else '',
         )))
         markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}</title>
-            <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{color}" fill-opacity="{'.16' if multi_selected else '.04'}" stroke="{color}" stroke-width="{'2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{dashed}/>
+            <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{color}" fill-opacity="{'.16' if multi_selected else '.10' if suspicious else '.04'}" stroke="{color}" stroke-width="{'3' if suspicious and multi_selected else '2' if suspicious else '2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{dashed}/>
             {f'<text x="{x1+2*unit}" y="{max(15*unit,y1-4*unit)}" fill="{color}" font-size="{15*unit}" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{2*unit}">{label}</text>' if label else ''}'''
         # Handles are pre-rendered for local selection changes; CSS exposes
         # them only on the browser-local active region.
@@ -92,26 +96,33 @@ def snapshot(s):
         markup+=f'<section class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></section>'
         if step == 4:
             chips=[]
-            extra=(source_mismatch and s['source_mismatch']['issue_type']=='extra_source_characters')
+            extra=(source_mismatch and s['source_mismatch']['issue_type']=='extra_text')
             values=(s['text_sequence'] if extra else
                     [s['annotations'][str(box_id)] for box_id in s['reading_order']]
                     if s['annotations'] else [])
             excluded_count=(len(values)-len(s['bounding_boxes']) if extra else 0)
+            spatial_ids=list(map(str,spatial_box_order(s)))
+            token_ids=list(map(str,s.get('text_token_ids',[])))
+            suspicious_tokens=set(map(str,s.get('suspicious_token_ids',[])))
             for position,value in enumerate(values,1):
                 char=html.escape(value)
                 missing=' missing' if value == MISSING_ANNOTATION else ''
                 excluded=' excluded' if excluded_count and position>len(values)-excluded_count else ''
                 attribute_char=html.escape(value,quote=True)
-                chips.append(f'''<button type="button" class="order-chip{missing}{excluded}" data-order-chip="1" data-token-id="{position}" data-character="{attribute_char}"
+                box_id=(spatial_ids[position-1] if position<=len(spatial_ids) else '')
+                token_id=(token_ids[position-1] if position<=len(token_ids) else str(position))
+                suspicious=' suspicious' if token_id in suspicious_tokens else ''
+                box_attribute=(f' data-assigned-box-id="{box_id}"' if box_id else '')
+                chips.append(f'''<button type="button" class="order-chip{missing}{excluded}{suspicious}" data-order-chip="1" data-token-id="{token_id}" data-character="{attribute_char}"{box_attribute}
                     draggable="false" aria-label="Reading position {position}: {char}" title="{char}">
                     <span class="tile-character">{char}</span></button>''')
-            title='Reading Order'
+            title='Character Assignment'
             help_text=('Drag the text cards into the sequence that should be assigned to the spatially sorted boxes.'
                        if chips else 'This confirmed source mismatch has no character mapping to arrange.')
             markup+=f'''<section class="order-editor"><div class="order-heading"><div><span class="eyebrow">CHARACTER ANNOTATION</span><h2>{title}</h2></div>
 </div>
                 <p class="order-help">{help_text}</p>
-                <div class="order-chips" data-excluded-count="{excluded_count}" role="list" aria-label="Sortable reading order">{''.join(chips)}</div>
+                <div class="order-chips" data-excluded-count="{excluded_count}" role="list" aria-label="Sortable character assignment">{''.join(chips)}</div>
                 <p class="order-sync-note" aria-live="polite">Order changes stay local until you apply them or continue.</p></section>'''
         if step==7:
             order_separator = ARROW_RIGHT
@@ -120,7 +131,7 @@ def snapshot(s):
                 note=(f'<small>Note: {html.escape(issue["note"])}</small>'
                       if issue['note'] else '')
                 mismatch_text = (html.escape(build_text_sequence(s))
-                                 if issue['issue_type'] in ('missing_source_characters','extra_source_characters') else
+                                 if issue['issue_type'] in ('missing_text','extra_text') else
                                  'No character annotations will be generated for this image.')
                 review=f'''<div class="review-text source-mismatch-review"><span class="eyebrow">SOURCE MISMATCH</span>
                     <p>{mismatch_text}</p>
@@ -128,11 +139,19 @@ def snapshot(s):
                     {note}</div>'''
             else:
                 review='<div class="review-text"><span class="eyebrow">FINAL TEXT</span><p>'+html.escape(build_text_sequence(s))+'</p></div>'
-            markup+='<section class="review-detail">'+review+'<p class="order-sequence"><span>Reading order:</span> '+ order_separator.join(map(str,s['reading_order']))+'</p></section>'
+            mapping = order_separator.join(
+                f'{html.escape(s["annotations"][str(box_id)])} → Box {box_id}'
+                for box_id in spatial_box_order(s)
+            ) if s.get('annotations') else ''
+            markup+='<section class="review-detail">'+review+(f'<p class="order-sequence"><span>Final assignment:</span> {mapping}</p>' if mapping else '')+'</section>'
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=canvas_w,height=canvas_h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
                 readingOrder=list(s['reading_order']),
+                spatialBoxOrder=(spatial_box_order(s) if s.get('bounding_boxes') else []),
+                suspiciousTokenIds=list(map(str,s.get('suspicious_token_ids',[]))),
+                selectedTokenId=(str(s['selected_token_id'])
+                                 if s.get('selected_token_id') is not None else None),
                 orderedAnnotations=([s['annotations'][str(box_id)]
                                      for box_id in s['reading_order']]
                                     if s['annotations'] else []),

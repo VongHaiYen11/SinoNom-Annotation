@@ -10,7 +10,9 @@ def new_state():
                 regions={}, selected_region_uid=None, selected_region_uids=[],
                 bounding_boxes={}, annotations={}, reading_order=[],
                 text_sequence=[],
+                text_token_ids=[], suspicious_token_ids=[],
                 box_id_by_region={}, region_uid_by_box_id={}, selected_box_id=None,
+                selected_token_id=None,
                 revision=0, current_step=1,
                 detection_loaded=False, crop=None, resized_image_size=None,
                 source_mismatch=None,
@@ -29,6 +31,9 @@ def invalidate(state, clear=False):
         state['box_id_by_region'] = {}
         state['region_uid_by_box_id'] = {}
         state['selected_box_id'] = None
+        state['selected_token_id'] = None
+        state['text_token_ids'] = []
+        state['suspicious_token_ids'] = []
     state['saved'] = False
 
 
@@ -108,10 +113,10 @@ def initialize_alignment(state):
     if state['workflow']['bbox_valid']:
         state['annotations'] = temporary_align_text(ids, state['annotation_text'])
         state['text_sequence'] = list(state['annotations'].values())
-    elif state['source_mismatch']['issue_type'] == 'missing_source_characters':
+    elif state['source_mismatch']['issue_type'] == 'missing_text':
         state['annotations'] = align_text_with_missing(ids, state['annotation_text'])
         state['text_sequence'] = list(state['annotations'].values())
-    elif state['source_mismatch']['issue_type'] == 'extra_source_characters':
+    elif state['source_mismatch']['issue_type'] == 'extra_text':
         from .text_alignment import characters
         sequence=characters(state['annotation_text'])
         state['text_sequence']=sequence
@@ -120,8 +125,15 @@ def initialize_alignment(state):
     else:
         state['annotations'] = {}
         state['text_sequence'] = []
+    state['text_token_ids'] = [str(index) for index in range(1,len(state['text_sequence'])+1)]
+    state['suspicious_token_ids'] = []
     state['reading_order'] = ids
     state['selected_box_id'] = state['box_id_by_region'].get(state['selected_region_uid'])
+    selected_index = (ids.index(int(state['selected_box_id']))
+                      if state['selected_box_id'] else None)
+    state['selected_token_id'] = (state['text_token_ids'][selected_index]
+                                  if selected_index is not None
+                                  and selected_index < len(state['text_token_ids']) else None)
     from .status import synchronize_missing_statuses
     synchronize_missing_statuses(state)
     state['workflow']['alignment_valid'] = True

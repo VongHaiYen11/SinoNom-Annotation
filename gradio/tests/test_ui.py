@@ -33,7 +33,7 @@ class GradioCallbacks(unittest.TestCase):
         for x in (0,20,40):add_bbox(state,[x,0,x+10,10])
         state['source_mismatch']={
             'source_text':state['annotation_text'],'source_character_count':2,
-            'bounding_box_count':3,'issue_type':'missing_source_characters','note':''}
+            'bounding_box_count':3,'issue_type':'missing_text','note':''}
         refresh_bbox_validation(state);confirm_status(state);initialize_alignment(state)
         missing_id=next(key for key,value in state['annotations'].items() if value=='MISS')
         self.assertEqual(state['bounding_boxes'][missing_id]['status'],'unknown')
@@ -48,7 +48,7 @@ class GradioCallbacks(unittest.TestCase):
 
     def test_canvas_script_keeps_selection_and_geometry_local_until_next(self):
         script=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
-        self.assertNotIn("send('select'",script)
+        self.assertIn("send('select'",script)
         self.assertNotIn("send('commit_boxes'",script)
         self.assertIn("send('status'",script)
         self.assertIn('boxes: Object.fromEntries',script)
@@ -59,7 +59,8 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn("event.target.closest('[data-order-chip]')",script)
         self.assertIn('textSequence: [...localTextSequence]',script)
         self.assertIn('textSequenceFromDOM',script)
-        self.assertNotIn('chip.dataset.boxId',script)
+        self.assertIn('chip.dataset.assignedBoxId',script)
+        self.assertIn("send('suspicious'",script)
         self.assertIn('animateChipReflow',script)
         self.assertIn('captureChipRects',script)
         self.assertIn('getBoundingClientRect()',script)
@@ -150,8 +151,9 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('justify-content: center',css)
         app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
         self.assertIn('### Box-Content Mismatch',app_source)
-        self.assertIn("('Missing Content','missing_source_characters')",app_source)
-        self.assertIn("('Extra Content','extra_source_characters')",app_source)
+        self.assertIn("('Missing Content','missing_text')",app_source)
+        self.assertIn("('Extra Content','extra_text')",app_source)
+        self.assertIn("elem_id='suspicious-toggle'",app_source)
         self.assertNotIn("Accordion('Source mismatch'",app_source)
         self.assertIn('grid-template-columns: repeat(2, minmax(0, 1fr))',css)
         self.assertIn('.selection-guide {',css)
@@ -531,8 +533,7 @@ class GradioCallbacks(unittest.TestCase):
             self.assertFalse(result[42]['visible'])
             self.assertTrue((root/'out/12305.json').exists())
             saved=json.loads((root/'out/12305.json').read_text())
-            self.assertEqual(set(saved),{'image','bounding_boxes','annotations','reading_order','crop','image_resize'})
-            self.assertEqual(saved['reading_order'],[1,2,3])
+            self.assertEqual(set(saved),{'image','bounding_boxes','annotations','crop','image_resize'})
             self.assertEqual(saved['crop']['top_left'],[5,10])
             self.assertEqual(saved['image_resize'],{
                 'source_size':[100,100], 'output_size':[100,100],

@@ -12,13 +12,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # This directory deliberately is NOT a Python package named gradio.
 import gradio as gr
 from annotation.state import new_state, source_mismatch_confirmed
+from annotation.reading_order import suspicious_box_ids
 from annotation.workflow import Workflow
 from annotation.io import (final_document, final_source_mismatch_document,
                            load_image_list, read_json)
 from annotation.text_extraction import content_fields, normalize_content_titles
 from annotation.text_alignment import count_annotation_characters
 from annotation.export import (collect_annotations, collect_content_documents,
-                               collect_source_mismatches, save_export_archive)
+                               collect_source_mismatches, collect_suspicious_details,
+                               save_export_archive)
 from ui.editor import snapshot, SCRIPT, CSS
 from ui.presentation import (APP_CSS, app_identity, workflow_progress,
                              panel_heading, panel_summary, footer,
@@ -244,8 +246,8 @@ def create_app(options):
                                   elem_classes=['section','sidebar-section','mismatch-panel']) as mismatch_group:
                         gr.Markdown('### Box-Content Mismatch')
                         mismatch_type=gr.Dropdown([
-                            ('Missing Content','missing_source_characters'),
-                            ('Extra Content','extra_source_characters'),
+                            ('Missing Content','missing_text'),
+                            ('Extra Content','extra_text'),
                             ('Other','other'),
                         ],label='Issue type',filterable=False)
                         mismatch_note=gr.Textbox(
@@ -280,6 +282,11 @@ def create_app(options):
                                 elem_classes='sidebar-help')
                     apply_order=gr.Button('Apply Changes',variant='primary',
                                           elem_id='apply-reading-order')
+                    with gr.Row(elem_classes='suspicious-control'):
+                        gr.Markdown('Suspicious')
+                        suspicious_toggle=gr.Checkbox(
+                            value=False,label='Suspicious annotation',show_label=False,
+                            interactive=False,container=False,elem_id='suspicious-toggle')
                 order_text=gr.State('[]')
                 with gr.Group(visible=False, elem_classes=['section','sidebar-section']) as crop_group:
                     gr.Markdown('### Crop')
@@ -319,6 +326,7 @@ def create_app(options):
         outputs.append(workflow_chrome)
         outputs.append(loading_modal)
         outputs.extend([image_start,control_panel,main_workspace,workflow_footer,current_image])
+        outputs.append(suspicious_toggle)
 
         def render(ctx, msg=''):
             s=ctx['active']; step=s['current_step']; has=bool(s.get('image'))
@@ -342,6 +350,7 @@ def create_app(options):
             status_box=s['bounding_boxes'].get(selected_box,dict(status='intact'))
             missing=s['annotations'].get(selected_box)=='MISS'
             status_choices=['unknown'] if missing else ['intact','damaged']
+            suspicious_ids=set(suspicious_box_ids(s))
             mismatch=source_mismatch_confirmed(s)
             final=(final_source_mismatch_document(s) if mismatch else final_document(s)) if step==7 else None
             issue=s.get('source_mismatch') or {}
@@ -363,7 +372,9 @@ def create_app(options):
                     workflow_progress(s),LOADING_HIDDEN,
                     gr.update(visible=step==1),gr.update(visible=has and step>1),
                     gr.update(visible=has and step>1),gr.update(visible=has and step>1),
-                    (f'`{s["image"]}`' if has else '—')]
+                    (f'`{s["image"]}`' if has else '—'),
+                    gr.update(value=selected_box in suspicious_ids,
+                              interactive=step==4 and selected_box is not None)]
 
         def run(ctx, action, payload=None, auto_detect=True):
             try:
@@ -386,11 +397,13 @@ def create_app(options):
                         msg='Detection failed: '+str(exc)
                 result = render(ctx,msg)
                 # Preserve unaffected editors and avoid replacing unrelated component values.
+                suspicious_outputs={len(outputs)-1}
                 affected = {
-                    'select': {0,2,8,10,11,12,13,14,16,17},
+                    'select': {0,2,8,10,11,12,13,14,16,17} | suspicious_outputs,
+                    'suspicious': {0,2,8} | suspicious_outputs,
                     'status': {0,2,8,17,30},
                     'statuses': {0,2,8,17,30},
-                    'reorder': {0,2,8,19},
+                    'reorder_text': {0,2,8,19} | suspicious_outputs,
                     'crop': {0,2,8,22},
                     'field': {0,2,6,7},
                 }.get(action)
@@ -438,7 +451,9 @@ def create_app(options):
                     images,options.output_dir,allow_empty=True,
                     titles=engine.verification_titles)
                 mismatches=collect_source_mismatches(images,options.output_dir,allow_empty=True)
-                archive=save_export_archive(annotations,content,options.output_dir,mismatches)
+                suspicious=collect_suspicious_details(images,options.output_dir)
+                archive=save_export_archive(
+                    annotations,content,options.output_dir,mismatches,suspicious)
                 return json.dumps({'name':archive.name,
                                    'content':base64.b64encode(archive.read_bytes()).decode('ascii')})
             except (ValueError,OSError,KeyError,TypeError) as exc:
@@ -540,10 +555,11 @@ def create_app(options):
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if ctx['active']['current_step'] == 4:
                 try:
-                    text_sequence = frontend_text_sequence(selection)
+                    text_sequence,token_order = frontend_text_sequence(selection)
                     if text_sequence:
                         updated = engine.apply(ctx['active'], 'reorder_text', {
                             'sequence': text_sequence,
+                            'token_order': token_order,
                         })
                         ctx = dict(ctx, active=updated)
                 except Exception as exc:
@@ -583,7 +599,7 @@ def create_app(options):
                 result[2] = gr.update(value='Running detection…', visible=True)
                 result[29] = gr.update(interactive=False)
                 result[28] = gr.update(interactive=False)
-                result[-1] = loading_markup('Running detection…', visible=True)
+                result[38] = loading_markup('Running detection…', visible=True)
             yield result
             if needs_detection:
                 yield run(result[0], 'detect')
@@ -686,11 +702,16 @@ def create_app(options):
             try:
                 parsed=json.loads(value or '{}')
                 sequence=parsed.get('textSequence')
+                token_order=parsed.get('tokenOrder')
                 if sequence is not None and (
                         not isinstance(sequence,list)
                         or any(not isinstance(item,str) or not item for item in sequence)):
                     raise ValueError
-                return sequence
+                if token_order is not None and (
+                        not isinstance(token_order,list)
+                        or any(not isinstance(item,str) or not item for item in token_order)):
+                    raise ValueError
+                return sequence,token_order
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local text sequence is invalid.')
         def update_coordinates(ctx,selection,a,b,d,e):
@@ -734,12 +755,12 @@ def create_app(options):
             except ValueError as exc:return render(c,'Invalid JSON: '+str(exc))
         clear_loading_when_done(apply_crop.click(lambda c,v:parse_action(c,'crop','bbox',v),[session,crop_coords],**event_args))
         def apply_reading_order(ctx,selection):
-            sequence=frontend_text_sequence(selection)
+            sequence,token_order=frontend_text_sequence(selection)
             if sequence is None:
                 raise gr.Error('No reading-order change is available.')
             if not sequence and not ctx['active']['annotations']:
                 return render(ctx)
-            return run(ctx,'reorder_text',{'sequence':sequence})
+            return run(ctx,'reorder_text',{'sequence':sequence,'token_order':token_order})
         clear_loading_when_done(apply_order.click(
             apply_reading_order,[session,selection_bridge],
             **dict(event_args,js=snapshot_board_state_js(1))))
