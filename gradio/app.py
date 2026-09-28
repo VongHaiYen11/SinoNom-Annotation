@@ -225,31 +225,37 @@ def create_app(options):
                         with gr.Row(elem_classes=['coordinate-row','field-group']):
                             x2=gr.Number(label='x2', min_width=0,elem_id='bbox-x2');y2=gr.Number(label='y2', min_width=0,elem_id='bbox-y2')
                         update=gr.Button('Update coordinates',variant='primary')
-                    with gr.Group(elem_classes=['section','sidebar-section']):
-                        gr.Markdown('### Box Actions')
-                        gr.Markdown('Click or drag to select. Ctrl/Cmd adds to selection; Alt/Option-drag creates a box.',
-                                    elem_classes='sidebar-help')
-                        with gr.Row(elem_classes=['button-group','sidebar-action-row','delete-action-row']):
-                            delete=gr.Button('Delete selected', elem_id='delete-box', min_width=0)
+                    gr.HTML('''<section class="selection-guide" aria-label="Selection Guide">
+                        <h3>Selection Guide</h3>
+                        <ul>
+                          <li><kbd>Click</kbd><span>Select a single box.</span></li>
+                          <li><kbd>Drag</kbd><span>Draw a selection area to select multiple boxes.</span></li>
+                          <li><kbd>Ctrl/Cmd + Click</kbd><span>Add or remove individual boxes from the current selection.</span></li>
+                          <li><kbd>Alt/Option + Drag</kbd><span>Create a new bounding box.</span></li>
+                        </ul>
+                    </section>''')
+                    delete=gr.Button('Delete Selected', size='sm', min_width=0,
+                                     elem_id='delete-box',elem_classes='compact-sidebar-action')
                     detect_confirm=gr.Checkbox(value=False,visible=False)
-                    detect=gr.Button('Run detection', interactive=not skip_detection,
-                                     elem_id='run-detection')
-                    with gr.Accordion('Source mismatch', open=False,
-                                      elem_classes=['section','sidebar-section','sidebar-disclosure']) as mismatch_group:
-                        gr.Markdown('Use only when the source text is wrong and matching the counts would create a false annotation.',
-                                    elem_classes='sidebar-help')
-                        mismatch_type=gr.Radio([
-                            ('Thiếu chữ','missing_source_characters'),
-                            ('Dư chữ','extra_source_characters'),
+                    detect=gr.Button('Run Detection', variant='primary', size='sm',
+                                     interactive=not skip_detection,elem_id='run-detection',
+                                     elem_classes='compact-sidebar-action')
+                    with gr.Group(visible=False,
+                                  elem_classes=['section','sidebar-section','mismatch-panel']) as mismatch_group:
+                        gr.Markdown('### Box-Content Mismatch')
+                        mismatch_type=gr.Dropdown([
+                            ('Missing Content','missing_source_characters'),
+                            ('Extra Content','extra_source_characters'),
                             ('Other','other'),
-                        ],label='Issue type')
-                        mismatch_note=gr.Textbox(label='Note (required for Other)',lines=3)
+                        ],label='Issue type',filterable=False)
+                        mismatch_note=gr.Textbox(
+                            label='Note (required only for Other)',lines=2,max_lines=3)
                         with gr.Row(elem_classes=['button-group','sidebar-action-row','mismatch-action-row']):
                             confirm_mismatch=gr.Button(
-                                'Confirm source mismatch', min_width=0,
+                                'Confirm Mismatch', variant='primary', min_width=0,
                                 elem_id='confirm-source-mismatch')
                             clear_mismatch=gr.Button(
-                                'Clear mismatch', visible=False, min_width=0,
+                                'Clear', visible=False, variant='secondary', min_width=0,
                                 elem_id='clear-source-mismatch')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','box-color-control']) as box_color_group:

@@ -130,6 +130,7 @@ const hydrateLocalState = () => {
     localContext = context;
   }
   renderSelection();
+  element.querySelectorAll('.order-chips').forEach(updateExcludedChips);
   readAnnotationColor();
   applyAnnotationColor();
 };
@@ -286,7 +287,21 @@ const textSequenceFromDOM = container => [...container.querySelectorAll('[data-o
 const updateExcludedChips = container => {
   const chips=[...container.querySelectorAll('[data-order-chip]')];
   const count=Number(container.dataset.excludedCount || 0);
-  chips.forEach((chip,index)=>chip.classList.toggle('excluded',count>0 && index>=chips.length-count));
+  let divider=container.querySelector('.excluded-divider');
+  if(count>0 && chips.length){
+    if(!divider){
+      divider=document.createElement('div');
+      divider.className='excluded-divider';
+      divider.setAttribute('role','separator');
+      divider.innerHTML='<span>Excluded from data</span>';
+    }
+    container.insertBefore(divider,chips[Math.max(0,chips.length-count)]);
+  }else divider?.remove();
+  chips.forEach((chip,index)=>{
+    const excluded=count>0 && index>=chips.length-count;
+    chip.classList.toggle('excluded',excluded);
+    chip.title=excluded?'Excluded from annotation data':chip.dataset.character;
+  });
 };
 const orderRows = chips => {
   const rows=[];

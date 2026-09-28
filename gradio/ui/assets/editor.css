@@ -141,12 +141,37 @@
 .order-chips.is-sorting { cursor: grabbing; }
 .order-chip.missing { border-color: #d4d4d8; background: var(--color-panel, #17191c); color: var(--color-text, #f4f4f5); }
 .order-chip.missing .tile-character { font-family: Arial, Helvetica, sans-serif !important; font-size: 11px; font-weight: 700; }
-.order-chip.excluded { border-color: #52525b; background: #27272a; color: #71717a; opacity: .72; }
+.order-chip.excluded { border-color: #52525b; background: #27272a; color: #8b8b94; }
 .order-chip.excluded:hover { border-color: #71717a; background: #303033; }
+.order-chip.excluded::after {
+  align-self: center;
+  margin-left: 2px;
+  color: #a1a1aa;
+  content: '× Excluded';
+  font: 600 9px/1 Arial, sans-serif;
+  white-space: nowrap;
+}
+.excluded-divider {
+  display: flex;
+  align-items: center;
+  flex: 1 0 100%;
+  gap: var(--space-2, 8px);
+  min-width: 100%;
+  color: #71717a;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.excluded-divider::before,
+.excluded-divider::after { height: 1px; flex: 1; background: #3f3f46; content: ''; }
+.excluded-divider span { white-space: nowrap; }
 .order-chip.intact { border-color: #22c55e; }
 .order-chip.damaged { border-color: #ef4444; border-style: dashed; }
 .order-chip.unknown { border-color: #f59e0b; border-style: dotted; background: #302116; }
 .order-chip:hover { border-color: var(--color-accent, #ff7a1a); background: #302116; }
+.order-chip.excluded:hover { border-color: #71717a; background: #303033; color: #a1a1aa; }
 .order-chip.dragging {
   border: 2px dashed var(--color-accent, #ff7a1a);
   background: rgb(255 122 26 / 14%);

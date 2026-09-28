@@ -313,6 +313,50 @@ button#next-button::after { transform: rotate(180deg); }
   width: 100%;
   min-width: 0;
 }
+#control-panel .selection-guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--sidebar-section-padding);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-panel-subtle);
+  box-sizing: border-box;
+}
+#control-panel .selection-guide h3 { margin: 0; font-size: 12px; font-weight: 600; }
+#control-panel .selection-guide ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#control-panel .selection-guide li {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2);
+  color: var(--color-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+#control-panel .selection-guide kbd {
+  padding: 2px 5px;
+  border: 1px solid #45484f;
+  border-radius: 3px;
+  background: var(--color-page);
+  color: var(--color-text);
+  font: 600 10px/1.3 Arial, sans-serif;
+  white-space: nowrap;
+}
+#control-panel .compact-sidebar-action {
+  align-self: flex-start;
+  width: auto !important;
+  min-width: 132px !important;
+}
+#control-panel .compact-sidebar-action button { width: auto !important; min-width: 132px; }
 #control-panel .sidebar-action-row {
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -340,19 +384,28 @@ button#next-button::after { transform: rotate(180deg); }
   white-space: nowrap;
 }
 #control-panel .mismatch-action-row {
-  display: flex !important;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: var(--space-2) !important;
 }
 #control-panel .mismatch-action-row > * {
-  width: auto !important;
+  width: 100% !important;
   min-width: 0 !important;
+}
+#control-panel .mismatch-panel,
+#control-panel .mismatch-panel > .styler,
+#control-panel .mismatch-panel > .form { gap: var(--space-2) !important; }
+#control-panel .mismatch-panel textarea {
+  min-height: 64px !important;
+  max-height: 88px !important;
+  padding: var(--space-2) var(--space-3) !important;
+  line-height: 1.4 !important;
 }
 #confirm-source-mismatch,
 #confirm-source-mismatch button,
 button#confirm-source-mismatch {
-  width: auto !important;
+  width: 100% !important;
   border-color: var(--color-accent) !important;
   background: var(--color-accent) !important;
   color: var(--color-page) !important;
@@ -361,6 +414,17 @@ button#confirm-source-mismatch {
 #confirm-source-mismatch:hover,
 #confirm-source-mismatch button:hover,
 button#confirm-source-mismatch:hover { background: #e96c0d !important; }
+#clear-source-mismatch,
+#clear-source-mismatch button,
+button#clear-source-mismatch {
+  width: 100% !important;
+  border-color: var(--color-border) !important;
+  background: transparent !important;
+  color: var(--color-muted) !important;
+}
+#clear-source-mismatch:hover,
+#clear-source-mismatch button:hover,
+button#clear-source-mismatch:hover { background: var(--color-panel-hover) !important; color: var(--color-text) !important; }
 #control-panel input[type="text"],
 #control-panel input[type="number"],
 #control-panel select { min-height: var(--input-height); font-size: 12px; }
