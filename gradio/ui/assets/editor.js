@@ -41,6 +41,12 @@ const handleAnnotationColor = target => {
   applyAnnotationColor();
   return true;
 };
+element.addEventListener('bbox-color-change', event => {
+  const value=event.detail;
+  if(!annotationColors[value])return;
+  annotationColor=annotationColors[value];
+  applyAnnotationColor();
+});
 const setInputValue = (selector, value) => {
   const input = root.querySelector(`${selector} input, ${selector} textarea`);
   if (!input) return;
@@ -70,8 +76,9 @@ const syncExternalControls = () => {
   if (props.value.step === 4) {
     const suspicious = root.querySelector('#suspicious-toggle input[type="checkbox"]');
     if (suspicious) {
-      const chip=activeTokenId && element.querySelector(
-        `[data-order-chip][data-token-id="${activeTokenId}"]`);
+      const chip=activeBoxId && element.querySelector(
+        `[data-order-chip][data-assigned-box-id="${activeBoxId}"]`);
+      activeTokenId=chip?.dataset.tokenId || null;
       suspicious.disabled = !chip || chip.classList.contains('excluded');
       suspicious.checked = Boolean(chip && localSuspiciousTokenIds.has(activeTokenId));
     }
@@ -134,7 +141,7 @@ const renderSelection = (sync=true) => {
     }
   });
   element.querySelectorAll('[data-order-chip]').forEach(chip => {
-    chip.classList.toggle('selected-chip', chip.dataset.tokenId === String(activeTokenId));
+    chip.classList.remove('selected-chip');
   });
   if (sync) syncExternalControls();
 };
@@ -464,7 +471,6 @@ const finishOrderDrag = (commit=true) => {
       renderSelection();
     }
   } else if(commit) {
-    activeTokenId=state.chip.dataset.tokenId;
     renderSelection();
   }
   orderDrag=null;

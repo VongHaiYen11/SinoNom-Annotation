@@ -443,6 +443,13 @@ def create_app(options):
         # Hide Gradio's per-component timers/spinners and show one centered modal instead.
         event_args=dict(outputs=outputs,concurrency_id='annotation-actions',concurrency_limit=1,
                         show_progress='hidden',js=SHOW_LOADING_JS)
+        box_color.change(
+            fn=None, inputs=[box_color], outputs=None, show_progress='hidden',
+            js="""(color) => {
+                document.querySelector('#annotation-board')?.dispatchEvent(
+                    new CustomEvent('bbox-color-change', {detail: color})
+                );
+            }""")
         def clear_loading_when_done(event):
             # The returned loading HTML is normally identical to its initial value,
             # so Gradio may skip patching the DOM after a completed action. Clear

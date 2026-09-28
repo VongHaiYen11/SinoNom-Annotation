@@ -91,7 +91,7 @@ def snapshot(s):
     if step in (4,7):
         source=html.escape(s['annotation_text'])
         verified=s['workflow']['content_verified']
-        source_label=('Source text · mismatch confirmed' if source_mismatch else
+        source_label=('Source text' if source_mismatch else
                       'Verified annotation text' if verified else 'Unverified annotation text')
         markup+=f'<section class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></section>'
         if step == 4:

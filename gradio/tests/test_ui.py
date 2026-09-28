@@ -48,6 +48,7 @@ class GradioCallbacks(unittest.TestCase):
 
     def test_canvas_script_keeps_selection_and_geometry_local_until_next(self):
         script=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
+        app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
         self.assertNotIn("send('select'",script)
         self.assertNotIn("send('commit_boxes'",script)
         self.assertIn("send('status'",script)
@@ -71,6 +72,8 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('chipReflowAnimations.get(chip)?.cancel()',script)
         self.assertIn("White:'#f4f4f5', Cyan:'#22d3ee', Amber:'#f59e0b'",script)
         self.assertIn("#bbox-color-palette input, #bbox-color-palette select",script)
+        self.assertIn("addEventListener('bbox-color-change'",script)
+        self.assertIn("new CustomEvent('bbox-color-change'",app_source)
         self.assertIn('applyAnnotationColor',script)
         self.assertIn('updateExcludedChips',script)
         self.assertIn('Excluded from annotation data',script)
