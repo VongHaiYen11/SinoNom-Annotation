@@ -54,6 +54,8 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('boxes: Object.fromEntries',script)
         self.assertIn("kind:'marquee'",script)
         self.assertIn('selectedIds = new Set()',script)
+        self.assertIn('const showResizeHandles = selectedIds.size === 1',script)
+        self.assertIn("group.classList.toggle('active-region', active && showResizeHandles)",script)
         self.assertIn("event.target.closest('[data-order-chip]')",script)
         self.assertIn('textSequence: [...localTextSequence]',script)
         self.assertIn('textSequenceFromDOM',script)
@@ -66,8 +68,9 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn("easing:'cubic-bezier(.22, 1, .36, 1)'",script)
         self.assertIn('chipReflowAnimations.get(chip)?.cancel()',script)
         self.assertIn("White:'#f4f4f5', Cyan:'#22d3ee', Amber:'#f59e0b'",script)
-        self.assertIn("#bbox-color-palette input:checked",script)
+        self.assertIn("#bbox-color-palette input",script)
         self.assertIn('applyAnnotationColor',script)
+        self.assertIn('updateExcludedChips',script)
         self.assertIn("event.target.closest('#bbox-x1 input, #bbox-y1 input, #bbox-x2 input, #bbox-y2 input')",script)
         self.assertIn('localBoxes[activeBoxId].bbox=[x1,y1,x2,y2]',script)
         self.assertIn('syncingCoordinateControls = true',script)
@@ -80,6 +83,7 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('.order-chips {',editor_css)
         self.assertIn('flex-wrap: wrap',editor_css)
         self.assertIn('.order-chip-ghost {',editor_css)
+        self.assertIn('.order-chip.excluded {',editor_css)
         self.assertIn('overflow-x: auto',editor_css)
         self.assertIn('overflow-y: auto',editor_css)
         self.assertIn('const availableWidth = Math.max(1, viewport.clientWidth',script)
@@ -89,6 +93,9 @@ class GradioCallbacks(unittest.TestCase):
         workbench_css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
         self.assertNotIn('#bbox-color-palette label::after',workbench_css)
         self.assertNotIn('--box-swatch',workbench_css)
+        editor_source=(Path(__file__).resolve().parents[1]/'ui/editor.py').read_text()
+        self.assertNotIn('data-zoom="fit"',editor_source)
+        self.assertNotIn('Fit image to view',editor_source)
 
     def test_apply_and_next_snapshot_visible_text_cards(self):
         source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
@@ -100,7 +107,8 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('snapshot_board_state_js(5)',source)
         self.assertIn('snapshot_board_state_js(1)',source)
         self.assertIn('delete_selected,[session,selection_bridge,x1,y1,x2,y2]',source)
-        self.assertIn("label='Outline color',interactive=True",source)
+        self.assertIn("value='White',show_label=False,interactive=True",source)
+        self.assertNotIn("label='Outline color'",source)
 
     def test_compact_header_has_all_steps_and_no_draft_status(self):
         state=new_state();state.update(image='12305.jpg',current_step=2)
@@ -363,6 +371,15 @@ class GradioCallbacks(unittest.TestCase):
             ctx=result[0];self.assertEqual(ctx['active']['current_step'],3)
             self.assertFalse(result[27]['visible'])
             self.assertIn('fixture model unavailable',result[2]['value'])
+            advance=next(f for f in functions if f.__name__=='next_with_progress')
+            # Mounted coordinate controls submit placeholder values even when
+            # no box exists. Next must report the actual count validation,
+            # rather than treating those placeholders as a manual edit.
+            with patch('annotation.workflow.detect',side_effect=RuntimeError('fixture model unavailable')):
+                no_boxes=list(advance(
+                    ctx,None,None,None,'','{}','intact',0,0,1,1,None))[-1]
+            self.assertNotIn('Select a box and enter all four coordinates',
+                             no_boxes[2]['value'])
             ctx=board_action(ctx,'add',{'bbox':[0,0,10,10]})[0]
             first_uid=next(iter(ctx['active']['regions']))
             ctx=board_action(ctx,'add',{
@@ -400,7 +417,6 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(ctx['active']['regions'][first_uid]['bbox'],[2,2,12,12])
             # A first-time manual coordinate edit is a direct Next input; it
             # must not require Update coordinates or a Back/Next round trip.
-            advance=next(f for f in functions if f.__name__=='next_with_progress')
             result=list(advance(
                 ctx,None,None,None,'',local_selection,'intact',3,3,13,13,None))[-1]
             ctx=result[0]
@@ -520,6 +536,15 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(restored['active']['current_step'],2)
             self.assertTrue(restored['active']['detection_loaded'])
             self.assertEqual(restored['active']['annotations'],{'1':'永','2':'樂','3':'寺'})
+            reopened=action('save_content')(restored)[0]
+            reopened=action('next')(reopened)[0]
+            self.assertEqual(reopened['active']['current_step'],3)
+            first_loaded=next(iter(reopened['active']['regions'].values()))['bbox']
+            reopened_result=list(advance(
+                reopened,None,None,None,'','{}','intact',*first_loaded,None))[-1]
+            self.assertEqual(reopened_result[0]['active']['current_step'],4)
+            self.assertNotIn('Select a box and enter all four coordinates',
+                             reopened_result[2]['value'])
             reset_image=next(f for f in functions if f.__name__=='reset_image')
             unchanged=reset_image(restored,False)[0]
             self.assertTrue((root/'out/12305.json').exists())
@@ -562,13 +587,14 @@ class GradioCallbacks(unittest.TestCase):
             self.assertIn('Difference (boxes − characters)',result[25])
             self.assertTrue(result[31]['visible'])
             self.assertTrue(result[34]['interactive'])
-            result=confirm(ctx,'wrong_source_content','source does not match the image')
+            rejected=confirm(ctx,'other','   ')
+            self.assertIn('require a note',rejected[2]['value'])
+            result=confirm(ctx,'other','source does not match the image')
             ctx=result[0]
             self.assertTrue(result[35]['visible'])
             self.assertIn('Source mismatch confirmed',result[25])
             result=action('next')(ctx);ctx=result[0]
             self.assertIn('mismatch confirmed',result[8]['value']['markup'])
-            ctx=action('next')(ctx)[0];ctx=action('next')(ctx)[0];ctx=action('next')(ctx)[0]
             self.assertEqual(ctx['active']['current_step'],7)
             self.assertEqual(ctx['active']['annotations'],{})
             ctx=action('save')(ctx)[0]
@@ -579,7 +605,9 @@ class GradioCallbacks(unittest.TestCase):
                 self.assertNotIn('text_annotations.json',bundle.namelist())
                 mismatch=json.loads(bundle.read('source_mismatches.json'))[0]
             self.assertNotIn('annotations',mismatch)
-            self.assertEqual(mismatch['bounding_box_count'],1)
+            self.assertEqual(set(mismatch),{
+                'image','inscription_code','issue_type','note','bounding_boxes'})
+            self.assertEqual(mismatch['bounding_boxes'],{'1':{'bbox':[0,0,10,10]}})
 
 
 if __name__=='__main__':unittest.main()

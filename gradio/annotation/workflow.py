@@ -232,13 +232,32 @@ class Workflow:
             is_mismatch = persisted == mismatch_saved
             doc = (load_source_mismatch(persisted, path.name, size) if is_mismatch
                    else load_annotation(persisted, path.name, size))
+            hydrate_doc=doc
+            if is_mismatch and doc.get('issue_type') == 'other':
+                hydrate_doc={
+                    'bounding_boxes':{
+                        key:{'bbox':list(box['bbox']),'status':'intact'}
+                        for key,box in doc['bounding_boxes'].items()},
+                    'annotations':{},
+                    'reading_order':list(map(int,doc['bounding_boxes'])),
+                }
             saved_crop = doc.get('crop')
             if doc.get('image_resize'):
                 state['resized_image_size'] = validate_resized_image_size(
                     doc['image_resize']['output_size'])
-            _load_regions(state, doc)
+            _load_regions(state, hydrate_doc)
             if is_mismatch:
-                state['source_mismatch'] = _source_mismatch_from_document(doc)
+                if doc.get('issue_type') == 'other':
+                    state['source_mismatch']={
+                        'source_text':state['annotation_text'],
+                        'source_character_count':count_annotation_characters(state['annotation_text']),
+                        'bounding_box_count':len(state['regions']),
+                        'issue_type':'other','note':doc['note']}
+                else:
+                    state['source_mismatch'] = _source_mismatch_from_document(doc)
+                    if doc.get('issue_type') == 'extra_source_characters':
+                        state['text_sequence']=list(doc['text_sequence'])
+                        state['source_mismatch']['excluded_characters']=list(doc['excluded_characters'])
             state['detection_loaded'] = True
             state['loaded_document'] = deepcopy(doc)
             state['loaded_region_uid_by_box_id'] = deepcopy(state['region_uid_by_box_id'])
@@ -284,7 +303,11 @@ class Workflow:
             raise ValueError('This action is out of date. The interface has been refreshed; please try again.')
         step = s['current_step']
         if action == 'back':
-            s['current_step'] = max(1, step - 1)
+            if (step == 7 and source_mismatch_confirmed(s)
+                    and s['source_mismatch']['issue_type'] == 'other'):
+                s['current_step'] = 3
+            else:
+                s['current_step'] = max(1, step - 1)
         elif action == 'field':
             if step != 2:
                 raise ValueError('Edit content in Step 2.')
@@ -321,19 +344,36 @@ class Workflow:
             meta = s.pop('loaded_meta', None)
             if meta and meta.get('text_hash') == fingerprint(text) and 'loaded_document' in s:
                 document = deepcopy(s['loaded_document'])
-                s['bounding_boxes'] = document['bounding_boxes']
-                s['reading_order'] = document['reading_order']
-                s['annotations'] = document.get('annotations', {})
+                if document.get('issue_type') == 'other':
+                    s['bounding_boxes']={key:{'bbox':list(box['bbox']),'status':'intact'}
+                                             for key,box in document['bounding_boxes'].items()}
+                    s['reading_order']=list(map(int,document['bounding_boxes']))
+                    s['annotations']={}
+                else:
+                    s['bounding_boxes'] = document['bounding_boxes']
+                    s['reading_order'] = document['reading_order']
+                    s['annotations'] = document.get('annotations', {})
                 s['region_uid_by_box_id'] = loaded_mapping
                 s['box_id_by_region'] = {uid: box_id for box_id, uid in loaded_mapping.items()}
                 if 'issue_type' in document:
-                    s['source_mismatch'] = _source_mismatch_from_document(document)
+                    if document['issue_type'] == 'other':
+                        s['source_mismatch']={
+                            'source_text':text,'source_character_count':count_annotation_characters(text),
+                            'bounding_box_count':len(s['regions']),
+                            'issue_type':'other','note':document['note']}
+                    else:
+                        s['source_mismatch'] = _source_mismatch_from_document(document)
+                    if document['issue_type'] == 'extra_source_characters':
+                        s['text_sequence']=list(document['text_sequence'])
+                        s['source_mismatch']['excluded_characters']=list(document['excluded_characters'])
                 s['workflow'].update(bbox_valid=True, alignment_valid=True)
                 synchronize_missing_statuses(s)
             s.pop('loaded_document', None)
             s.pop('loaded_region_uid_by_box_id', None)
             refresh_bbox_validation(s)
-            if s['workflow']['bbox_valid']:
+            if (s['workflow']['bbox_valid'] and not (
+                    s.get('source_mismatch')
+                    and s['source_mismatch'].get('issue_type') == 'other')):
                 s['source_mismatch'] = None
         elif action in ('add', 'update', 'commit_boxes', 'delete', 'detect'):
             require(s, 'content_verified')
@@ -379,9 +419,9 @@ class Workflow:
                 raise ValueError('Confirm a source mismatch in Step 3.')
             require(s, 'content_verified')
             refresh_bbox_validation(s)
-            if s['workflow']['bbox_valid']:
-                raise ValueError('Source mismatch can only be confirmed when the counts differ.')
             issue_type = payload.get('issue_type')
+            if s['workflow']['bbox_valid'] and issue_type != 'other':
+                raise ValueError('Source mismatch can only be confirmed when the counts differ.')
             note = payload.get('note', '')
             character_count = count_annotation_characters(s['annotation_text'])
             box_count = len(s['regions'])
@@ -391,6 +431,8 @@ class Workflow:
                 raise ValueError('Select a source mismatch type that matches the count difference.') from exc
             if not isinstance(note, str):
                 raise ValueError('Source mismatch note must be text.')
+            if issue_type == 'other' and not note.strip():
+                raise ValueError('Other source mismatches require a note.')
             s['source_mismatch'] = {
                 'source_text': s['annotation_text'],
                 'source_character_count': character_count,
@@ -454,9 +496,14 @@ class Workflow:
                 refresh_bbox_validation(s)
                 if not (s['workflow']['bbox_valid'] or source_mismatch_confirmed(s)):
                     raise ValueError('Match the box and character counts or confirm a source mismatch.')
-                if not s['workflow']['alignment_valid']:
+                if (source_mismatch_confirmed(s)
+                        and s['source_mismatch']['issue_type'] == 'other'):
+                    s['current_step'] = 7
+                elif not s['workflow']['alignment_valid']:
                     initialize_alignment(s)
-                s['current_step'] = 4
+                    s['current_step'] = 4
+                else:
+                    s['current_step'] = 4
             elif step == 4:
                 require(s, 'alignment_valid')
                 if not validate_reading_order(s):

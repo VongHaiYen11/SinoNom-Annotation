@@ -231,20 +231,19 @@ def create_app(options):
                                     elem_classes='sidebar-help')
                         with gr.Row(elem_classes=['button-group','sidebar-action-row','delete-action-row']):
                             delete=gr.Button('Delete selected', elem_id='delete-box', min_width=0)
-                    with gr.Accordion('Detection', open=False,
-                                      elem_classes=['section','sidebar-section','sidebar-disclosure']):
-                        rerun_confirm=gr.Checkbox(label='Replace all existing boxes')
-                        detect=gr.Button('Run detection', interactive=not skip_detection)
+                    detect_confirm=gr.Checkbox(value=False,visible=False)
+                    detect=gr.Button('Run detection', interactive=not skip_detection,
+                                     elem_id='run-detection')
                     with gr.Accordion('Source mismatch', open=False,
                                       elem_classes=['section','sidebar-section','sidebar-disclosure']) as mismatch_group:
                         gr.Markdown('Use only when the source text is wrong and matching the counts would create a false annotation.',
                                     elem_classes='sidebar-help')
                         mismatch_type=gr.Radio([
-                            ('Missing characters in source','missing_source_characters'),
-                            ('Wrong source content','wrong_source_content'),
+                            ('Thiếu chữ','missing_source_characters'),
+                            ('Dư chữ','extra_source_characters'),
                             ('Other','other'),
                         ],label='Issue type')
-                        mismatch_note=gr.Textbox(label='Note (optional)',lines=3)
+                        mismatch_note=gr.Textbox(label='Note (required for Other)',lines=3)
                         with gr.Row(elem_classes=['button-group','sidebar-action-row','mismatch-action-row']):
                             confirm_mismatch=gr.Button(
                                 'Confirm source mismatch', min_width=0,
@@ -253,14 +252,13 @@ def create_app(options):
                                 'Clear mismatch', visible=False, min_width=0,
                                 elem_id='clear-source-mismatch')
                 with gr.Group(visible=False,
-                              elem_classes=['section','sidebar-section']) as box_color_group:
+                              elem_classes=['section','sidebar-section','box-color-control']) as box_color_group:
                     gr.Markdown('### Box color')
-                    gr.Markdown('Display only; annotation statuses are unchanged.',
-                                elem_classes='sidebar-help')
-                    box_color=gr.Radio(
+                    box_color=gr.Dropdown(
                         ['White','Cyan','Amber','Violet','Pink'],
-                        value='White',label='Outline color',interactive=True,
-                       elem_id='bbox-color-palette')
+                        value='White',show_label=False,interactive=True,
+                        filterable=False,container=False,
+                        elem_id='bbox-color-palette')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','selection-section']) as status_group:
                     gr.Markdown('### Selected region')
@@ -354,7 +352,7 @@ def create_app(options):
                     status_rows(s),gr.update(visible=step==3 and has),
                     gr.update(value=issue.get('issue_type')),
                     gr.update(value=issue.get('note','')),
-                    gr.update(interactive=counts_differ),gr.update(visible=mismatch),
+                    gr.update(interactive=has and step==3),gr.update(visible=mismatch),
                     gr.update(visible=has and step in (3,4)),
                     workflow_progress(s),LOADING_HIDDEN,
                     gr.update(visible=step==1),gr.update(visible=has and step>1),
@@ -638,12 +636,20 @@ def create_app(options):
                     uid:list(region['bbox'])
                     for uid,region in ctx['active']['regions'].items()
                 }
-            active=active or ctx['active'].get('selected_region_uid')
+            active=(active or ctx['active'].get('selected_region_uid')
+                    or next(iter(ctx['active']['regions']),None))
             if any(coordinate is not None for coordinate in coordinates):
-                if not active or any(coordinate is None for coordinate in coordinates):
+                # Gradio keeps the coordinate inputs mounted and may submit
+                # their placeholder values even when there is no selected (or
+                # even no existing) box.  That is not a manual coordinate edit
+                # and must not block Next.
+                if not active and not ctx['active']['regions']:
+                    pass
+                elif not active or any(coordinate is None for coordinate in coordinates):
                     raise ValueError('Select a box and enter all four coordinates.')
-                boxes[active]=list(coordinates)
-                if active not in selected:selected=[*selected,active]
+                else:
+                    boxes[active]=list(coordinates)
+                    if active not in selected:selected=[*selected,active]
             if boxes:
                 updated=engine.apply(ctx['active'],'commit_boxes',{
                     'boxes':boxes,'active':active,'selected':selected,
@@ -697,7 +703,16 @@ def create_app(options):
         clear_loading_when_done(delete.click(
             delete_selected,[session,selection_bridge,x1,y1,x2,y2],
             **dict(event_args,js=snapshot_board_state_js(1))))
-        clear_loading_when_done(detect.click(lambda c,ok:run(c,'detect') if ok or not c['active']['detection_loaded'] else render(c,'Confirm replacement of existing boxes.'),[session,rerun_confirm],**event_args))
+        def run_detection(ctx,confirmed):
+            if ctx['active']['regions'] and not confirmed:
+                return render(ctx)
+            return run(ctx,'detect')
+        clear_loading_when_done(detect.click(
+            run_detection,[session,detect_confirm],
+            **dict(event_args,js="""(ctx, confirmed) => {
+                const hasBoxes=Object.keys(ctx?.active?.regions || {}).length > 0;
+                return [ctx, !hasBoxes || window.confirm('Run detection again and replace all existing boxes?')];
+            }""")))
         def confirm_source_mismatch(ctx,issue_type,note):
             return run(ctx,'confirm_source_mismatch',dict(issue_type=issue_type,note=note))
         def clear_source_mismatch(ctx):

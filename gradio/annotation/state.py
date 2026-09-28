@@ -9,6 +9,7 @@ def new_state():
                 verified_content=None, draft_content=None, annotation_text='',
                 regions={}, selected_region_uid=None, selected_region_uids=[],
                 bounding_boxes={}, annotations={}, reading_order=[],
+                text_sequence=[],
                 box_id_by_region={}, region_uid_by_box_id={}, selected_box_id=None,
                 revision=0, current_step=1,
                 detection_loaded=False, crop=None, resized_image_size=None,
@@ -43,7 +44,7 @@ def source_mismatch_confirmed(state):
     character_count = count_annotation_characters(state['annotation_text'])
     return bool(
         issue
-        and box_count != character_count
+        and (box_count != character_count or issue.get('issue_type') == 'other')
         and issue.get('source_text') == state['annotation_text']
         and issue.get('source_character_count') == character_count
         and issue.get('bounding_box_count') == box_count
@@ -106,10 +107,19 @@ def initialize_alignment(state):
     }
     if state['workflow']['bbox_valid']:
         state['annotations'] = temporary_align_text(ids, state['annotation_text'])
+        state['text_sequence'] = list(state['annotations'].values())
     elif state['source_mismatch']['issue_type'] == 'missing_source_characters':
         state['annotations'] = align_text_with_missing(ids, state['annotation_text'])
+        state['text_sequence'] = list(state['annotations'].values())
+    elif state['source_mismatch']['issue_type'] == 'extra_source_characters':
+        from .text_alignment import characters
+        sequence=characters(state['annotation_text'])
+        state['text_sequence']=sequence
+        state['annotations']=dict(zip(map(str,ids),sequence[:len(ids)]))
+        state['source_mismatch']['excluded_characters']=sequence[len(ids):]
     else:
         state['annotations'] = {}
+        state['text_sequence'] = []
     state['reading_order'] = ids
     state['selected_box_id'] = state['box_id_by_region'].get(state['selected_region_uid'])
     from .status import synchronize_missing_statuses

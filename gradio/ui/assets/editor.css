@@ -141,6 +141,8 @@
 .order-chips.is-sorting { cursor: grabbing; }
 .order-chip.missing { border-color: #d4d4d8; background: var(--color-panel, #17191c); color: var(--color-text, #f4f4f5); }
 .order-chip.missing .tile-character { font-family: Arial, Helvetica, sans-serif !important; font-size: 11px; font-weight: 700; }
+.order-chip.excluded { border-color: #52525b; background: #27272a; color: #71717a; opacity: .72; }
+.order-chip.excluded:hover { border-color: #71717a; background: #303033; }
 .order-chip.intact { border-color: #22c55e; }
 .order-chip.damaged { border-color: #ef4444; border-style: dashed; }
 .order-chip.unknown { border-color: #f59e0b; border-style: dotted; background: #302116; }

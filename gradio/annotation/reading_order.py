@@ -2,7 +2,7 @@ from collections import Counter
 
 from .state import require, source_mismatch_confirmed, spatial_box_order
 from .text_alignment import (align_text_with_missing, temporary_align_text,
-                             validate_bbox_text_count)
+                             validate_bbox_text_count, characters)
 
 
 def validate_reading_order(state):
@@ -27,6 +27,10 @@ def update_reading_order(state, order):
     elif (source_mismatch_confirmed(state)
           and state['source_mismatch']['issue_type'] == 'missing_source_characters'):
         state['annotations'] = align_text_with_missing(order, state['annotation_text'])
+    elif (source_mismatch_confirmed(state)
+          and state['source_mismatch']['issue_type'] == 'extra_source_characters'):
+        kept=state['text_sequence'][:len(order)]
+        state['annotations']=dict(zip(map(str,order),kept))
     from .status import synchronize_missing_statuses
     synchronize_missing_statuses(state)
     state['workflow']['status_valid'] = False
@@ -37,17 +41,25 @@ def update_reading_order(state, order):
 def update_text_sequence(state, sequence):
     """Assign a user-arranged text sequence to spatially ordered boxes."""
     require(state, 'alignment_valid')
+    extra=(source_mismatch_confirmed(state)
+           and state['source_mismatch']['issue_type'] == 'extra_source_characters')
+    expected=(characters(state['annotation_text']) if extra
+              else list(state['annotations'].values()))
     if (not isinstance(sequence, list)
             or any(not isinstance(value, str) or not value for value in sequence)
-            or Counter(sequence) != Counter(state['annotations'].values())):
+            or Counter(sequence) != Counter(expected)):
         raise ValueError('Text sequence has missing, duplicate, or invalid items.')
     order = spatial_box_order(state)
-    if len(order) != len(sequence):
+    if (not extra and len(order) != len(sequence)):
         raise ValueError('Text sequence and bounding-box counts do not match.')
+    kept=sequence[:len(order)]
     state['reading_order'] = order
     state['annotations'] = {
-        str(box_id): value for box_id, value in zip(order, sequence)
+        str(box_id): value for box_id, value in zip(order, kept)
     }
+    state['text_sequence']=list(sequence)
+    if extra:
+        state['source_mismatch']['excluded_characters']=list(sequence[len(order):])
     from .status import synchronize_missing_statuses
     synchronize_missing_statuses(state)
     state['workflow']['status_valid'] = False

@@ -30,7 +30,7 @@ const applyAnnotationColor = () => {
   });
 };
 const readAnnotationColor = () => {
-  const selected=root.querySelector('#bbox-color-palette input:checked');
+  const selected=root.querySelector('#bbox-color-palette input');
   if(selected && annotationColors[selected.value]) annotationColor=annotationColors[selected.value];
 };
 const setInputValue = (selector, value) => {
@@ -97,12 +97,15 @@ const renderLocalStatus = (id, status) => {
   if (label) label.setAttribute('fill', color);
 };
 const renderSelection = (sync=true) => {
+  const showResizeHandles = selectedIds.size === 1;
   element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
     const id = group.dataset.boxId;
     const selected = selectedIds.has(id);
     const active = id === activeBoxId;
     group.classList.toggle('selected-region', selected);
-    group.classList.toggle('active-region', active);
+    // Keep an active item for sidebar values and group dragging, but expose
+    // resize handles only when exactly one box is selected.
+    group.classList.toggle('active-region', active && showResizeHandles);
     const rect = group.querySelector('rect:not([data-image-resize-handle])');
     if (rect) {
       rect.setAttribute('fill-opacity', selected ? '.16' : '.04');
@@ -280,6 +283,11 @@ const tokenOrderFromDOM = container => [...container.querySelectorAll('[data-ord
   .map(chip => chip.dataset.tokenId);
 const textSequenceFromDOM = container => [...container.querySelectorAll('[data-order-chip]')]
   .map(chip => chip.dataset.character);
+const updateExcludedChips = container => {
+  const chips=[...container.querySelectorAll('[data-order-chip]')];
+  const count=Number(container.dataset.excludedCount || 0);
+  chips.forEach((chip,index)=>chip.classList.toggle('excluded',count>0 && index>=chips.length-count));
+};
 const orderRows = chips => {
   const rows=[];
   chips.forEach(chip => {
@@ -371,11 +379,13 @@ const finishOrderDrag = (commit=true) => {
     if(!commit){
       const first=captureChipRects(state.container);
       arrangeOrder(state.container,state.originalOrder);
+      updateExcludedChips(state.container);
       animateChipReflow(state.container,first);
     }
     state.ghost?.remove();state.chip.classList.remove('dragging');
     state.container.classList.remove('is-sorting');
     if(commit){
+      updateExcludedChips(state.container);
       localTextSequence=textSequenceFromDOM(state.container);
       syncExternalControls();
     }
@@ -451,6 +461,7 @@ element.addEventListener('pointermove', event => {
     if(reference!==orderDrag.chip.nextElementSibling){
       const first=captureChipRects(container);
       if(reference)container.insertBefore(orderDrag.chip,reference);else container.appendChild(orderDrag.chip);
+      updateExcludedChips(container);
       animateChipReflow(container,first);
     }
     event.preventDefault();return;

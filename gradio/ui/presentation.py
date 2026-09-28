@@ -58,13 +58,15 @@ def panel_heading(state):
 def panel_summary(state):
     if state['current_step'] not in (3, 7):
         return ''
-    boxes = state['regions'] if state['current_step'] == 3 else state['bounding_boxes']
+    boxes = (state['regions'] if state['current_step'] == 3 or (
+        state['current_step'] == 7 and source_mismatch_confirmed(state)
+        and state['source_mismatch']['issue_type'] == 'other') else state['bounding_boxes'])
     count = count_annotation_characters(state['annotation_text'])
     matched = state['workflow']['content_verified'] and len(boxes) == count and count > 0
     mismatch = source_mismatch_confirmed(state)
-    label = ('Counts match' if matched else 'Content not verified'
-             if not state['workflow']['content_verified'] else 'Source mismatch confirmed'
-             if mismatch else 'Count mismatch')
+    label = ('Source mismatch confirmed' if mismatch else 'Counts match' if matched
+             else 'Content not verified' if not state['workflow']['content_verified']
+             else 'Count mismatch')
     delta = len(boxes) - count
     return f'''<section class="section sidebar-section panel-summary"><h3>Validation</h3>
       <div class="validation-badge">{CHECK if matched or mismatch else ALERT}<span>{label}</span></div>

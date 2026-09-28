@@ -9,6 +9,7 @@ from .text_alignment import MISSING_ANNOTATION, validate_bbox_text_count, charac
 
 SOURCE_MISMATCH_TYPES = {
     'missing_source_characters',
+    'extra_source_characters',
     'wrong_source_content',
     'other',
 }
@@ -19,6 +20,8 @@ def validate_source_mismatch_type(issue_type, character_count, box_count):
         raise ValueError('Invalid source mismatch issue type.')
     if issue_type == 'missing_source_characters' and character_count >= box_count:
         raise ValueError('Missing source characters requires more boxes than source characters.')
+    if issue_type == 'extra_source_characters' and character_count <= box_count:
+        raise ValueError('Extra source characters requires more characters than boxes.')
 
 
 def _unique(pairs):
@@ -128,12 +131,28 @@ def load_annotation(path, image, size):
 
 
 def validate_source_mismatch_document(doc, image, size, allow_legacy_missing_status=False):
+    if isinstance(doc, dict) and doc.get('issue_type') == 'other':
+        required = {'image','inscription_code','issue_type','note','bounding_boxes'}
+        if set(doc) != required or doc.get('image') != image:
+            raise ValueError('Invalid Other source mismatch document.')
+        if doc.get('inscription_code') != Path(image).stem:
+            raise ValueError('Source mismatch does not belong to this inscription.')
+        if not isinstance(doc.get('note'),str) or not doc['note'].strip():
+            raise ValueError('Other source mismatches require a note.')
+        boxes=doc.get('bounding_boxes')
+        if not isinstance(boxes,dict):
+            raise ValueError('Invalid Other bounding boxes.')
+        for key,box in boxes.items():
+            if (not key.isdecimal() or set(box) != {'bbox'}):
+                raise ValueError('Other mismatch boxes may contain only bbox coordinates.')
+            validate_coordinates(box['bbox'],size)
+        return doc
     required_keys = {
         'image', 'inscription_code', 'source_text', 'source_character_count',
         'bounding_box_count', 'issue_type', 'note', 'bounding_boxes',
         'reading_order', 'image_resize', 'crop',
     }
-    allowed_keys = required_keys | {'annotations'}
+    allowed_keys = required_keys | {'annotations','text_sequence','excluded_characters'}
     if (not isinstance(doc, dict) or not required_keys.issubset(doc)
             or not set(doc).issubset(allowed_keys)):
         raise ValueError('Invalid source mismatch document.')
@@ -162,8 +181,18 @@ def validate_source_mismatch_document(doc, image, size, allow_legacy_missing_sta
         missing_count = doc['bounding_box_count'] - doc['source_character_count']
         if list(annotations.values()).count(MISSING_ANNOTATION) != missing_count:
             raise ValueError('Missing-source annotations contain an invalid MISS count.')
+    elif doc['issue_type'] == 'extra_source_characters':
+        sequence=doc.get('text_sequence');excluded=doc.get('excluded_characters')
+        excess=doc['source_character_count']-doc['bounding_box_count']
+        if (not isinstance(annotations,dict) or not isinstance(sequence,list)
+                or not isinstance(excluded,list) or len(sequence) != doc['source_character_count']
+                or excluded != sequence[-excess:]
+                or list(annotations.values()) != sequence[:-excess]):
+            raise ValueError('Extra-source character mapping is invalid.')
+        if sorted(sequence) != sorted(characters(doc['source_text'])):
+            raise ValueError('Extra-source text sequence does not match source content.')
     elif annotations is not None:
-        raise ValueError('Only missing-source documents can contain annotations.')
+        raise ValueError('This mismatch type cannot contain annotations.')
     validate_document(doc, image, size, allow_legacy_missing_status)
     return doc
 
@@ -193,10 +222,21 @@ def final_document(state):
 
 def final_source_mismatch_document(state):
     from .state import source_mismatch_confirmed
+    issue = state['source_mismatch'] or {}
+    if issue.get('issue_type') == 'other':
+        if not source_mismatch_confirmed(state) or not issue.get('note','').strip():
+            raise ValueError('Confirm Other with a note before saving.')
+        return validate_source_mismatch_document({
+            'image':state['image'],'inscription_code':str(state['code']),
+            'issue_type':'other','note':issue['note'],
+            'bounding_boxes':{
+                str(index):{'bbox':list(state['regions'][uid]['bbox'])}
+                for index,uid in enumerate(state_order(state),1)
+            },
+        },state['image'],state['image_size'])
     required = ('content_verified', 'alignment_valid', 'status_valid', 'reading_order_valid')
     if not all(state['workflow'][key] for key in required) or not source_mismatch_confirmed(state):
         raise ValueError('Complete all verification steps and confirm the source mismatch.')
-    issue = state['source_mismatch']
     doc = {
         'image': state['image'],
         'inscription_code': str(state['code']),
@@ -208,8 +248,11 @@ def final_source_mismatch_document(state):
         'bounding_boxes': state['bounding_boxes'],
         'reading_order': state['reading_order'],
     }
-    if issue['issue_type'] == 'missing_source_characters':
+    if issue['issue_type'] in ('missing_source_characters','extra_source_characters'):
         doc['annotations'] = state['annotations']
+    if issue['issue_type'] == 'extra_source_characters':
+        doc['text_sequence']=list(state['text_sequence'])
+        doc['excluded_characters']=list(issue['excluded_characters'])
     from crop.crop import auto_scale_crop, crop_document, default_crop, image_resize
     source_crop = state.get('crop') or default_crop(state['image_size'])
     scaled_crop, resized_size = auto_scale_crop(source_crop, state['image_size'])
@@ -218,6 +261,12 @@ def final_source_mismatch_document(state):
         state['image'], scaled_crop, resized_size
     )['crop']
     return validate_source_mismatch_document(doc, state['image'], state['image_size'])
+
+
+def state_order(state):
+    """Stable spatial order for minimal coordinate-only mismatch exports."""
+    from .state import _spatial_region_order
+    return _spatial_region_order(state)
 
 
 def save_annotation(state, output_dir):

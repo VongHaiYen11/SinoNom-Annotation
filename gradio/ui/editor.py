@@ -23,6 +23,7 @@ def snapshot(s):
     if step == 7:
         canvas_x,canvas_y,crop_x2,crop_y2=s.get('crop') or [0,0,w,h]
         canvas_w,canvas_h=crop_x2-canvas_x,crop_y2-canvas_y
+    other_mismatch=(source_mismatch and s['source_mismatch']['issue_type']=='other')
     if step == 6:
         boxes = {'crop': dict(bbox=s['crop'], status='intact')}
         selected_id = 'crop'
@@ -31,6 +32,8 @@ def snapshot(s):
         boxes = s['regions']
         selected_id = s['selected_region_uid'] if s['selected_region_uid'] in boxes else next(iter(boxes), None)
         selected_ids = set(s.get('selected_region_uids', [])) or ({selected_id} if selected_id else set())
+    elif step == 7 and other_mismatch:
+        boxes=s['regions'];selected_id=None;selected_ids=set()
     else:
         boxes = s['bounding_boxes']
         selected_id = s['selected_box_id'] if s['selected_box_id'] in boxes else next(iter(boxes), None)
@@ -45,8 +48,7 @@ def snapshot(s):
         <div class="workspace-context"><span class="file-icon">{DOCUMENT}</span><strong>{filename}</strong><span class="dimensions">{dimensions}</span></div>
         <div class="toolbar-tools"><span class="zoom-label" aria-live="polite">100%</span>
         <button type="button" data-zoom="out" aria-label="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
-        <button type="button" data-zoom="in" aria-label="Zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg></button>
-        <button type="button" data-zoom="fit" aria-label="Fit image to view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3H3v3M10 3h3v3M6 13H3v-3M10 13h3v-3"/></svg></button></div></div>
+        <button type="button" data-zoom="in" aria-label="Zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg></button></div></div>
         <div class="image-viewport"><svg class="annotation-canvas" viewBox="{canvas_x} {canvas_y} {canvas_w} {canvas_h}" role="img" aria-label="{filename} · {'cropped review' if step == 7 else 'annotation canvas'}" style="aspect-ratio:{canvas_w}/{canvas_h}">
         <image href="{html.escape(s['image_url'], quote=True)}" x="0" y="0" width="{w}" height="{h}" preserveAspectRatio="none"/>
         '''
@@ -56,12 +58,12 @@ def snapshot(s):
         x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6; multi_selected=key in selected_ids
         # Detection and reading-order review are intentionally status-neutral.
         # The stored detector status is revealed only from the Status step on.
-        color=('#ff7a1a' if step==6 else '#f4f4f5' if step in (3,4)
+        color=('#ff7a1a' if step==6 else '#f4f4f5' if step in (3,4) or other_mismatch
                else '#f59e0b' if b['status']=='unknown'
                else '#ef4444' if b['status']=='damaged' else '#22c55e')
-        public_box = step not in (3, 6)
+        public_box = step not in (3, 6) and not other_mismatch
         label=html.escape(key+' '+s['annotations'].get(key,'')) if public_box else ''
-        dashed=('' if step in (3,4) else
+        dashed=('' if step in (3,4) or other_mismatch else
                 ' stroke-dasharray="5 4"' if b['status']=='damaged' else
                 ' stroke-dasharray="2 3"' if b['status']=='unknown' else '')
         identity_attr = (f'data-box-id="{key}" data-region-uid="{key}"'
@@ -80,7 +82,7 @@ def snapshot(s):
                 markup+=f'<circle data-corner="{n}" cx="{x}" cy="{y}" r="{6*unit}" fill="{color}" stroke="#17191c" stroke-width="{1.5*unit}"/>'
         markup+='</g>'
     markup+='</svg></div>'
-    if step in (5,7):
+    if step == 5 or (step == 7 and not other_mismatch):
         markup+='<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown / MISS</span></div>'
     if step in (4,7):
         source=html.escape(s['annotation_text'])
@@ -90,14 +92,17 @@ def snapshot(s):
         markup+=f'<section class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></section>'
         if step == 4:
             chips=[]
-            card_entries = (enumerate(s['reading_order'], 1)
-                            if s['annotations'] else ())
-            for position, box_id in card_entries:
-                key=str(box_id)
-                char=html.escape(s['annotations'].get(key,'—'))
-                missing=' missing' if s['annotations'].get(key) == MISSING_ANNOTATION else ''
-                attribute_char=html.escape(s['annotations'].get(key,'—'),quote=True)
-                chips.append(f'''<button type="button" class="order-chip{missing}" data-order-chip="1" data-token-id="{position}" data-character="{attribute_char}"
+            extra=(source_mismatch and s['source_mismatch']['issue_type']=='extra_source_characters')
+            values=(s['text_sequence'] if extra else
+                    [s['annotations'][str(box_id)] for box_id in s['reading_order']]
+                    if s['annotations'] else [])
+            excluded_count=(len(values)-len(s['bounding_boxes']) if extra else 0)
+            for position,value in enumerate(values,1):
+                char=html.escape(value)
+                missing=' missing' if value == MISSING_ANNOTATION else ''
+                excluded=' excluded' if excluded_count and position>len(values)-excluded_count else ''
+                attribute_char=html.escape(value,quote=True)
+                chips.append(f'''<button type="button" class="order-chip{missing}{excluded}" data-order-chip="1" data-token-id="{position}" data-character="{attribute_char}"
                     draggable="false" aria-label="Reading position {position}: {char}" title="{char}">
                     <span class="tile-character">{char}</span></button>''')
             title='Reading Order'
@@ -106,7 +111,7 @@ def snapshot(s):
             markup+=f'''<section class="order-editor"><div class="order-heading"><div><span class="eyebrow">CHARACTER ANNOTATION</span><h2>{title}</h2></div>
 </div>
                 <p class="order-help">{help_text}</p>
-                <div class="order-chips" role="list" aria-label="Sortable reading order">{''.join(chips)}</div>
+                <div class="order-chips" data-excluded-count="{excluded_count}" role="list" aria-label="Sortable reading order">{''.join(chips)}</div>
                 <p class="order-sync-note" aria-live="polite">Order changes stay local until you apply them or continue.</p></section>'''
         if step==7:
             order_separator = ARROW_RIGHT
@@ -115,7 +120,7 @@ def snapshot(s):
                 note=(f'<small>Note: {html.escape(issue["note"])}</small>'
                       if issue['note'] else '')
                 mismatch_text = (html.escape(build_text_sequence(s))
-                                 if issue['issue_type'] == 'missing_source_characters' else
+                                 if issue['issue_type'] in ('missing_source_characters','extra_source_characters') else
                                  'No character annotations will be generated for this image.')
                 review=f'''<div class="review-text source-mismatch-review"><span class="eyebrow">SOURCE MISMATCH</span>
                     <p>{mismatch_text}</p>

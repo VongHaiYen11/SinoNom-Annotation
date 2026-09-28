@@ -37,24 +37,6 @@
     "title_pattern": "^VĂN BIA SỐ\\s+(?P<number>\\d+)\\s*$",
     "metadata": [
       {
-        "label": "Tên bia",
-        "field": "ten_bia",
-        "type": "string",
-        "required": true
-      },
-      {
-        "label": "Địa điểm",
-        "field": "dia_diem",
-        "type": "string",
-        "required": true
-      },
-      {
-        "label": "Niên đại",
-        "field": "nien_dai",
-        "type": "string",
-        "required": true
-      },
-      {
         "label": "Kí hiệu VNCHN",
         "field": "ky_hieu_vnchn",
         "type": "identifiers",

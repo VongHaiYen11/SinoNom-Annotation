@@ -398,6 +398,58 @@ class Integration(unittest.TestCase):
         self.assertFalse(mismatch_path.exists())
         self.assertTrue((self.root/'out/12305.json').exists())
 
+    def test_extra_source_characters_are_reordered_then_excluded(self):
+        e=self.engine;s=e.open_image(self.image)
+        original=deepcopy(s['draft_content'])
+        s=e.apply(s,'save_content');s=e.apply(s,'next')
+        for x in (0,20):
+            s=e.apply(s,'add',{'bbox':[x,0,x+10,10]})
+        s=e.apply(s,'confirm_source_mismatch',{
+            'issue_type':'extra_source_characters','note':''})
+        s=e.apply(s,'next')
+        self.assertEqual(s['current_step'],4)
+        self.assertEqual(s['text_sequence'],['永','寺','樂'])
+        s=e.apply(s,'reorder_text',{'sequence':['永','樂','寺']})
+        self.assertEqual(s['annotations'],{'1':'永','2':'樂'})
+        self.assertEqual(s['source_mismatch']['excluded_characters'],['寺'])
+        s=e.apply(s,'next');s=e.apply(s,'next');s=e.apply(s,'next')
+        doc=final_source_mismatch_document(s)
+        self.assertEqual(doc['text_sequence'],['永','樂','寺'])
+        self.assertEqual(doc['excluded_characters'],['寺'])
+        self.assertEqual(doc['annotations'],{'1':'永','2':'樂'})
+        self.assertEqual(s['draft_content'],original)
+        s=e.apply(s,'save')
+        reopened=e.open_image(self.image)
+        reopened=e.apply(reopened,'save_content')
+        self.assertEqual(reopened['text_sequence'],['永','樂','寺'])
+        self.assertEqual(reopened['source_mismatch']['excluded_characters'],['寺'])
+
+    def test_other_requires_note_skips_to_review_and_saves_minimal_json(self):
+        e=self.engine;s=e.open_image(self.image)
+        s=e.apply(s,'save_content');s=e.apply(s,'next')
+        for x in (0,20,40):
+            s=e.apply(s,'add',{'bbox':[x,0,x+10,10]})
+        with self.assertRaisesRegex(ValueError,'require a note'):
+            e.apply(s,'confirm_source_mismatch',{'issue_type':'other','note':'  '})
+        s=e.apply(s,'confirm_source_mismatch',{
+            'issue_type':'other','note':'Unreadable source'})
+        s=e.apply(s,'next')
+        self.assertEqual(s['current_step'],7)
+        doc=final_source_mismatch_document(s)
+        self.assertEqual(set(doc),{
+            'image','inscription_code','issue_type','note','bounding_boxes'})
+        self.assertEqual(doc['bounding_boxes'],{
+            '1':{'bbox':[40,0,50,10]},'2':{'bbox':[20,0,30,10]},
+            '3':{'bbox':[0,0,10,10]}})
+        s=e.apply(s,'back');self.assertEqual(s['current_step'],3)
+        s=e.apply(s,'next');s=e.apply(s,'save')
+        reopened=e.open_image(self.image)
+        self.assertTrue(reopened['detection_loaded'])
+        self.assertEqual(reopened['source_mismatch']['issue_type'],'other')
+        self.assertEqual(len(reopened['regions']),3)
+        reopened=e.apply(reopened,'save_content')
+        self.assertEqual(reopened['source_mismatch']['issue_type'],'other')
+
     def test_multiselect_then_delete_regions(self):
         e=self.engine
         s=e.apply(e.open_image(self.image),'save_content')
