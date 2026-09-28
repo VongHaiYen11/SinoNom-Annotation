@@ -53,7 +53,8 @@
 .image-viewport {
   display: grid;
   place-items: center;
-  flex: 1 1 auto;
+  flex: 1 1 clamp(320px, 56dvh, 800px);
+  height: clamp(320px, 56dvh, 800px);
   min-height: clamp(320px, 56dvh, 800px);
   overflow: auto;
   padding: var(--space-6, 24px);
@@ -61,6 +62,7 @@
   background-image: radial-gradient(#303237 0.65px, transparent 0.65px);
   background-size: 12px 12px;
   box-sizing: border-box;
+  contain: layout size;
 }
 
 .annotation-canvas {

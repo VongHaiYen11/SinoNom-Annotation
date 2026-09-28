@@ -135,8 +135,15 @@ const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => 
   const svg = element.querySelector('.annotation-canvas');
   const viewport = element.querySelector('.image-viewport');
   if (!svg || !viewport) return;
-  const fit = Math.min((viewport.clientWidth - 40) / width,
-                       (viewport.clientHeight - 40) / height);
+  // Measure the viewport's content box. Its size is layout-contained in CSS,
+  // so zooming the SVG cannot enlarge the viewport and feed a different base
+  // size into the next zoom level.
+  const style = getComputedStyle(viewport);
+  const availableWidth = Math.max(1, viewport.clientWidth
+    - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+  const availableHeight = Math.max(1, viewport.clientHeight
+    - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom));
+  const fit = Math.min(availableWidth / width, availableHeight / height);
   svg.style.width = `${width * fit * imageTransform.zoom / 100}px`;
   svg.style.height = `${height * fit * imageTransform.zoom / 100}px`;
   svg.style.maxWidth = 'none';
