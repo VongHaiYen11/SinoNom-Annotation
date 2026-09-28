@@ -202,8 +202,6 @@
 .review-detail { display: flex; flex-direction: column; gap: var(--space-6, 24px); padding: var(--space-6, 24px); border-top: 1px solid var(--color-border, #303237); }
 .review-text { display: flex; flex-direction: column; gap: var(--space-3, 12px); padding: var(--space-4, 16px); border: 1px solid var(--color-border, #303237); border-radius: var(--radius-sm, 4px); background: var(--color-page, #0b0d0f); }
 .review-text p { margin: 0; overflow-wrap: anywhere; font-size: 24px; letter-spacing: 2px; }
-.order-sequence { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2, 8px); margin: 0; overflow-wrap: anywhere; color: var(--color-muted, #a1a1aa); }
-.order-sequence .sequence-arrow { width: 12px; height: 12px; }
 .empty-workspace {
   display: flex;
   flex: 1 1 auto;

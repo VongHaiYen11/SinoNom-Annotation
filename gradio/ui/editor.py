@@ -4,7 +4,7 @@ from pathlib import Path
 from annotation.reading_order import build_text_sequence, suspicious_box_ids
 from annotation.state import source_mismatch_confirmed, spatial_box_order
 from annotation.text_alignment import MISSING_ANNOTATION
-from .icons import ARROW_RIGHT, DOCUMENT
+from .icons import DOCUMENT
 
 SCRIPT = (Path(__file__).parent / 'assets/editor.js').read_text()
 CSS = (Path(__file__).parent / 'assets/editor.css').read_text()
@@ -125,7 +125,6 @@ def snapshot(s):
                 <div class="order-chips" data-excluded-count="{excluded_count}" role="list" aria-label="Sortable character assignment">{''.join(chips)}</div>
                 <p class="order-sync-note" aria-live="polite">Order changes stay local until you apply them or continue.</p></section>'''
         if step==7:
-            order_separator = ARROW_RIGHT
             if source_mismatch:
                 issue=s['source_mismatch']
                 note=(f'<small>Note: {html.escape(issue["note"])}</small>'
@@ -139,11 +138,7 @@ def snapshot(s):
                     {note}</div>'''
             else:
                 review='<div class="review-text"><span class="eyebrow">FINAL TEXT</span><p>'+html.escape(build_text_sequence(s))+'</p></div>'
-            mapping = order_separator.join(
-                f'{html.escape(s["annotations"][str(box_id)])} → Box {box_id}'
-                for box_id in spatial_box_order(s)
-            ) if s.get('annotations') else ''
-            markup+='<section class="review-detail">'+review+(f'<p class="order-sequence"><span>Final assignment:</span> {mapping}</p>' if mapping else '')+'</section>'
+            markup+='<section class="review-detail">'+review+'</section>'
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=canvas_w,height=canvas_h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
