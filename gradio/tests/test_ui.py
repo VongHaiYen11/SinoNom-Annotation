@@ -166,7 +166,12 @@ class GradioCallbacks(unittest.TestCase):
                     for title in reversed(titles)] + [{'tieu_de':'Mục khác','van_ban':'Giữ nguyên mục khác'}]}]}
             original=[record,{'noi_dung':[],'extra':'record khác'}]
             atomic_write(source,original)
-            options=parser().parse_args(['--image-dir',str(root),'--source-json',str(source),
+            config=root/'config.json'
+            atomic_write(config,{
+                'records': {'content': {'section_headings': titles}},
+            })
+            options=parser().parse_args(['--config',str(config),
+                                        '--image-dir',str(root),'--source-json',str(source),
                                         '--output-dir',str(root/'out'),'--skip-detection'])
             app=create_app(options)
             functions=[f.fn for f in app.fns.values() if f.fn]

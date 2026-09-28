@@ -15,7 +15,8 @@ from annotation.state import new_state, source_mismatch_confirmed
 from annotation.workflow import Workflow
 from annotation.io import (final_document, final_source_mismatch_document,
                            load_image_list, read_json)
-from annotation.text_extraction import content_fields, annotation_text
+from annotation.text_extraction import (content_fields, annotation_text,
+                                        CONTENT_TITLES, normalize_content_titles)
 from annotation.text_alignment import count_annotation_characters
 from annotation.export import (collect_annotations, collect_content_documents,
                                collect_source_mismatches, save_export_archive)
@@ -94,19 +95,34 @@ def _config_relative(config_path, value, field):
 
 def resolve_app_paths(options):
     """Fill omitted CLI paths from config while preserving CLI precedence."""
-    if all(getattr(options, name, None) for name in ('image_dir', 'source_json', 'output_dir')):
-        return options
+    paths_complete = all(
+        getattr(options, name, None) for name in ('image_dir', 'source_json', 'output_dir'))
     config_path = Path(options.config).expanduser().resolve()
+    # A fully explicit standalone invocation can still run without a config.
+    # When the config exists, it remains authoritative for the content schema
+    # even if all three path values were overridden on the command line.
+    if paths_complete and not config_path.exists():
+        options.content_titles = CONTENT_TITLES
+        return options
     try:
         config = read_json(config_path)
     except OSError as exc:
         raise ValueError(f'Cannot read app config {config_path}: {exc}') from exc
     if not isinstance(config, dict):
         raise ValueError('App config must be a JSON object.')
-    paths = config.get('paths')
-    gradio_paths = config.get('gradio')
-    if not isinstance(paths, dict) or not isinstance(gradio_paths, dict):
+    paths = config.get('paths', {})
+    gradio_paths = config.get('gradio', {})
+    if (not paths_complete and
+            (not isinstance(paths, dict) or not isinstance(gradio_paths, dict))):
         raise ValueError("Config must contain 'paths' and 'gradio' objects.")
+    records_config = config.get('records', {})
+    if not isinstance(records_config, dict):
+        raise ValueError("Config field 'records' must be an object.")
+    content_config = records_config.get('content', {})
+    if not isinstance(content_config, dict):
+        raise ValueError("Config field 'records.content' must be an object.")
+    options.content_titles = normalize_content_titles(
+        content_config.get('section_headings', CONTENT_TITLES))
     if not options.image_dir:
         options.image_dir = _config_relative(config_path, gradio_paths.get('image_dir'), 'gradio.image_dir')
     if not options.source_json:
@@ -299,8 +315,8 @@ def create_app(options):
 
         def render(ctx, msg=''):
             s=ctx['active']; step=s['current_step']; has=bool(s.get('image'))
-            fields=content_fields(s['draft_content'],s['code']) if has else []
-            choices=[(SECTION_LABELS[field['title']],json.dumps(field['path'],ensure_ascii=False)) for field in fields]
+            fields=content_fields(s['draft_content'],s['code'],engine.content_titles) if has else []
+            choices=[(SECTION_LABELS.get(field['title'],field['title']),json.dumps(field['path'],ensure_ascii=False)) for field in fields]
             chosen=choices[0][1] if choices else None
             val=fields[0]['value'] if fields else ''
             draft_preview=json.dumps(
@@ -397,7 +413,8 @@ def create_app(options):
         def save_folder():
             try:
                 annotations=collect_annotations(images,options.output_dir,allow_empty=True)
-                content=collect_content_documents(images,options.output_dir,allow_empty=True)
+                content=collect_content_documents(
+                    images,options.output_dir,allow_empty=True,titles=engine.content_titles)
                 mismatches=collect_source_mismatches(images,options.output_dir,allow_empty=True)
                 archive=save_export_archive(annotations,content,options.output_dir,mismatches)
                 return json.dumps({'name':archive.name,
@@ -537,7 +554,8 @@ def create_app(options):
             s=ctx['active']
             try:
                 selected=tuple(json.loads(path))
-                for entry in content_fields(s['draft_content'],s['code']):
+                for entry in content_fields(
+                        s['draft_content'],s['code'],engine.content_titles):
                     if entry['path']==selected:return entry['value']
             except (ValueError,TypeError):
                 pass

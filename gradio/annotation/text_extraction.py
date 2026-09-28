@@ -10,7 +10,19 @@ TITLE = 'Nguyên văn chữ Hán Nôm'
 CONTENT_TITLES = (TITLE, 'Phiên âm Hán Việt', 'Dịch nghĩa', 'Toát yếu', 'Chú thích')
 
 
-def content_fields(record, code):
+def normalize_content_titles(titles):
+    """Validate and freeze the configured Content Verification headings."""
+    if not isinstance(titles, (list, tuple)) or not titles:
+        raise ValueError('Content section_headings must be a non-empty array.')
+    normalized = tuple(titles)
+    if any(not isinstance(title, str) or not title.strip() for title in normalized):
+        raise ValueError('Every content section heading must be a non-empty string.')
+    if len(set(normalized)) != len(normalized):
+        raise ValueError('Content section headings must be unique.')
+    return normalized
+
+
+def content_fields(record, code, titles=CONTENT_TITLES):
     """Editable text sections on the selected face, with original source paths.
 
     Keep the full record in state/persistence. Missing sections are not invented.
@@ -21,7 +33,7 @@ def content_fields(record, code):
         raise ValueError('Exactly one inscription face must match the selected image.')
     face_index, face = faces[0]
     fields = []
-    for title in CONTENT_TITLES:
+    for title in normalize_content_titles(titles):
         for section_index, section in enumerate(face.get('chuyen_muc', [])):
             if section.get('tieu_de') == title and isinstance(section.get('van_ban'), str):
                 fields.append(dict(title=title, value=section['van_ban'],
@@ -29,36 +41,52 @@ def content_fields(record, code):
     return fields
 
 
-def content_document(image_name, code, record):
+def content_document(image_name, code, record, titles=CONTENT_TITLES):
     """Create the stable per-image document committed by Save content."""
+    titles = normalize_content_titles(titles)
     values = {}
-    for field in content_fields(record, code):
+    for field in content_fields(record, code, titles):
         if field['title'] in values:
             raise ValueError(f'Duplicate content section: {field["title"]}')
         values[field['title']] = field['value']
     return {
         'image': Path(image_name).name,
         'inscription_code': str(code),
-        'content': {title: values.get(title) for title in CONTENT_TITLES},
+        'content': {title: values.get(title) for title in titles},
     }
 
 
-def validate_content_document(document, image_name):
+def validate_content_document(document, image_name, titles=CONTENT_TITLES):
     if not isinstance(document, dict) or set(document) != {'image', 'inscription_code', 'content'}:
         raise ValueError('Invalid saved content document.')
     expected_image = Path(image_name).name
     if document['image'] != expected_image or document['inscription_code'] != Path(expected_image).stem:
         raise ValueError('Saved content does not belong to this image.')
     content = document['content']
-    if not isinstance(content, dict) or set(content) != set(CONTENT_TITLES):
-        raise ValueError('Saved content must contain the five configured sections.')
+    if not isinstance(content, dict):
+        raise ValueError('Saved content must be an object.')
+    if titles is not None and set(content) != set(normalize_content_titles(titles)):
+        raise ValueError('Saved content must contain exactly the configured sections.')
+    if any(not isinstance(title, str) or not title for title in content):
+        raise ValueError('Saved content headings must be non-empty strings.')
     if any(value is not None and not isinstance(value, str) for value in content.values()):
         raise ValueError('Saved content values must be text or null.')
     return document
 
 
-def save_content_document(document, output_dir):
-    validate_content_document(document, document.get('image') if isinstance(document, dict) else '')
+def _configured_content_document(document, titles):
+    """Project a structurally valid saved document onto the active config schema."""
+    validate_content_document(
+        document, document.get('image') if isinstance(document, dict) else '', None)
+    result = deepcopy(document)
+    result['content'] = {title: document['content'].get(title) for title in titles}
+    return result
+
+
+def save_content_document(document, output_dir, titles=CONTENT_TITLES):
+    titles = normalize_content_titles(titles)
+    validate_content_document(
+        document, document.get('image') if isinstance(document, dict) else '', titles)
     # This registry is the durable Save-all list. Save content never downloads a file.
     path = Path(output_dir) / '.state' / 'content.json'
     with CONTENT_LOCK:
@@ -68,7 +96,9 @@ def save_content_document(document, output_dir):
         by_image = {}
         order = []
         for existing in documents:
-            validate_content_document(existing, existing.get('image') if isinstance(existing, dict) else '')
+            # Project legacy registries as they are rewritten, so a config that
+            # removes headings also removes those keys from subsequent exports.
+            existing = _configured_content_document(existing, titles)
             image = existing['image']
             if image in by_image:
                 raise ValueError('The saved-content registry contains duplicate images.')
@@ -81,10 +111,10 @@ def save_content_document(document, output_dir):
     return path
 
 
-def edit_content_field(record, code, path, value):
+def edit_content_field(record, code, path, value, titles=CONTENT_TITLES):
     if not isinstance(path, (tuple, list)) or not any(
-            tuple(path) == field['path'] for field in content_fields(record, code)):
-        raise ValueError('Only the five content sections of the selected inscription may be edited.')
+            tuple(path) == field['path'] for field in content_fields(record, code, titles)):
+        raise ValueError('Only configured content sections of the selected inscription may be edited.')
     if not isinstance(value, str):
         raise ValueError('Section content must be a text string.')
     return edit_field(record, path, value)

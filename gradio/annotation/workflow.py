@@ -13,7 +13,8 @@ from .state import (new_state, set_verified_content, refresh_bbox_validation,
                     initialize_alignment, require, invalidate,
                     source_mismatch_confirmed)
 from .text_extraction import (annotation_text, edit_content_field,
-                              save_source_content, content_document, save_content_document)
+                              save_source_content, content_document, save_content_document,
+                              CONTENT_TITLES, normalize_content_titles)
 from .text_alignment import count_annotation_characters
 from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
 from .status import (update_status, replace_statuses, confirm_status,
@@ -61,6 +62,8 @@ def _load_regions(state, document):
 class Workflow:
     def __init__(self, options):
         self.options = options
+        self.content_titles = normalize_content_titles(
+            getattr(options, 'content_titles', CONTENT_TITLES))
         self.output = Path(options.output_dir)
         self._preview_cache = tempfile.TemporaryDirectory(prefix='vietnamica-preview-')
         self.preview_dir = Path(self._preview_cache.name)
@@ -182,7 +185,9 @@ class Workflow:
         elif action == 'field':
             if step != 2:
                 raise ValueError('Edit content in Step 2.')
-            s['draft_content'] = edit_content_field(s['draft_content'], s['code'], payload['path'], payload['value'])
+            s['draft_content'] = edit_content_field(
+                s['draft_content'], s['code'], payload['path'], payload['value'],
+                self.content_titles)
             s['workflow']['content_verified'] = False
             s['saved'] = False
         elif action in ('undo', 'original'):
@@ -192,13 +197,14 @@ class Workflow:
             text = annotation_text(s['draft_content'], s['code'])
             if not count_annotation_characters(text):
                 raise ValueError('Annotation text contains no characters after normalization.')
-            content_doc = content_document(s['image'], s['code'], s['draft_content'])
+            content_doc = content_document(
+                s['image'], s['code'], s['draft_content'], self.content_titles)
             save_source_content(self.options.source_json, s['image'], s['source_baseline'], s['draft_content'])
             # The persisted source changed; refresh lazily on the next image open.
             self._source_records = None
             self._source_mtime_ns = None
             self._source_locations = None
-            save_content_document(content_doc, self.output)
+            save_content_document(content_doc, self.output, self.content_titles)
             loaded_mapping = deepcopy(s.get('loaded_region_uid_by_box_id', {}))
             text_changed = text != s['annotation_text']
             set_verified_content(s, s['draft_content'], text)
