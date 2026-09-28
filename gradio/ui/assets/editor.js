@@ -4,7 +4,7 @@ let syncingStatusControl = false;
 let syncingCoordinateControls = false;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId = null;
-let localTextSequence = [], localTokenOrder = [];
+let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
 let annotationColor = '#f4f4f5';
 const annotationColors = {
   White:'#f4f4f5', Cyan:'#22d3ee', Amber:'#f59e0b',
@@ -31,8 +31,15 @@ const applyAnnotationColor = () => {
   });
 };
 const readAnnotationColor = () => {
-  const selected=root.querySelector('#bbox-color-palette input');
+  const selected=root.querySelector('#bbox-color-palette input, #bbox-color-palette select');
   if(selected && annotationColors[selected.value]) annotationColor=annotationColors[selected.value];
+};
+const handleAnnotationColor = target => {
+  const color=target.closest('#bbox-color-palette input, #bbox-color-palette select');
+  if(!color)return false;
+  if(annotationColors[color.value])annotationColor=annotationColors[color.value];
+  applyAnnotationColor();
+  return true;
 };
 const setInputValue = (selector, value) => {
   const input = root.querySelector(`${selector} input, ${selector} textarea`);
@@ -57,15 +64,16 @@ const syncExternalControls = () => {
     textSequence: [...localTextSequence],
     tokenOrder: [...(element.querySelectorAll('.order-chips [data-order-chip]') || [])]
       .map(chip=>chip.dataset.tokenId),
+    suspiciousTokenIds: [...localSuspiciousTokenIds],
   }));
   const active = activeBoxId && localBoxes[activeBoxId];
   if (props.value.step === 4) {
     const suspicious = root.querySelector('#suspicious-toggle input[type="checkbox"]');
     if (suspicious) {
-      suspicious.disabled = !active;
-      const chip=element.querySelector(`[data-order-chip][data-assigned-box-id="${activeBoxId}"]`);
-      activeTokenId=chip?.dataset.tokenId || null;
-      suspicious.checked = Boolean(active && chip?.classList.contains('suspicious'));
+      const chip=activeTokenId && element.querySelector(
+        `[data-order-chip][data-token-id="${activeTokenId}"]`);
+      suspicious.disabled = !chip || chip.classList.contains('excluded');
+      suspicious.checked = Boolean(chip && localSuspiciousTokenIds.has(activeTokenId));
     }
   }
   if (!active) return;
@@ -126,7 +134,7 @@ const renderSelection = (sync=true) => {
     }
   });
   element.querySelectorAll('[data-order-chip]').forEach(chip => {
-    chip.classList.toggle('selected-chip', chip.dataset.assignedBoxId === String(activeBoxId));
+    chip.classList.toggle('selected-chip', chip.dataset.tokenId === String(activeTokenId));
   });
   if (sync) syncExternalControls();
 };
@@ -138,6 +146,8 @@ const hydrateLocalState = () => {
   if (!preserveOrder) {
     localTextSequence = [...(props.value.orderedAnnotations || [])].map(String);
     localTokenOrder = [];
+    localSuspiciousTokenIds = new Set(
+      (props.value.suspiciousTokenIds || []).map(String));
   }
   imageTransform.width = props.value.width;
   imageTransform.height = props.value.height;
@@ -147,7 +157,7 @@ const hydrateLocalState = () => {
   } else {
     selectedIds = new Set((props.value.selectedIds || []).map(String).filter(id => localBoxes[id]));
     activeBoxId = localBoxes[props.value.selected] ? String(props.value.selected) : selectedIds.values().next().value || null;
-    activeTokenId = props.value.selectedTokenId == null ? null : String(props.value.selectedTokenId);
+    activeTokenId = null;
     localContext = context;
   }
   element.querySelectorAll('.order-chips').forEach(container => {
@@ -213,16 +223,15 @@ const sidebar = root.querySelector('#control-panel');
 if (sidebar) resizeObserver.observe(sidebar);
 
 root.addEventListener('change', event => {
-  const color=event.target.closest('#bbox-color-palette input');
-  if(color){
-    if(annotationColors[color.value]) annotationColor=annotationColors[color.value];
-    applyAnnotationColor();
-    return;
-  }
+  if(handleAnnotationColor(event.target))return;
   const suspicious = event.target.closest('#suspicious-toggle input[type="checkbox"]');
-  if (suspicious && props.value.step === 4 && activeBoxId) {
-    const chip=element.querySelector(`[data-order-chip][data-assigned-box-id="${activeBoxId}"]`);
-    if(chip)send('suspicious', {token_id: chip.dataset.tokenId, value: suspicious.checked});
+  if (suspicious && props.value.step === 4 && activeTokenId) {
+    if(suspicious.checked)localSuspiciousTokenIds.add(activeTokenId);
+    else localSuspiciousTokenIds.delete(activeTokenId);
+    element.querySelectorAll('[data-order-chip]').forEach(chip=>
+      chip.classList.toggle('suspicious',localSuspiciousTokenIds.has(chip.dataset.tokenId)));
+    renderSuspiciousPreview();
+    renderSelection();
     return;
   }
   const input = event.target.closest('#status-radio input');
@@ -235,6 +244,7 @@ root.addEventListener('change', event => {
 });
 
 root.addEventListener('input', event => {
+  if(handleAnnotationColor(event.target))return;
   if (syncingCoordinateControls || props.value.step !== 3 || !activeBoxId
       || !event.target.closest('#bbox-x1 input, #bbox-y1 input, #bbox-x2 input, #bbox-y2 input')) return;
   const rawValues=['#bbox-x1','#bbox-y1','#bbox-x2','#bbox-y2'].map(selector =>
@@ -295,10 +305,6 @@ const drawImageResizePreview = (state, size) => {
 const setSelection = (ids, active=null, sync=true) => {
   selectedIds = new Set(ids.filter(id => localBoxes[id]));
   activeBoxId = active && localBoxes[active] ? active : selectedIds.values().next().value || null;
-  if(props.value.step===4){
-    const chip=element.querySelector(`[data-order-chip][data-assigned-box-id="${activeBoxId}"]`);
-    activeTokenId=chip?.dataset.tokenId || null;
-  }
   renderSelection(sync);
 };
 const createOverlayRect = (svg, className) => {
@@ -338,7 +344,7 @@ const updateExcludedChips = container => {
     chip.title=excluded?'Excluded from annotation data':chip.dataset.character;
     const boxId=excluded?'':String((props.value.spatialBoxOrder || [])[index] || '');
     if(boxId)chip.dataset.assignedBoxId=boxId;else delete chip.dataset.assignedBoxId;
-    chip.classList.toggle('suspicious',(props.value.suspiciousTokenIds || []).map(String).includes(chip.dataset.tokenId));
+    chip.classList.toggle('suspicious',localSuspiciousTokenIds.has(chip.dataset.tokenId));
   });
   renderSuspiciousPreview();
 };
@@ -452,20 +458,14 @@ const finishOrderDrag = (commit=true) => {
     state.ghost?.remove();state.chip.classList.remove('dragging');
     state.container.classList.remove('is-sorting');
     if(commit){
-      const selectedToken=activeTokenId;
       updateExcludedChips(state.container);
       localTextSequence=textSequenceFromDOM(state.container);
       localTokenOrder=tokenOrderFromDOM(state.container);
-      const selectedChip=selectedToken && [...state.container.querySelectorAll('[data-order-chip]')]
-        .find(chip=>chip.dataset.tokenId===selectedToken);
-      const selectedBox=selectedChip?.dataset.assignedBoxId;
-      if(selectedBox)setSelection([selectedBox],selectedBox);
-      else setSelection([],null);
+      renderSelection();
     }
-  } else if(commit && state.chip.dataset.assignedBoxId) {
-    const id=state.chip.dataset.assignedBoxId;
-    setSelection([id],id);
-    send('select',{id});
+  } else if(commit) {
+    activeTokenId=state.chip.dataset.tokenId;
+    renderSelection();
   }
   orderDrag=null;
 };
@@ -494,7 +494,6 @@ element.addEventListener('pointerdown', event => {
       if (!selectedIds.has(id)) setSelection([id],id);
       else {activeBoxId=id; renderSelection();}
       if (mode !== 3) {
-        if(mode === 4) send('select',{id});
         event.preventDefault(); return;
       }
       const p=point(event,svg);

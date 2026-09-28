@@ -48,7 +48,7 @@ class GradioCallbacks(unittest.TestCase):
 
     def test_canvas_script_keeps_selection_and_geometry_local_until_next(self):
         script=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
-        self.assertIn("send('select'",script)
+        self.assertNotIn("send('select'",script)
         self.assertNotIn("send('commit_boxes'",script)
         self.assertIn("send('status'",script)
         self.assertIn('boxes: Object.fromEntries',script)
@@ -60,7 +60,8 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('textSequence: [...localTextSequence]',script)
         self.assertIn('textSequenceFromDOM',script)
         self.assertIn('chip.dataset.assignedBoxId',script)
-        self.assertIn("send('suspicious'",script)
+        self.assertNotIn("send('suspicious'",script)
+        self.assertIn('suspiciousTokenIds: [...localSuspiciousTokenIds]',script)
         self.assertIn('animateChipReflow',script)
         self.assertIn('captureChipRects',script)
         self.assertIn('getBoundingClientRect()',script)
@@ -69,7 +70,7 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn("easing:'cubic-bezier(.22, 1, .36, 1)'",script)
         self.assertIn('chipReflowAnimations.get(chip)?.cancel()',script)
         self.assertIn("White:'#f4f4f5', Cyan:'#22d3ee', Amber:'#f59e0b'",script)
-        self.assertIn("#bbox-color-palette input",script)
+        self.assertIn("#bbox-color-palette input, #bbox-color-palette select",script)
         self.assertIn('applyAnnotationColor',script)
         self.assertIn('updateExcludedChips',script)
         self.assertIn('Excluded from annotation data',script)

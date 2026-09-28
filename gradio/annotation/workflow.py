@@ -538,6 +538,14 @@ class Workflow:
                 update_text_sequence(s, payload['sequence'])
             else:
                 update_text_tokens(s,payload['sequence'],payload['token_order'])
+            suspicious_ids = payload.get('suspicious_token_ids')
+            if suspicious_ids is not None:
+                suspicious_ids = list(map(str, suspicious_ids))
+                known_tokens = set(map(str, s.get('text_token_ids', [])))
+                if (len(suspicious_ids) != len(set(suspicious_ids))
+                        or not set(suspicious_ids).issubset(known_tokens)):
+                    raise ValueError('Suspicious token selection is invalid.')
+                s['suspicious_token_ids'] = sorted(suspicious_ids, key=int)
         elif action == 'next':
             if step == 1:
                 s['current_step'] = 2

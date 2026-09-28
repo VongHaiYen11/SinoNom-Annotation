@@ -63,6 +63,10 @@ def snapshot_board_state_js(selection_index):
         if (cards) {{
             snapshot.textSequence = [...cards.querySelectorAll('[data-order-chip]')]
                 .map(card => card.dataset.character);
+            snapshot.tokenOrder = [...cards.querySelectorAll('[data-order-chip]')]
+                .map(card => card.dataset.tokenId);
+            snapshot.suspiciousTokenIds = [...cards.querySelectorAll('[data-order-chip].suspicious')]
+                .map(card => card.dataset.tokenId);
         }}
         const groups = [...(board?.querySelectorAll('.annotation-canvas [data-box-id]') || [])];
         const boxes = {{}};
@@ -559,11 +563,12 @@ def create_app(options):
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if ctx['active']['current_step'] == 4:
                 try:
-                    text_sequence,token_order = frontend_text_sequence(selection)
+                    text_sequence,token_order,suspicious_token_ids = frontend_text_sequence(selection)
                     if text_sequence:
                         updated = engine.apply(ctx['active'], 'reorder_text', {
                             'sequence': text_sequence,
                             'token_order': token_order,
+                            'suspicious_token_ids': suspicious_token_ids,
                         })
                         ctx = dict(ctx, active=updated)
                 except Exception as exc:
@@ -707,6 +712,7 @@ def create_app(options):
                 parsed=json.loads(value or '{}')
                 sequence=parsed.get('textSequence')
                 token_order=parsed.get('tokenOrder')
+                suspicious_token_ids=parsed.get('suspiciousTokenIds')
                 if sequence is not None and (
                         not isinstance(sequence,list)
                         or any(not isinstance(item,str) or not item for item in sequence)):
@@ -715,7 +721,12 @@ def create_app(options):
                         not isinstance(token_order,list)
                         or any(not isinstance(item,str) or not item for item in token_order)):
                     raise ValueError
-                return sequence,token_order
+                if suspicious_token_ids is not None and (
+                        not isinstance(suspicious_token_ids,list)
+                        or any(not isinstance(item,str) or not item
+                               for item in suspicious_token_ids)):
+                    raise ValueError
+                return sequence,token_order,suspicious_token_ids
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local text sequence is invalid.')
         def update_coordinates(ctx,selection,a,b,d,e):
@@ -759,12 +770,14 @@ def create_app(options):
             except ValueError as exc:return render(c,'Invalid JSON: '+str(exc))
         clear_loading_when_done(apply_crop.click(lambda c,v:parse_action(c,'crop','bbox',v),[session,crop_coords],**event_args))
         def apply_reading_order(ctx,selection):
-            sequence,token_order=frontend_text_sequence(selection)
+            sequence,token_order,suspicious_token_ids=frontend_text_sequence(selection)
             if sequence is None:
                 raise gr.Error('No reading-order change is available.')
             if not sequence and not ctx['active']['annotations']:
                 return render(ctx)
-            return run(ctx,'reorder_text',{'sequence':sequence,'token_order':token_order})
+            return run(ctx,'reorder_text',{
+                'sequence':sequence,'token_order':token_order,
+                'suspicious_token_ids':suspicious_token_ids})
         clear_loading_when_done(apply_order.click(
             apply_reading_order,[session,selection_bridge],
             **dict(event_args,js=snapshot_board_state_js(1))))

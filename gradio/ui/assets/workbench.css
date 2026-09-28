@@ -399,13 +399,14 @@ button#next-button::after { transform: rotate(180deg); }
   white-space: nowrap;
 }
 #control-panel .mismatch-action-row {
-  display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex !important;
+  justify-content: center;
   align-items: stretch;
   gap: var(--space-2) !important;
 }
 #control-panel .mismatch-action-row > * {
-  width: 100% !important;
+  flex: 0 1 calc(50% - var(--space-1));
+  width: auto !important;
   min-width: 0 !important;
 }
 #control-panel .mismatch-panel,
@@ -556,7 +557,8 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   gap: var(--space-2) !important;
 }
 #bbox-color-palette { width: 100%; min-width: 0; }
-#bbox-color-palette input { min-height: var(--input-height); cursor: pointer !important; }
+#bbox-color-palette input,
+#bbox-color-palette select { min-height: var(--input-height); cursor: pointer !important; }
 
 .gradio-container button:focus-visible,
 .gradio-container input:focus-visible,

@@ -372,9 +372,11 @@ class Integration(unittest.TestCase):
         s=e.apply(s,'next')
         geometry=deepcopy(s['bounding_boxes'])
         s=e.apply(s,'select',{'id':'2'})
-        s=e.apply(s,'suspicious',{'token_id':'2','value':True})
         self.assertFalse((self.root/'out/suspicious_details.json').exists())
-        s=e.apply(s,'reorder_text',{'sequence':['樂','永','寺']})
+        s=e.apply(s,'reorder_text',{
+            'sequence':['樂','永','寺'],
+            'suspicious_token_ids':['2'],
+        })
         self.assertEqual(s['suspicious_token_ids'],['2'])
         self.assertEqual(suspicious_box_ids(s),['3'])
         self.assertEqual(s['bounding_boxes'],geometry)
@@ -391,7 +393,11 @@ class Integration(unittest.TestCase):
         self.assertEqual(suspicious_box_ids(reopened),['3'])
         reopened=e.apply(reopened,'next');reopened=e.apply(reopened,'next')
         reopened=e.apply(reopened,'select',{'id':'3'})
-        reopened=e.apply(reopened,'suspicious',{'token_id':'3','value':False})
+        reopened=e.apply(reopened,'reorder_text',{
+            'sequence':list(reopened['text_sequence']),
+            'token_order':list(reopened['text_token_ids']),
+            'suspicious_token_ids':[],
+        })
         for _ in range(3):reopened=e.apply(reopened,'next')
         e.apply(reopened,'save')
         self.assertNotIn('issue_type',read_json(self.root/'out/12305.json'))
