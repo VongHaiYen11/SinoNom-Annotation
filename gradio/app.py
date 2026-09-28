@@ -120,10 +120,14 @@ def resolve_app_paths(options):
     metadata_config = records_config.get('metadata', [])
     if not isinstance(metadata_config, list):
         raise ValueError("Config field 'records.metadata' must be an array.")
+    show_metadata_fields = gradio_paths.get('show_metadata_fields', True)
+    if not isinstance(show_metadata_fields, bool):
+        raise ValueError("Config field 'gradio.show_metadata_fields' must be boolean.")
     options.metadata_fields = tuple(
         (item.get('label'), item.get('field'))
         for item in metadata_config
-        if isinstance(item, dict) and item.get('type') == 'string'
+        if (show_metadata_fields and isinstance(item, dict)
+            and item.get('type') == 'string')
     )
     options.annotation_title = content_config.get('start_heading')
     if (not isinstance(options.annotation_title, str) or

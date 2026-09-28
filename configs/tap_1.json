@@ -6,7 +6,8 @@
   },
   "gradio": {
     "image_dir": "../data/images",
-    "output_dir": "../data/annotations"
+    "output_dir": "../data/annotations",
+    "show_metadata_fields": false
   },
   "encoded_fonts": {
     "Calibri": "../fonts/calibri.ttf",
@@ -36,6 +37,24 @@
   "records": {
     "title_pattern": "^VĂN BIA SỐ\\s+(?P<number>\\d+)\\s*$",
     "metadata": [
+      {
+        "label": "Tên bia",
+        "field": "ten_bia",
+        "type": "string",
+        "required": false
+      },
+      {
+        "label": "Địa điểm",
+        "field": "dia_diem",
+        "type": "string",
+        "required": false
+      },
+      {
+        "label": "Niên đại",
+        "field": "nien_dai",
+        "type": "string",
+        "required": false
+      },
       {
         "label": "Kí hiệu VNCHN",
         "field": "ky_hieu_vnchn",
