@@ -158,9 +158,24 @@ def load_config(path: Path) -> ExtractConfig:
     _require_exact_keys(paths, "paths", {"output_json", "glyph_profile"})
     if "gradio" in root:
         gradio_paths = _require_object(root["gradio"], "gradio")
-        _require_exact_keys(gradio_paths, "gradio", {"image_dir", "output_dir"})
+        required_gradio = {"image_dir", "output_dir"}
+        missing_gradio = required_gradio - gradio_paths.keys()
+        unknown_gradio = gradio_paths.keys() - required_gradio - {"show_metadata_fields"}
+        if missing_gradio:
+            raise ExtractionError(
+                "Config field 'gradio' is missing: "
+                + ", ".join(sorted(missing_gradio))
+            )
+        if unknown_gradio:
+            raise ExtractionError(
+                "Config field 'gradio' has unknown keys: "
+                + ", ".join(sorted(unknown_gradio))
+            )
         _require_string(gradio_paths["image_dir"], "gradio.image_dir")
         _require_string(gradio_paths["output_dir"], "gradio.output_dir")
+        if ("show_metadata_fields" in gradio_paths
+                and not isinstance(gradio_paths["show_metadata_fields"], bool)):
+            raise ExtractionError("gradio.show_metadata_fields must be boolean")
     page_filter = _require_object(root["page_filter"], "page_filter")
     _require_exact_keys(page_filter, "page_filter", {"margins", "footnotes"})
     margins = _require_object(page_filter["margins"], "page_filter.margins")
