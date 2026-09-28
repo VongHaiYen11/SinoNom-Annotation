@@ -264,6 +264,10 @@ class Integration(unittest.TestCase):
             self.assertEqual(preview_image.size,tuple(s['image_size']))
             self.assertEqual(preview_image.format,'JPEG')
             self.assertEqual(preview_image.getpixel((0,0)),(255,255,255))
+        content_preview_path = unquote(s['content_preview_url'].split('file=',1)[1])
+        with Image.open(content_preview_path) as content_preview:
+            self.assertLessEqual(max(content_preview.size),1600)
+            self.assertEqual(content_preview.format,'JPEG')
         detected={'image':self.image.name,
                   'bounding_boxes':{str(i+1):dict(bbox=[i*10,0,i*10+9,9],status='intact') for i in range(3)},
                   'reading_order':[1,2,3]}

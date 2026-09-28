@@ -20,7 +20,24 @@ def normalize_content_titles(titles):
     return normalized
 
 
-def content_fields(record, code, titles=None):
+def normalize_metadata_fields(fields):
+    """Validate configured editable record-level string metadata."""
+    if not isinstance(fields, (list, tuple)):
+        raise ValueError('Content metadata fields must be an array.')
+    normalized = []
+    for item in fields:
+        if (not isinstance(item, (list, tuple)) or len(item) != 2
+                or any(not isinstance(value, str) or not value.strip() for value in item)):
+            raise ValueError('Each content metadata field must contain a label and field name.')
+        normalized.append(tuple(item))
+    if len({label for label, _ in normalized}) != len(normalized):
+        raise ValueError('Content metadata labels must be unique.')
+    if len({field for _, field in normalized}) != len(normalized):
+        raise ValueError('Content metadata field names must be unique.')
+    return tuple(normalized)
+
+
+def content_fields(record, code, titles=None, metadata_fields=()):
     """Editable text sections on the selected face, with original source paths.
 
     Keep the full record in state/persistence. Missing sections are not invented.
@@ -35,7 +52,11 @@ def content_fields(record, code, titles=None):
         # The application always supplies the config-controlled title sequence.
         titles = [section.get('tieu_de') for section in face.get('chuyen_muc', [])
                   if isinstance(section.get('tieu_de'), str) and section.get('tieu_de').strip()]
-    fields = []
+    fields = [
+        dict(title=label, value=record[field], path=(field,))
+        for label, field in normalize_metadata_fields(metadata_fields)
+        if isinstance(record.get(field), str)
+    ]
     for title in normalize_content_titles(titles):
         for section_index, section in enumerate(face.get('chuyen_muc', [])):
             if section.get('tieu_de') == title and isinstance(section.get('van_ban'), str):
@@ -44,18 +65,22 @@ def content_fields(record, code, titles=None):
     return fields
 
 
-def content_document(image_name, code, record, titles):
+def content_document(image_name, code, record, titles, metadata_fields=()):
     """Create the stable per-image document committed by Save content."""
     titles = normalize_content_titles(titles)
+    metadata_fields = normalize_metadata_fields(metadata_fields)
+    output_titles = tuple(label for label, _ in metadata_fields) + titles
+    if len(set(output_titles)) != len(output_titles):
+        raise ValueError('Configured metadata and section labels must be unique.')
     values = {}
-    for field in content_fields(record, code, titles):
+    for field in content_fields(record, code, titles, metadata_fields):
         if field['title'] in values:
             raise ValueError(f'Duplicate content section: {field["title"]}')
         values[field['title']] = field['value']
     return {
         'image': Path(image_name).name,
         'inscription_code': str(code),
-        'content': {title: values.get(title) for title in titles},
+        'content': {title: values.get(title) for title in output_titles},
     }
 
 
@@ -114,9 +139,10 @@ def save_content_document(document, output_dir, titles):
     return path
 
 
-def edit_content_field(record, code, path, value, titles):
+def edit_content_field(record, code, path, value, titles, metadata_fields=()):
     if not isinstance(path, (tuple, list)) or not any(
-            tuple(path) == field['path'] for field in content_fields(record, code, titles)):
+            tuple(path) == field['path']
+            for field in content_fields(record, code, titles, metadata_fields)):
         raise ValueError('Only configured content sections of the selected inscription may be edited.')
     if not isinstance(value, str):
         raise ValueError('Section content must be a text string.')

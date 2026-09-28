@@ -14,7 +14,8 @@ from .state import (new_state, set_verified_content, refresh_bbox_validation,
                     source_mismatch_confirmed)
 from .text_extraction import (annotation_text, edit_content_field,
                               save_source_content, content_document, save_content_document,
-                              normalize_content_titles)
+                              normalize_content_titles, normalize_metadata_fields,
+                              extract_source_content)
 from .text_alignment import count_annotation_characters
 from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
 from .status import (update_status, replace_statuses, confirm_status,
@@ -63,6 +64,12 @@ class Workflow:
     def __init__(self, options):
         self.options = options
         self.content_titles = normalize_content_titles(options.content_titles)
+        self.metadata_fields = normalize_metadata_fields(
+            getattr(options, 'metadata_fields', ()))
+        self.verification_titles = (
+            tuple(label for label, _ in self.metadata_fields) + self.content_titles)
+        if len(set(self.verification_titles)) != len(self.verification_titles):
+            raise ValueError('Configured metadata and section labels must be unique.')
         self.annotation_title = options.annotation_title
         self.output = Path(options.output_dir)
         self._preview_cache = tempfile.TemporaryDirectory(prefix='vietnamica-preview-')
@@ -70,6 +77,93 @@ class Workflow:
         self._source_records = None
         self._source_mtime_ns = None
         self._source_locations = None
+        # Reset All means "as the server started", not merely "reopen the
+        # latest files".  Keep an immutable in-memory baseline; individual
+        # image output files are small and this also records files that did not
+        # exist at startup.
+        self._startup_source = read_json(options.source_json)
+        self._startup_files = {}
+        content_path = self.output / '.state' / 'content.json'
+        self._startup_files[content_path] = (
+            content_path.read_bytes() if content_path.exists() else None)
+        image_root = Path(getattr(options, 'image_dir', ''))
+        for image_path in image_root.iterdir() if image_root.is_dir() else ():
+            if not image_path.is_file():
+                continue
+            stem = image_path.stem
+            for target in self._image_persistence_paths(stem):
+                self._startup_files[target] = target.read_bytes() if target.exists() else None
+
+    def _image_persistence_paths(self, stem):
+        name = stem + '.json'
+        return (
+            self.output / name,
+            self.output / 'source_mismatches' / name,
+            self.output / 'crops' / name,
+            self.output / '.state' / name,
+            self.output / '.state' / 'source_mismatches' / name,
+        )
+
+    @staticmethod
+    def _restore_bytes(path, value):
+        path = Path(path)
+        if value is None:
+            path.unlink(missing_ok=True)
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = tempfile.NamedTemporaryFile('wb', dir=path.parent, delete=False)
+        try:
+            with handle:
+                handle.write(value)
+                handle.flush()
+            Path(handle.name).replace(path)
+        finally:
+            Path(handle.name).unlink(missing_ok=True)
+
+    def reset_image(self, image_path):
+        """Transactionally restore one image to the server-start snapshot."""
+        image_path = Path(image_path).resolve()
+        located = extract_source_content(
+            image_path.name, self._startup_source, self.annotation_title)
+        current_source = read_json(self.options.source_json)
+        current_located = extract_source_content(
+            image_path.name, current_source, self.annotation_title)
+        current_source[current_located['record_index']] = deepcopy(located['record'])
+
+        content_path = self.output / '.state' / 'content.json'
+        startup_content = []
+        startup_content_bytes = self._startup_files.get(content_path)
+        if startup_content_bytes:
+            startup_content = json.loads(startup_content_bytes)
+        current_content = read_json(content_path) if content_path.exists() else []
+        image_name = image_path.name
+        restored_entry = next(
+            (deepcopy(item) for item in startup_content if item.get('image') == image_name), None)
+        current_content = [item for item in current_content if item.get('image') != image_name]
+        if restored_entry is not None:
+            current_content.append(restored_entry)
+
+        targets = {
+            Path(self.options.source_json): json.dumps(
+                current_source, ensure_ascii=False, indent=2).encode('utf-8'),
+            content_path: (json.dumps(current_content, ensure_ascii=False, indent=2).encode('utf-8')
+                           if current_content or self._startup_files.get(content_path) is not None
+                           else None),
+        }
+        targets.update({path: self._startup_files.get(path)
+                        for path in self._image_persistence_paths(image_path.stem)})
+        before = {path: path.read_bytes() if path.exists() else None for path in targets}
+        try:
+            for path, value in targets.items():
+                self._restore_bytes(path, value)
+        except Exception:
+            for path, value in before.items():
+                self._restore_bytes(path, value)
+            raise
+        self._source_records = None
+        self._source_mtime_ns = None
+        self._source_locations = None
+        return self.open_image(image_path)
 
     def _cached_source_records(self):
         """Avoid reparsing the complete extraction JSON for every opened image."""
@@ -108,15 +202,24 @@ class Workflow:
             stat = path.stat()
             key = fingerprint(f'{path}:{stat.st_mtime_ns}:{stat.st_size}')
             preview_path = self.preview_dir / (key + '.jpg')
+            content_preview_path = self.preview_dir / (key + '-content.jpg')
             if not preview_path.exists():
                 if im.format == 'JPEG' and im.mode in ('RGB', 'L') and im.getexif().get(274, 1) == 1:
                     shutil.copyfile(path, preview_path)
                 else:
                     im.convert('RGB').save(preview_path, format='JPEG', quality=95, subsampling=0)
+            if not content_preview_path.exists():
+                content_preview = im.convert('RGB')
+                content_preview.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+                content_preview.save(
+                    content_preview_path, format='JPEG', quality=85,
+                    optimize=True, progressive=True)
         located = self._source_content_for(path.name)
         state.update(image=path.name, image_path=str(path), image_size=size,
                      resized_image_size=list(size),
                      image_url='gradio_api/file=' + quote(str(preview_path), safe='/'),
+                     content_preview_url=('gradio_api/file=' +
+                                          quote(str(content_preview_path), safe='/')),
                      source_content=deepcopy(located['record']), source_baseline=deepcopy(located['record']),
                      draft_content=deepcopy(located['record']), code=located['code'], current_step=2)
         saved = self.output / (path.stem + '.json')
@@ -187,7 +290,7 @@ class Workflow:
                 raise ValueError('Edit content in Step 2.')
             s['draft_content'] = edit_content_field(
                 s['draft_content'], s['code'], payload['path'], payload['value'],
-                self.content_titles)
+                self.content_titles, self.metadata_fields)
             s['workflow']['content_verified'] = False
             s['saved'] = False
         elif action in ('undo', 'original'):
@@ -198,7 +301,8 @@ class Workflow:
             if not count_annotation_characters(text):
                 raise ValueError('Annotation text contains no characters after normalization.')
             content_doc = content_document(
-                s['image'], s['code'], s['draft_content'], self.content_titles)
+                s['image'], s['code'], s['draft_content'], self.content_titles,
+                self.metadata_fields)
             save_source_content(
                 self.options.source_json, s['image'], s['source_baseline'],
                 s['draft_content'], self.annotation_title)
@@ -206,7 +310,7 @@ class Workflow:
             self._source_records = None
             self._source_mtime_ns = None
             self._source_locations = None
-            save_content_document(content_doc, self.output, self.content_titles)
+            save_content_document(content_doc, self.output, self.verification_titles)
             loaded_mapping = deepcopy(s.get('loaded_region_uid_by_box_id', {}))
             text_changed = text != s['annotation_text']
             set_verified_content(s, s['draft_content'], text)

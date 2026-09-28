@@ -4,7 +4,8 @@ from .text_alignment import (align_text_with_missing, count_annotation_character
 
 
 def new_state():
-    return dict(image=None, image_path=None, image_size=None, source_content=None,
+    return dict(image=None, image_path=None, image_size=None, image_url=None,
+                content_preview_url=None, source_content=None,
                 verified_content=None, draft_content=None, annotation_text='',
                 regions={}, selected_region_uid=None, selected_region_uids=[],
                 bounding_boxes={}, annotations={}, reading_order=[],

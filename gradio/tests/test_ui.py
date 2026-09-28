@@ -125,7 +125,11 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('min-height: 100dvh',css)
         self.assertIn('overflow: visible',css)
         self.assertIn('grid-template-columns: repeat(2, minmax(0, 1fr))',css)
-        self.assertIn('#content-image-preview .preview-open {',css)
+        self.assertIn('#image-start {',css)
+        self.assertIn('#control-panel .sidebar-action-stack {',css)
+        app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
+        self.assertNotIn('Restore original content',app_source)
+        self.assertNotIn('content-image-preview',app_source)
         self.assertIn('white-space: nowrap',css)
         self.assertIn('#confirm-source-mismatch',css)
         self.assertIn('justify-content: center',css)
@@ -171,7 +175,9 @@ class GradioCallbacks(unittest.TestCase):
             root=Path(folder).resolve()
             image=root/'12306.png';Image.new('RGB',(100,100),'white').save(image)
             source=root/'source.json'
-            record={'ten_bia':'Giữ tên bia','extra':{'keep':42},'noi_dung':[
+            metadata_labels=['Tên bia','Địa điểm','Niên đại']
+            record={'ten_bia':'Giữ tên bia','dia_diem':'Hà Nội','nien_dai':'Cảnh Hưng',
+                    'extra':{'keep':42},'noi_dung':[
                 {'ky_hieu':'12305','chuyen_muc':[{'tieu_de':titles[0],'van_ban':'文'}]},
                 {'ky_hieu':'12306','chuyen_muc':[
                     {'tieu_de':title,'van_ban':'永寺樂' if title==titles[0] else title+' gốc','extra':'giữ nguyên'}
@@ -180,8 +186,13 @@ class GradioCallbacks(unittest.TestCase):
             atomic_write(source,original)
             config=root/'config.json'
             atomic_write(config,{
-                'records': {'content': {
-                    'start_heading': titles[0], 'section_headings': titles}},
+                'records': {
+                    'metadata': [
+                        {'label':label,'field':field,'type':'string','required':True}
+                        for label,field in zip(
+                            metadata_labels,['ten_bia','dia_diem','nien_dai'])],
+                    'content': {
+                        'start_heading': titles[0], 'section_headings': titles}},
             })
             options=parser().parse_args(['--config',str(config),
                                         '--image-dir',str(root),'--source-json',str(source),
@@ -194,24 +205,36 @@ class GradioCallbacks(unittest.TestCase):
             save=next(f for f in functions if f.__name__=='<lambda>' and f.__defaults__==('save_content',))
             result=open_image(dict(active=new_state(),drafts={}),str(image))
             ctx=result[0];choices=result[4]['choices']
-            self.assertEqual([label for label,_ in choices],[SECTION_LABELS[t] for t in titles])
-            self.assertEqual(result[5],'永寺樂')
+            self.assertEqual(
+                [label for label,_ in choices],
+                metadata_labels+[SECTION_LABELS[t] for t in titles])
+            self.assertEqual(result[5],'Giữ tên bia')
             preview=json.loads(result[6])
-            self.assertEqual([entry['tieu_de'] for entry in preview],titles)
+            self.assertEqual(
+                [entry['tieu_de'] for entry in preview],metadata_labels+titles)
             self.assertNotIn('ten_bia',result[6])
-            selected=choices[2][1]
+            choice_by_label=dict(choices)
+            metadata_path=choice_by_label['Tên bia']
+            self.assertEqual(choose(ctx,metadata_path),'Giữ tên bia')
+            edited=edit(ctx,metadata_path,'Tên bia đã sửa')
+            ctx=edited[0]
+            selected=choice_by_label['Dịch nghĩa']
             self.assertEqual(choose(ctx,selected),'Dịch nghĩa gốc')
             edited=edit(ctx,selected,'Bản dịch\nđã sửa')
             self.assertIn('Bản dịch\\nđã sửa',edited[6])
             ctx=edited[0]
             ctx=save(ctx)[0]
             expected=deepcopy(original)
+            expected[0]['ten_bia']='Tên bia đã sửa'
             expected[0]['noi_dung'][1]['chuyen_muc'][2]['van_ban']='Bản dịch\nđã sửa'
             self.assertEqual(json.loads(source.read_text()),expected)
             self.assertEqual(ctx['active']['annotation_text'],'永寺樂')
             content_doc=json.loads((root/'out/.state/content.json').read_text())[0]
             self.assertEqual(content_doc['image'],'12306.png')
             self.assertEqual(content_doc['inscription_code'],'12306')
+            self.assertEqual(content_doc['content']['Tên bia'],'Tên bia đã sửa')
+            self.assertEqual(content_doc['content']['Địa điểm'],'Hà Nội')
+            self.assertEqual(content_doc['content']['Niên đại'],'Cảnh Hưng')
             self.assertEqual(content_doc['content']['Dịch nghĩa'],'Bản dịch\nđã sửa')
             export=next(f for f in functions if f.__name__=='save_folder')
             payload=json.loads(export())
@@ -220,8 +243,9 @@ class GradioCallbacks(unittest.TestCase):
             with zipfile.ZipFile(BytesIO(base64.b64decode(payload['content']))) as bundle:
                 self.assertNotIn('text_annotations.json',bundle.namelist())
                 self.assertEqual(json.loads(bundle.read('inscription_content.json')),[content_doc])
-            # A submitted path cannot edit metadata, headings, other faces, or other sections.
-            for path in (['ten_bia'],['noi_dung',0,'chuyen_muc',0,'van_ban'],
+            # A submitted path cannot edit unconfigured metadata, headings,
+            # other faces, or other sections.
+            for path in (['extra','keep'],['noi_dung',0,'chuyen_muc',0,'van_ban'],
                          ['noi_dung',1,'chuyen_muc',0,'tieu_de'],
                          ['noi_dung',1,'chuyen_muc',5,'van_ban']):
                 with self.assertLogs('app',level='ERROR'):
@@ -319,7 +343,8 @@ class GradioCallbacks(unittest.TestCase):
             result=open_image(dict(active=new_state(),drafts={}),str(path))
             ctx=result[0];self.assertEqual(ctx['active']['current_step'],2)
             self.assertTrue(result[27]['visible'])
-            self.assertEqual(result[-2],ctx['active']['image_url'])
+            self.assertTrue(result[40]['visible'])
+            self.assertFalse(result[39]['visible'])
             lambdas=[f for f in functions if f.__name__=='<lambda>']
             def action(name):
                 if name == 'next':
@@ -463,8 +488,13 @@ class GradioCallbacks(unittest.TestCase):
                 f'<title>{damaged_box_id} {damaged_annotation} · damaged</title>',
                 result[8]['value']['markup'])
             self.assertNotIn('<table',result[8]['value']['markup'])
-            ctx=action('save')(ctx)[0]
-            self.assertTrue(ctx['active']['saved'])
+            result=action('save')(ctx);ctx=result[0]
+            self.assertEqual(ctx['active']['current_step'],1)
+            self.assertFalse(ctx['active'].get('image'))
+            self.assertTrue(result[39]['visible'])
+            self.assertFalse(result[40]['visible'])
+            self.assertFalse(result[41]['visible'])
+            self.assertFalse(result[42]['visible'])
             self.assertTrue((root/'out/12305.json').exists())
             saved=json.loads((root/'out/12305.json').read_text())
             self.assertEqual(set(saved),{'image','bounding_boxes','annotations','reading_order','crop','image_resize'})
@@ -484,12 +514,21 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(annotations,[saved])
             self.assertEqual(contents[0]['image'],'12305.png')
             self.assertEqual(contents[0]['content']['Nguyên văn chữ Hán Nôm'],'永寺樂')
-            # Session switching must preserve drafts, while reset reloads saved data.
+            # Reopening reads the durable annotation, starts at Content, and
+            # marks detection as already loaded.
             restored=open_image(ctx,str(path))[0]
-            self.assertEqual(restored['active']['current_step'],7)
-            reset=open_image(ctx,str(path),True)[0]
+            self.assertEqual(restored['active']['current_step'],2)
+            self.assertTrue(restored['active']['detection_loaded'])
+            self.assertEqual(restored['active']['annotations'],{'1':'永','2':'樂','3':'寺'})
+            reset_image=next(f for f in functions if f.__name__=='reset_image')
+            unchanged=reset_image(restored,False)[0]
+            self.assertTrue((root/'out/12305.json').exists())
+            self.assertEqual(unchanged['active']['annotations'],{'1':'永','2':'樂','3':'寺'})
+            reset=reset_image(restored,True)[0]
             self.assertEqual(reset['active']['current_step'],2)
-            self.assertEqual(reset['active']['annotations'],{'1':'永','2':'樂','3':'寺'})
+            self.assertFalse(reset['active']['detection_loaded'])
+            self.assertEqual(reset['active']['annotations'],{})
+            self.assertFalse((root/'out/12305.json').exists())
 
     def test_ui_source_mismatch_flow(self):
         with tempfile.TemporaryDirectory() as folder:

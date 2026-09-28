@@ -25,7 +25,6 @@ from ui.presentation import (APP_CSS, app_identity, workflow_progress,
                              status_rows, SECTION_LABELS)
 from ui.fonts import FONT_FILES
 from ui.icons import WARNING
-from ui import image_preview
 
 log = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -116,6 +115,14 @@ def resolve_app_paths(options):
         raise ValueError("Config field 'records.content' must be an object.")
     options.content_titles = normalize_content_titles(
         content_config.get('section_headings'))
+    metadata_config = records_config.get('metadata', [])
+    if not isinstance(metadata_config, list):
+        raise ValueError("Config field 'records.metadata' must be an array.")
+    options.metadata_fields = tuple(
+        (item.get('label'), item.get('field'))
+        for item in metadata_config
+        if isinstance(item, dict) and item.get('type') == 'string'
+    )
     options.annotation_title = content_config.get('start_heading')
     if (not isinstance(options.annotation_title, str) or
             not options.annotation_title.strip()):
@@ -186,27 +193,26 @@ def create_app(options):
         # This remains mounted across every callback, so only one loading modal is shown.
         loading_modal=gr.HTML(value=LOADING_HIDDEN, elem_id='global-loading-host')
         with gr.Row(elem_id='workspace', scale=1):
-            with gr.Column(elem_id='control-panel', min_width=0, elem_classes='panel'):
+            with gr.Column(elem_id='image-start', min_width=0, elem_classes='panel') as image_start:
+                gr.Markdown('## Select an image')
+                gr.Markdown('Choose an inscription image to begin or reopen saved annotation data.')
+                image_choice=gr.Dropdown(choices=[(p.name,str(p.resolve())) for p in images],label='Image')
+                open_button=gr.Button('Start Verification', variant='primary')
+            with gr.Column(visible=False, elem_id='control-panel', min_width=0,
+                           elem_classes='panel') as control_panel:
                 heading=gr.HTML(panel_heading(initial['active']))
-                with gr.Group(elem_classes=['section','sidebar-section','source-section']):
-                    gr.Markdown('### Source image')
-                    image_choice=gr.Dropdown(choices=[(p.name,str(p.resolve())) for p in images],label='Image')
-                    with gr.Row(elem_classes=['button-group','sidebar-action-row']):
-                        open_button=gr.Button('Open image', variant='primary', size='sm', min_width=0)
-                        reset_button=gr.Button('Reset draft', size='sm', min_width=0,
-                                               elem_id='reset-draft')
+                with gr.Group(elem_classes=['section','sidebar-section','current-image-section']):
+                    gr.Markdown('### Current image')
+                    current_image=gr.Markdown('—', elem_id='current-image-name')
+                    reset_confirm=gr.Checkbox(value=False, visible=False)
+                    reset_button=gr.Button('Reset All', size='sm', min_width=0,
+                                           elem_id='reset-all')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','content-tools']) as content_actions:
                     gr.Markdown('### Content actions')
-                    with gr.Row(elem_classes=['button-group','sidebar-action-row']):
+                    with gr.Column(elem_classes=['button-group','sidebar-action-stack']):
                         save_content=gr.Button('Save content',variant='primary',min_width=0)
                         undo=gr.Button('Undo changes',min_width=0)
-                    preview_modal=gr.HTML(value='', html_template=image_preview.MARKUP,
-                                          css_template=image_preview.CSS, js_on_load=image_preview.SCRIPT,
-                                          elem_id='content-image-preview')
-                    with gr.Accordion('More actions', open=False,
-                                      elem_classes=['sidebar-disclosure','compact-disclosure']):
-                        restore=gr.Button('Restore original content',elem_id='restore-content')
                 with gr.Group(visible=False, elem_classes=['section','sidebar-step-stack']) as box_group:
                     box_id=gr.Dropdown(visible=False)
                     selection_bridge=gr.Textbox(value='{}',show_label=False,
@@ -279,7 +285,8 @@ def create_app(options):
                                            elem_id='crop-coordinates')
                     apply_crop=gr.Button('Apply crop',variant='primary')
                 summary=gr.HTML(panel_summary(initial['active']))
-            with gr.Column(elem_id='main-workspace', min_width=0, scale=1, elem_classes='panel'):
+            with gr.Column(visible=False, elem_id='main-workspace', min_width=0, scale=1,
+                           elem_classes='panel') as main_workspace:
                 with gr.Column(elem_id='workspace-body'):
                     with gr.Group(visible=False, elem_id='content-editor',elem_classes='section') as content_group:
                         gr.Markdown('## Content Verification')
@@ -294,8 +301,8 @@ def create_app(options):
                             )
                     board=gr.HTML(value=snapshot(initial['active']),html_template='${value.markup}',css_template=CSS,js_on_load=SCRIPT, elem_id='annotation-board')
                     preview=gr.JSON(label='Image JSON',visible=False, elem_id='final-preview', elem_classes='han-nom-json')
-                message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
-        with gr.Row(elem_id='workflow-footer',elem_classes='button-group'):
+            message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
+        with gr.Row(visible=False, elem_id='workflow-footer',elem_classes='button-group') as workflow_footer:
             back=gr.Button('Back', interactive=False, scale=0, elem_id='back-button')
             footer_label=gr.HTML(footer(initial['active']), elem_id='footer-step')
             save=gr.Button('Save image',visible=False,variant='primary', scale=0, elem_id='save-image')
@@ -306,12 +313,14 @@ def create_app(options):
                  mismatch_group,mismatch_type,mismatch_note,confirm_mismatch,clear_mismatch]
         outputs.append(box_color_group)
         outputs.append(workflow_chrome)
-        outputs.append(preview_modal)
         outputs.append(loading_modal)
+        outputs.extend([image_start,control_panel,main_workspace,workflow_footer,current_image])
 
         def render(ctx, msg=''):
             s=ctx['active']; step=s['current_step']; has=bool(s.get('image'))
-            fields=content_fields(s['draft_content'],s['code'],engine.content_titles) if has else []
+            fields=(content_fields(
+                s['draft_content'],s['code'],engine.content_titles,engine.metadata_fields)
+                if has else [])
             choices=[(SECTION_LABELS.get(field['title'],field['title']),json.dumps(field['path'],ensure_ascii=False)) for field in fields]
             chosen=choices[0][1] if choices else None
             val=fields[0]['value'] if fields else ''
@@ -347,7 +356,10 @@ def create_app(options):
                     gr.update(value=issue.get('note','')),
                     gr.update(interactive=counts_differ),gr.update(visible=mismatch),
                     gr.update(visible=has and step in (3,4)),
-                    workflow_progress(s),s.get('image_url',''),LOADING_HIDDEN]
+                    workflow_progress(s),LOADING_HIDDEN,
+                    gr.update(visible=step==1),gr.update(visible=has and step>1),
+                    gr.update(visible=has and step>1),gr.update(visible=has and step>1),
+                    (f'`{s["image"]}`' if has else '—')]
 
         def run(ctx, action, payload=None, auto_detect=True):
             try:
@@ -355,6 +367,13 @@ def create_app(options):
                 ctx=dict(ctx,active=updated)
                 msg=''
                 if action in ('save','save_content'):gr.Info('Saved.')
+                if action == 'save':
+                    saved_path=updated.get('image_path')
+                    if saved_path:
+                        ctx['drafts'].pop(saved_path,None)
+                    fresh=new_state()
+                    fresh['revision']=updated['revision']+1
+                    ctx=dict(ctx,active=fresh)
                 if auto_detect and action=='next' and updated['current_step']==3 and not updated['detection_loaded'] and not skip_detection:
                     try:
                         ctx=dict(ctx,active=engine.apply(updated,'detect'))
@@ -372,7 +391,7 @@ def create_app(options):
                     'field': {0,2,6,7},
                 }.get(action)
                 if affected is not None:
-                    always={1,25,len(result)-3,len(result)-1}
+                    always={1,25,37,38}
                     result = [value if i in affected | always else gr.skip() for i,value in enumerate(result)]
                 return result
             except Exception as exc:
@@ -381,13 +400,15 @@ def create_app(options):
                 ctx=deepcopy(ctx);ctx['active']['revision']+=1
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
 
-        def open_image(ctx,path,reset=False):
+        def open_image(ctx,path):
             try:
                 if path not in {str(p.resolve()) for p in images}:raise ValueError('Select an image from the list.')
                 ctx=deepcopy(ctx)
                 old=ctx['active']
                 if old.get('image_path'):ctx['drafts'][old['image_path']]=old
-                state=engine.open_image(path) if reset or path not in ctx['drafts'] else deepcopy(ctx['drafts'][path])
+                # Starting from the Image screen always reflects durable data.
+                # Drafts are only for Back/Next within the currently open image.
+                state=engine.open_image(path)
                 state['revision']=old['revision']+1
                 ctx['active']=state
                 return render(ctx)
@@ -410,7 +431,8 @@ def create_app(options):
             try:
                 annotations=collect_annotations(images,options.output_dir,allow_empty=True)
                 content=collect_content_documents(
-                    images,options.output_dir,allow_empty=True,titles=engine.content_titles)
+                    images,options.output_dir,allow_empty=True,
+                    titles=engine.verification_titles)
                 mismatches=collect_source_mismatches(images,options.output_dir,allow_empty=True)
                 archive=save_export_archive(annotations,content,options.output_dir,mismatches)
                 return json.dumps({'name':archive.name,
@@ -432,8 +454,29 @@ def create_app(options):
                 setTimeout(()=>URL.revokeObjectURL(url),10000);
             }""")
         clear_loading_when_done(open_button.click(open_image,[session,image_choice],**event_args))
-        clear_loading_when_done(reset_button.click(lambda c,p:open_image(c,p,True),[session,image_choice],**event_args))
-        for button,action in [(back,'back'),(save,'save'),(save_content,'save_content'),(undo,'undo'),(restore,'original')]:
+        def reset_image(ctx,confirmed):
+            if not confirmed:
+                return render(ctx)
+            try:
+                ctx=deepcopy(ctx)
+                path=ctx['active'].get('image_path')
+                if not path:
+                    raise ValueError('No image is currently open.')
+                restored=engine.reset_image(path)
+                restored['revision']=ctx['active']['revision']+1
+                ctx['drafts'].pop(path,None)
+                ctx['active']=restored
+                gr.Info('All changes for this image were reset.')
+                return render(ctx)
+            except Exception as exc:
+                log.exception('Cannot reset image')
+                return render(ctx,WARNING+' '+html.escape(str(exc)))
+        clear_loading_when_done(reset_button.click(
+            reset_image,[session,reset_confirm],
+            **dict(event_args,js="""(ctx, confirmed) => [ctx, window.confirm(
+                'Reset all changes for this image to the state from server startup?\\n\\nShared record metadata may also affect related image faces.'
+            )]""")))
+        for button,action in [(back,'back'),(save,'save'),(save_content,'save_content'),(undo,'undo')]:
             clear_loading_when_done(button.click(lambda c,a=action:run(c,a),[session],**event_args))
         def next_step(ctx, path=None, value=None, auto_detect=True,
                       issue_type=None, mismatch_note_value='', selection='{}',
@@ -551,7 +594,8 @@ def create_app(options):
             try:
                 selected=tuple(json.loads(path))
                 for entry in content_fields(
-                        s['draft_content'],s['code'],engine.content_titles):
+                        s['draft_content'],s['code'],engine.content_titles,
+                        engine.metadata_fields):
                     if entry['path']==selected:return entry['value']
             except (ValueError,TypeError):
                 pass
