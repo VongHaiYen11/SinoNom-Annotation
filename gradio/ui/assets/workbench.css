@@ -440,10 +440,6 @@ button#confirm-source-mismatch:hover { background: #e96c0d !important; }
   background: transparent;
 }
 #control-panel .compact-disclosure .label-wrap { padding-inline: 0; }
-.font-picker { display: flex; flex-direction: column; gap: var(--space-2); }
-.font-picker label { color: var(--color-muted); font-size: 12px; }
-.font-picker select { width: 100%; min-height: var(--input-height); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-page); color: var(--color-text); font-size: 12px; }
-.font-picker .font-sample { margin: 0; color: var(--color-text); font-family: var(--han-nom-font), Arial, sans-serif; font-size: 20px; line-height: 1.5; }
 #status-radio label:has(input[value="intact"]) { color: #22c55e; }
 #status-radio label:has(input[value="damaged"]) { color: #ef4444; }
 #bbox-color-palette .wrap { gap: var(--space-2) !important; }
@@ -464,8 +460,7 @@ button#confirm-source-mismatch:hover { background: #e96c0d !important; }
 
 .gradio-container button:focus-visible,
 .gradio-container input:focus-visible,
-.gradio-container textarea:focus-visible,
-.font-picker select:focus-visible { outline: 2px solid var(--color-accent); outline-offset: var(--space-1); }
+.gradio-container textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: var(--space-1); }
 .gradio-container button:disabled { cursor: not-allowed; opacity: 40%; }
 .frontend-bridge { display: none !important; }
 

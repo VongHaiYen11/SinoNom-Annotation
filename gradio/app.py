@@ -23,7 +23,7 @@ from ui.editor import snapshot, SCRIPT, CSS
 from ui.presentation import (APP_CSS, app_identity, workflow_progress,
                              panel_heading, panel_summary, footer,
                              status_rows, SECTION_LABELS)
-from ui.fonts import FONT_FILES, FONT_PICKER, FONT_PICKER_SCRIPT
+from ui.fonts import FONT_FILES
 from ui.icons import WARNING
 from ui import image_preview
 
@@ -279,9 +279,6 @@ def create_app(options):
                                            elem_id='crop-coordinates')
                     apply_crop=gr.Button('Apply crop',variant='primary')
                 summary=gr.HTML(panel_summary(initial['active']))
-                with gr.Accordion('Display font', open=False,
-                                  elem_classes=['section','sidebar-section','sidebar-disclosure']):
-                    gr.HTML(FONT_PICKER, js_on_load=FONT_PICKER_SCRIPT, elem_id='font-control')
             with gr.Column(elem_id='main-workspace', min_width=0, scale=1, elem_classes='panel'):
                 with gr.Column(elem_id='workspace-body'):
                     with gr.Group(visible=False, elem_id='content-editor',elem_classes='section') as content_group:

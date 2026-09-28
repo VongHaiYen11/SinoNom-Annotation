@@ -127,6 +127,8 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('white-space: nowrap',css)
         self.assertIn('#confirm-source-mismatch',css)
         self.assertIn('justify-content: center',css)
+        self.assertNotIn('.font-picker',css)
+        self.assertNotIn("Accordion('Display font'",(Path(__file__).resolve().parents[1]/'app.py').read_text())
 
     def test_cli_paths_override_config_and_missing_paths_use_config(self):
         with tempfile.TemporaryDirectory() as folder:
