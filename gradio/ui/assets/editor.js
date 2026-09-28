@@ -1,6 +1,7 @@
 // Python owns persisted data. Browser-local state owns direct manipulation.
 let pending = false, moving = null, orderDrag = null;
 let syncingStatusControl = false;
+let syncingCoordinateControls = false;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null;
 let localTextSequence = [];
@@ -57,9 +58,14 @@ const syncExternalControls = () => {
   const active = activeBoxId && localBoxes[activeBoxId];
   if (!active) return;
   if (props.value.step === 3) {
-    ['#bbox-x1','#bbox-y1','#bbox-x2','#bbox-y2'].forEach(
-      (selector, index) => setInputValue(selector, active.bbox[index])
-    );
+    syncingCoordinateControls = true;
+    try {
+      ['#bbox-x1','#bbox-y1','#bbox-x2','#bbox-y2'].forEach(
+        (selector, index) => setInputValue(selector, active.bbox[index])
+      );
+    } finally {
+      syncingCoordinateControls = false;
+    }
   }
   if (props.value.step === 5) {
     const status = root.querySelector(`#status-radio input[value="${active.status}"]`);
@@ -179,7 +185,7 @@ root.addEventListener('change', event => {
 });
 
 root.addEventListener('input', event => {
-  if (props.value.step !== 3 || !activeBoxId
+  if (syncingCoordinateControls || props.value.step !== 3 || !activeBoxId
       || !event.target.closest('#bbox-x1 input, #bbox-y1 input, #bbox-x2 input, #bbox-y2 input')) return;
   const rawValues=['#bbox-x1','#bbox-y1','#bbox-x2','#bbox-y2'].map(selector =>
     root.querySelector(`${selector} input`)?.value ?? '');

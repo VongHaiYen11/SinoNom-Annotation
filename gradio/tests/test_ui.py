@@ -70,6 +70,8 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('applyAnnotationColor',script)
         self.assertIn("event.target.closest('#bbox-x1 input, #bbox-y1 input, #bbox-x2 input, #bbox-y2 input')",script)
         self.assertIn('localBoxes[activeBoxId].bbox=[x1,y1,x2,y2]',script)
+        self.assertIn('syncingCoordinateControls = true',script)
+        self.assertIn('if (syncingCoordinateControls || props.value.step !== 3',script)
         self.assertIn("send('add',{",script)
         self.assertIn('boxes:Object.fromEntries(Object.entries(localBoxes)',script)
         self.assertIn('syncExternalControls();',script)
