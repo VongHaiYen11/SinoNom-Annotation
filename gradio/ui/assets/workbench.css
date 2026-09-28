@@ -255,6 +255,7 @@ body,
 #control-panel {
   display: flex !important;
   flex-direction: column !important;
+  align-items: stretch !important;
   gap: var(--space-3) !important;
   width: 100%;
   min-width: 0 !important;
@@ -265,6 +266,14 @@ body,
   scrollbar-color: #4a4d53 transparent;
   scrollbar-width: thin;
 }
+#control-panel > *,
+#control-panel .sidebar-step-stack > * {
+  align-self: stretch;
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box;
+}
+#control-panel .sidebar-step-stack > * > button { width: 100% !important; }
 #main-workspace { display: flex !important; flex-direction: column !important; gap: 0 !important; min-width: 0 !important; min-height: 0; padding: 0; }
 #workspace-body { display: flex; flex: 1 1 auto !important; flex-direction: column; gap: var(--section-gap); min-width: 0; min-height: 0; padding: 0; }
 
@@ -357,12 +366,6 @@ button#next-button::after { transform: rotate(180deg); }
   font: 600 10px/1.3 Arial, sans-serif;
   white-space: nowrap;
 }
-#control-panel .compact-sidebar-action {
-  align-self: stretch;
-  width: 100% !important;
-  min-width: 0 !important;
-}
-#control-panel .compact-sidebar-action button { width: 100% !important; min-width: 0; }
 #control-panel .sidebar-action-row {
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr));

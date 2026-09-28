@@ -241,11 +241,11 @@ def create_app(options):
                         </ul>
                     </section>''')
                     delete=gr.Button('Delete Selected', size='sm', min_width=0,
-                                     elem_id='delete-box',elem_classes='compact-sidebar-action')
+                                     elem_id='delete-box')
                     detect_confirm=gr.Checkbox(value=False,visible=False)
                     detect=gr.Button('Run Detection', variant='primary', size='sm',
                                      interactive=not skip_detection,elem_id='run-detection',
-                                     elem_classes='compact-sidebar-action')
+                                     min_width=0)
                     with gr.Group(visible=False,
                                   elem_classes=['section','sidebar-section','mismatch-panel']) as mismatch_group:
                         gr.Markdown('### Box-Content Mismatch')
