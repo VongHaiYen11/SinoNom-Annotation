@@ -358,11 +358,11 @@ button#next-button::after { transform: rotate(180deg); }
   white-space: nowrap;
 }
 #control-panel .compact-sidebar-action {
-  align-self: flex-start;
-  width: auto !important;
-  min-width: 132px !important;
+  align-self: stretch;
+  width: 100% !important;
+  min-width: 0 !important;
 }
-#control-panel .compact-sidebar-action button { width: auto !important; min-width: 132px; }
+#control-panel .compact-sidebar-action button { width: 100% !important; min-width: 0; }
 #control-panel .sidebar-action-row {
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr));
