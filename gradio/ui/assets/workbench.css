@@ -257,7 +257,7 @@ body,
 #workflow-footer button { width: 100%; min-height: var(--button-height); }
 #back-button { grid-column: 1; }
 #footer-step { grid-column: 2; }
-#save-image { grid-column: 3; }
+#save-image { grid-column: 4; }
 #next-button { grid-column: 4; }
 #back-button button,
 button#back-button,

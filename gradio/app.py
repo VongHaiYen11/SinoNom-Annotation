@@ -438,29 +438,8 @@ def create_app(options):
                     return result
             if ctx['active']['current_step'] == 3:
                 try:
-                    boxes = frontend_boxes(selection)
-                    active, selected = frontend_selection(selection)
-                    if not boxes:
-                        boxes = {
-                            uid: list(region['bbox'])
-                            for uid, region in ctx['active']['regions'].items()
-                        }
-                    active = active or ctx['active'].get('selected_region_uid')
-                    if any(coordinate is not None for coordinate in
-                           (x1_value,y1_value,x2_value,y2_value)):
-                        if not active or any(coordinate is None for coordinate in
-                                             (x1_value,y1_value,x2_value,y2_value)):
-                            raise ValueError('Select a box and enter all four coordinates.')
-                        boxes[active] = [x1_value,y1_value,x2_value,y2_value]
-                        if active not in selected:
-                            selected = [*selected,active]
-                    if boxes:
-                        updated = engine.apply(ctx['active'], 'commit_boxes', {
-                            'boxes': boxes,
-                            'active': active,
-                            'selected': selected,
-                        })
-                        ctx = dict(ctx, active=updated)
+                    ctx,_,_=commit_frontend_boxes(
+                        ctx,selection,(x1_value,y1_value,x2_value,y2_value))
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if (ctx['active']['current_step'] == 3
@@ -592,6 +571,27 @@ def create_app(options):
                 return boxes
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local bounding boxes are invalid.')
+        def commit_frontend_boxes(ctx,selection,coordinates=(None,None,None,None)):
+            """Commit live canvas geometry plus the active sidebar coordinates."""
+            boxes=frontend_boxes(selection)
+            active,selected=frontend_selection(selection)
+            if not boxes:
+                boxes={
+                    uid:list(region['bbox'])
+                    for uid,region in ctx['active']['regions'].items()
+                }
+            active=active or ctx['active'].get('selected_region_uid')
+            if any(coordinate is not None for coordinate in coordinates):
+                if not active or any(coordinate is None for coordinate in coordinates):
+                    raise ValueError('Select a box and enter all four coordinates.')
+                boxes[active]=list(coordinates)
+                if active not in selected:selected=[*selected,active]
+            if boxes:
+                updated=engine.apply(ctx['active'],'commit_boxes',{
+                    'boxes':boxes,'active':active,'selected':selected,
+                })
+                ctx=dict(ctx,active=updated)
+            return ctx,active,selected
         def frontend_crop(value):
             try:
                 parsed=json.loads(value or '{}')
@@ -629,9 +629,16 @@ def create_app(options):
             return run(ctx,'update',dict(id=active,bbox=[a,b,d,e]))
         clear_loading_when_done(update.click(update_coordinates,
             [session,selection_bridge,x1,y1,x2,y2],**event_args))
+        def delete_selected(ctx,selection,a,b,d,e):
+            try:
+                ctx,_,selected=commit_frontend_boxes(ctx,selection,(a,b,d,e))
+                if not selected:raise ValueError('Select at least one box to delete.')
+                return run(ctx,'delete',dict(ids=selected))
+            except Exception as exc:
+                return render(ctx,WARNING+' '+html.escape(str(exc)))
         clear_loading_when_done(delete.click(
-            lambda c,v:run(c,'delete',dict(ids=frontend_selection(v)[1])),
-            [session,selection_bridge],**event_args))
+            delete_selected,[session,selection_bridge,x1,y1,x2,y2],
+            **dict(event_args,js=snapshot_board_state_js(1))))
         clear_loading_when_done(detect.click(lambda c,ok:run(c,'detect') if ok or not c['active']['detection_loaded'] else render(c,'Confirm replacement of existing boxes.'),[session,rerun_confirm],**event_args))
         def confirm_source_mismatch(ctx,issue_type,note):
             return run(ctx,'confirm_source_mismatch',dict(issue_type=issue_type,note=note))

@@ -178,6 +178,20 @@ root.addEventListener('change', event => {
   if (!syncingStatusControl) send('status', {id: activeBoxId, status: input.value});
 });
 
+root.addEventListener('input', event => {
+  if (props.value.step !== 3 || !activeBoxId
+      || !event.target.closest('#bbox-x1 input, #bbox-y1 input, #bbox-x2 input, #bbox-y2 input')) return;
+  const rawValues=['#bbox-x1','#bbox-y1','#bbox-x2','#bbox-y2'].map(selector =>
+    root.querySelector(`${selector} input`)?.value ?? '');
+  if (rawValues.some(value => !value.trim())) return;
+  const values=rawValues.map(Number);
+  const [x1,y1,x2,y2]=values;
+  if (!values.every(Number.isFinite) || x1<0 || y1<0 || x1>=x2 || y1>=y2
+      || x2>props.value.width || y2>props.value.height) return;
+  localBoxes[activeBoxId].bbox=[x1,y1,x2,y2];
+  drawLocalBox(activeBoxId,localBoxes[activeBoxId].bbox);
+});
+
 const point = (event, svg, width=props.value.width, height=props.value.height) => {
   const p = svg.createSVGPoint(); p.x=event.clientX; p.y=event.clientY;
   const at = p.matrixTransform(svg.getScreenCTM().inverse());
@@ -487,7 +501,15 @@ element.addEventListener('pointerup', event => {
   }
   if(state.kind==='add'){
     state.rect.remove();
-    if(state.result && state.result[2]>state.result[0] && state.result[3]>state.result[1]) send('add',{bbox:state.result});
+    if(state.result && state.result[2]>state.result[0] && state.result[3]>state.result[1]){
+      send('add',{
+        bbox:state.result,
+        boxes:Object.fromEntries(Object.entries(localBoxes).map(
+          ([id,box])=>[id,[...box.bbox]])),
+        active:activeBoxId,
+        selected:[...selectedIds],
+      });
+    }
     return;
   }
   if(state.kind==='drag' && state.result){

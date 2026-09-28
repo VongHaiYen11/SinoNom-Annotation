@@ -68,6 +68,10 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn("White:'#f4f4f5', Cyan:'#22d3ee', Amber:'#f59e0b'",script)
         self.assertIn("#bbox-color-palette input:checked",script)
         self.assertIn('applyAnnotationColor',script)
+        self.assertIn("event.target.closest('#bbox-x1 input, #bbox-y1 input, #bbox-x2 input, #bbox-y2 input')",script)
+        self.assertIn('localBoxes[activeBoxId].bbox=[x1,y1,x2,y2]',script)
+        self.assertIn("send('add',{",script)
+        self.assertIn('boxes:Object.fromEntries(Object.entries(localBoxes)',script)
         self.assertIn('syncExternalControls();',script)
         self.assertNotIn("addEventListener('dragover'",script)
         editor_css=(Path(__file__).resolve().parents[1]/'ui/assets/editor.css').read_text()
@@ -87,6 +91,7 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn("snapshot.boxes = boxes",source)
         self.assertIn('snapshot_board_state_js(5)',source)
         self.assertIn('snapshot_board_state_js(1)',source)
+        self.assertIn('delete_selected,[session,selection_bridge,x1,y1,x2,y2]',source)
         self.assertIn("label='Outline color',interactive=True",source)
 
     def test_compact_header_has_all_steps_and_no_draft_status(self):
@@ -105,6 +110,7 @@ class GradioCallbacks(unittest.TestCase):
         css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
         self.assertIn('#header-stack {',css)
         self.assertIn('#topbar {',css)
+        self.assertIn('#save-image { grid-column: 4; }',css)
         self.assertIn('#workflow-chrome {',css)
         self.assertIn('flex: 0 0 auto !important',css)
         self.assertIn('grid-template-rows: auto auto auto',css)
@@ -285,6 +291,7 @@ class GradioCallbacks(unittest.TestCase):
             open_image=next(f for f in functions if f.__name__=='open_image')
             on_action=next(f for f in functions if f.__name__=='on_action')
             update_coordinates=next(f for f in functions if f.__name__=='update_coordinates')
+            delete_selected=next(f for f in functions if f.__name__=='delete_selected')
             def board_action(ctx,name,payload):
                 s=ctx['active']
                 event=gr.EventData(None,dict(action=name,payload=dict(payload,revision=s['revision'],image=s['image'])))
@@ -311,8 +318,32 @@ class GradioCallbacks(unittest.TestCase):
             ctx=result[0];self.assertEqual(ctx['active']['current_step'],3)
             self.assertFalse(result[27]['visible'])
             self.assertIn('fixture model unavailable',result[2]['value'])
-            for x in (0,20,40):
-                ctx=board_action(ctx,'add',{'bbox':[x,0,x+10,10]})[0]
+            ctx=board_action(ctx,'add',{'bbox':[0,0,10,10]})[0]
+            first_uid=next(iter(ctx['active']['regions']))
+            ctx=board_action(ctx,'add',{
+                'bbox':[20,0,30,10],
+                'boxes':{first_uid:[2,2,12,12]},
+                'active':first_uid,'selected':[first_uid],
+            })[0]
+            self.assertEqual(ctx['active']['regions'][first_uid]['bbox'],[2,2,12,12])
+            ctx=board_action(ctx,'add',{'bbox':[40,0,50,10]})[0]
+            region_uids=list(ctx['active']['regions'])
+            first_uid,deleted_uid=region_uids[0],region_uids[-1]
+            live_boxes={
+                uid:list(region['bbox'])
+                for uid,region in ctx['active']['regions'].items()
+            }
+            live_boxes[first_uid]=[4,4,14,14]
+            deleted_bbox=live_boxes[deleted_uid]
+            delete_snapshot=json.dumps({
+                'active':deleted_uid,'selected':[deleted_uid],'boxes':live_boxes,
+            })
+            ctx=delete_selected(ctx,delete_snapshot,*deleted_bbox)[0]
+            self.assertNotIn(deleted_uid,ctx['active']['regions'])
+            self.assertEqual(ctx['active']['regions'][first_uid]['bbox'],[4,4,14,14])
+            # Restore the third region so the remainder of the full workflow
+            # continues with one box per source character.
+            ctx=board_action(ctx,'add',{'bbox':[40,0,50,10]})[0]
             first_uid=list(ctx['active']['regions'])[0]
             ctx=board_action(ctx,'commit_boxes',{
                 'boxes':{first_uid:[1,1,11,11]},
@@ -397,6 +428,11 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(ctx['active']['annotations'],mapping)
             self.assertEqual(ctx['active']['crop'],[5,10,95,70])
             self.assertEqual(ctx['active']['current_step'],7)
+            self.assertIn('viewBox="5 10 90 60"',result[8]['value']['markup'])
+            self.assertIn('aspect-ratio:90/60',result[8]['value']['markup'])
+            self.assertIn('cropped review',result[8]['value']['markup'])
+            self.assertEqual(result[8]['value']['width'],90)
+            self.assertEqual(result[8]['value']['height'],60)
             self.assertEqual(ctx['active']['reading_order'],[1,2,3])
             self.assertEqual(ctx['active']['bounding_boxes'][first_damaged_box_id]['status'],'damaged')
             self.assertEqual(ctx['active']['bounding_boxes'][damaged_box_id]['status'],'damaged')

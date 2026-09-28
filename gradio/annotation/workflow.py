@@ -239,6 +239,9 @@ class Workflow:
                 s['detection_loaded'] = True
                 invalidate(s, clear=True)
             elif action == 'add':
+                if payload.get('boxes'):
+                    update_bboxes(s,payload['boxes'],payload.get('active'),
+                                  payload.get('selected'))
                 s['selected_region_uid'] = add_bbox(s, payload['bbox'])
                 s['selected_region_uids'] = [s['selected_region_uid']]
             elif action == 'update':

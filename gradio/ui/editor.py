@@ -18,6 +18,11 @@ def snapshot(s):
     step=s['current_step']; source_w,source_h=s['image_size']
     source_mismatch=source_mismatch_confirmed(s)
     w,h=s['image_size']
+    canvas_x=canvas_y=0
+    canvas_w,canvas_h=w,h
+    if step == 7:
+        canvas_x,canvas_y,crop_x2,crop_y2=s.get('crop') or [0,0,w,h]
+        canvas_w,canvas_h=crop_x2-canvas_x,crop_y2-canvas_y
     if step == 6:
         boxes = {'crop': dict(bbox=s['crop'], status='intact')}
         selected_id = 'crop'
@@ -31,7 +36,9 @@ def snapshot(s):
         selected_id = s['selected_box_id'] if s['selected_box_id'] in boxes else next(iter(boxes), None)
         selected_ids = {selected_id} if selected_id else set()
     filename=html.escape(s['image'])
-    dimensions = (f'{source_w} × {source_h} px → {w} × {h} px'
+    dimensions = (f'{source_w} × {source_h} px · crop {canvas_w} × {canvas_h} px'
+                  if step == 7 else
+                  f'{source_w} × {source_h} px → {w} × {h} px'
                   if step == 6 and [w,h] != [source_w,source_h]
                   else f'{w} × {h} px')
     markup=f'''<div class="workbench-board"><div class="workspace-toolbar">
@@ -40,7 +47,7 @@ def snapshot(s):
         <button type="button" data-zoom="out" aria-label="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
         <button type="button" data-zoom="in" aria-label="Zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg></button>
         <button type="button" data-zoom="fit" aria-label="Fit image to view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3H3v3M10 3h3v3M6 13H3v-3M10 13h3v-3"/></svg></button></div></div>
-        <div class="image-viewport"><svg class="annotation-canvas" viewBox="0 0 {w} {h}" role="img" aria-label="{filename} · annotation canvas" style="aspect-ratio:{w}/{h}">
+        <div class="image-viewport"><svg class="annotation-canvas" viewBox="{canvas_x} {canvas_y} {canvas_w} {canvas_h}" role="img" aria-label="{filename} · {'cropped review' if step == 7 else 'annotation canvas'}" style="aspect-ratio:{canvas_w}/{canvas_h}">
         <image href="{html.escape(s['image_url'], quote=True)}" x="0" y="0" width="{w}" height="{h}" preserveAspectRatio="none"/>
         '''
     # Scale labels/handles to image size so full-resolution scans remain editable.
@@ -119,7 +126,7 @@ def snapshot(s):
             markup+='<section class="review-detail">'+review+'<p class="order-sequence"><span>Reading order:</span> '+ order_separator.join(map(str,s['reading_order']))+'</p></section>'
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
-                width=w,height=h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
+                width=canvas_w,height=canvas_h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
                 readingOrder=list(s['reading_order']),
                 orderedAnnotations=([s['annotations'][str(box_id)]
                                      for box_id in s['reading_order']]

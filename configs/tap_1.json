@@ -66,9 +66,7 @@
       "section_headings": [
         "Nguyên văn chữ Hán Nôm",
         "Phiên âm Hán Việt",
-        "Dịch nghĩa",
-        "Toát yếu",
-        "Chú thích"
+        "Toát yếu"
       ]
     },
     "face_marker_pattern": "^\\s*<\\s*(?P<id>\\d+)\\s*>?\\s*(?P<rest>.*)$",
