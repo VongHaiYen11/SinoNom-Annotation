@@ -54,7 +54,7 @@ def snapshot(s):
         '''
     # Scale labels/handles to image size so full-resolution scans remain editable.
     unit=max(w,h)/900
-    suspicious_boxes=set(suspicious_box_ids(s)) if step == 4 else set()
+    suspicious_boxes=set(suspicious_box_ids(s)) if step in (4,7) else set()
     for key,b in boxes.items():
         x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6; multi_selected=key in selected_ids
         suspicious = key in suspicious_boxes
@@ -76,7 +76,7 @@ def snapshot(s):
             'active-region' if key==selected_id else '',
             'suspicious-region' if suspicious else '',
         )))
-        markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}</title>
+        markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}{' · suspicious' if suspicious else ''}</title>
             <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{color}" fill-opacity="{'.16' if multi_selected else '.10' if suspicious else '.04'}" stroke="{color}" stroke-width="{'3' if suspicious and multi_selected else '2' if suspicious else '2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{dashed}/>
             {f'<text x="{x1+2*unit}" y="{max(15*unit,y1-4*unit)}" fill="{color}" font-size="{15*unit}" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{2*unit}">{label}</text>' if label else ''}'''
         # Handles are pre-rendered for local selection changes; CSS exposes
@@ -87,8 +87,10 @@ def snapshot(s):
         markup+='</g>'
     markup+='</svg></div>'
     if step == 5 or (step == 7 and not other_mismatch):
-        markup+='<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown / MISS</span></div>'
-    if step in (4,7):
+        suspicious_legend=('<span class="suspicious">Suspicious content</span>'
+                           if suspicious_boxes else '')
+        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown / MISS</span>{suspicious_legend}</div>'
+    if step in (4,7) and not (step==7 and other_mismatch):
         source=html.escape(s['annotation_text'])
         verified=s['workflow']['content_verified']
         source_label=('Source text' if source_mismatch else
@@ -129,10 +131,13 @@ def snapshot(s):
                 issue=s['source_mismatch']
                 note=(f'<small>Note: {html.escape(issue["note"])}</small>'
                       if issue['note'] else '')
+                final_result=issue['issue_type'] in ('missing_text','extra_text')
                 mismatch_text = (html.escape(build_text_sequence(s))
                                  if issue['issue_type'] in ('missing_text','extra_text') else
                                  'No character annotations will be generated for this image.')
-                review=f'''<div class="review-text source-mismatch-review"><span class="eyebrow">SOURCE MISMATCH</span>
+                review_label='FINAL RESULT' if final_result else 'SOURCE MISMATCH'
+                review_class='review-text' if final_result else 'review-text source-mismatch-review'
+                review=f'''<div class="{review_class}"><span class="eyebrow">{review_label}</span>
                     <p>{mismatch_text}</p>
                     <small>{html.escape(issue['issue_type'])} · {issue['source_character_count']} characters · {issue['bounding_box_count']} boxes</small>
                     {note}</div>'''

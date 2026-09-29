@@ -45,6 +45,10 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn(f'<title>{missing_id} MISS · unknown</title>',markup)
         self.assertIn('stroke="#f59e0b"',markup)
         self.assertIn('Unknown / MISS',markup)
+        state['current_step']=7
+        review=snapshot(state)['markup']
+        self.assertIn('<span class="eyebrow">FINAL RESULT</span>',review)
+        self.assertNotIn('<span class="eyebrow">SOURCE MISMATCH</span>',review)
 
     def test_canvas_script_keeps_selection_and_geometry_local_until_next(self):
         script=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()

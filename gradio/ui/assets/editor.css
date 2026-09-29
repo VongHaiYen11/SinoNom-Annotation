@@ -93,6 +93,7 @@
 .status-legend .intact { color: #22c55e; }
 .status-legend .damaged { color: #ef4444; }
 .status-legend .unknown { color: #f59e0b; }
+.status-legend .suspicious { color: #facc15; }
 
 .source-preview { display: flex; flex-direction: column; gap: var(--space-3, 12px); margin: 0; padding: var(--space-6, 24px); border: 0; border-top: 1px solid var(--color-border, #303237); }
 .eyebrow { color: var(--color-muted, #a1a1aa); font-size: 9px; letter-spacing: 1px; }

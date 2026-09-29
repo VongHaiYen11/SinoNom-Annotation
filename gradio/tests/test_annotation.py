@@ -20,6 +20,7 @@ from annotation.io import (atomic_write, final_document,
                            load_source_mismatch, read_json, save_annotation)
 from annotation.text_extraction import extract_source_content, save_source_content
 from annotation.workflow import Workflow
+from ui.editor import snapshot
 from crop.crop import (auto_scale_crop, save_crop_coordinates, crop_document,
                        default_crop, MAX_CROP_SIDE)
 from PIL import Image
@@ -199,6 +200,12 @@ class Invariants(unittest.TestCase):
         document=final_source_mismatch_document(s)
         self.assertEqual(document['issue_type'],['extra_text','suspicious_content'])
         self.assertEqual(document['bounding_boxes'],geometry)
+        s['current_step']=7;s['image_url']='image.jpg'
+        review=snapshot(s)['markup']
+        self.assertIn('stroke="#facc15"',review)
+        self.assertIn('· suspicious</title>',review)
+        self.assertIn('Suspicious content',review)
+        self.assertIn('Unknown / MISS',review)
 
         invalid=deepcopy(document)
         invalid['issue_type']='extra_source_characters'
@@ -508,6 +515,11 @@ class Integration(unittest.TestCase):
         self.assertEqual(doc['text_sequence'],['永','樂','寺'])
         self.assertEqual(doc['excluded_characters'],['寺'])
         self.assertEqual(doc['annotations'],{'1':'永','2':'樂'})
+        review=snapshot(s)['markup']
+        self.assertIn('<span class="eyebrow">FINAL RESULT</span>',review)
+        self.assertIn('<p>永樂</p>',review)
+        self.assertNotIn('<p>永樂寺</p>',review)
+        self.assertNotIn('<span class="eyebrow">SOURCE MISMATCH</span>',review)
         self.assertEqual(s['draft_content'],original)
         s=e.apply(s,'save')
         reopened=e.open_image(self.image)
@@ -532,6 +544,10 @@ class Integration(unittest.TestCase):
         self.assertEqual(doc['bounding_boxes'],{
             '1':{'bbox':[40,0,50,10]},'2':{'bbox':[20,0,30,10]},
             '3':{'bbox':[0,0,10,10]}})
+        review=snapshot(s)['markup']
+        self.assertNotIn('source-preview',review)
+        self.assertNotIn('review-detail',review)
+        self.assertNotIn('SOURCE MISMATCH',review)
         s=e.apply(s,'back');self.assertEqual(s['current_step'],3)
         s=e.apply(s,'next');s=e.apply(s,'save')
         reopened=e.open_image(self.image)
