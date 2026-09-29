@@ -322,6 +322,33 @@ button#next-button::after { transform: rotate(180deg); }
 #control-panel .sidebar-section > .form {
   gap: var(--space-3) !important;
 }
+/* A Gradio Group adds a component wrapper around its real form container.
+   Keep that wrapper layout-only and draw the sidebar card on the inner container. */
+#control-panel .sidebar-component {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+#control-panel .sidebar-component > .styler,
+#control-panel .sidebar-component > .form {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: var(--sidebar-section-padding) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-md);
+  background: var(--color-panel-subtle) !important;
+  box-sizing: border-box;
+}
+#control-panel .sidebar-component > .styler > .form {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
 #control-panel .sidebar-step-stack {
   display: flex;
   flex-direction: column;

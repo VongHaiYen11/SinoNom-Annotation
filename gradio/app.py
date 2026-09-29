@@ -211,14 +211,14 @@ def create_app(options):
             with gr.Column(visible=False, elem_id='control-panel', min_width=0,
                            elem_classes='panel') as control_panel:
                 heading=gr.HTML(panel_heading(initial['active']))
-                with gr.Group(elem_classes=['section','sidebar-section','current-image-section']):
+                with gr.Group(elem_classes=['section','sidebar-section','sidebar-component','current-image-section']):
                     gr.Markdown('### Current image')
                     current_image=gr.Markdown('—', elem_id='current-image-name')
                     reset_confirm=gr.Checkbox(value=False, visible=False)
                     reset_button=gr.Button('Reset All', size='sm', min_width=0,
                                            elem_id='reset-all')
                 with gr.Group(visible=False,
-                              elem_classes=['section','sidebar-section','content-tools']) as content_actions:
+                              elem_classes=['section','sidebar-section','sidebar-component','content-tools']) as content_actions:
                     gr.Markdown('### Content actions')
                     with gr.Column(elem_classes=['button-group','sidebar-action-stack']):
                         save_content=gr.Button('Save Content',variant='primary',min_width=0)
@@ -228,7 +228,7 @@ def create_app(options):
                     selection_bridge=gr.Textbox(value='{}',show_label=False,
                                                 elem_id='selection-bridge',
                                                 elem_classes='frontend-bridge')
-                    with gr.Group(elem_classes=['section','sidebar-section','selection-section']):
+                    with gr.Group(elem_classes=['section','sidebar-section','sidebar-component','selection-section']):
                         gr.Markdown('### Selected region')
                         with gr.Row(elem_classes=['coordinate-row','field-group']):
                             x1=gr.Number(label='x1', min_width=0,elem_id='bbox-x1');y1=gr.Number(label='y1', min_width=0,elem_id='bbox-y1')
@@ -251,7 +251,7 @@ def create_app(options):
                                      interactive=not skip_detection,elem_id='run-detection',
                                      min_width=0)
                     with gr.Group(visible=False,
-                                  elem_classes=['section','sidebar-section','mismatch-panel']) as mismatch_group:
+                                  elem_classes=['section','sidebar-section','sidebar-component','mismatch-panel']) as mismatch_group:
                         gr.Markdown('### Box-Content Mismatch')
                         mismatch_type=gr.Dropdown([
                             ('Missing Content','missing_text'),
@@ -268,7 +268,7 @@ def create_app(options):
                                 'Clear', visible=False, variant='secondary', min_width=0,
                                 elem_id='clear-source-mismatch')
                 with gr.Group(visible=False,
-                              elem_classes=['section','sidebar-section','box-color-control']) as box_color_group:
+                              elem_classes=['section','sidebar-section','sidebar-component','box-color-control']) as box_color_group:
                     gr.Markdown('### Box color')
                     box_color=gr.Dropdown(
                         ['White','Cyan','Amber','Violet','Pink'],
@@ -276,7 +276,7 @@ def create_app(options):
                         filterable=False,container=False,
                         elem_id='bbox-color-palette')
                 with gr.Group(visible=False,
-                              elem_classes=['section','sidebar-section','selection-section']) as status_group:
+                              elem_classes=['section','sidebar-section','sidebar-component','selection-section']) as status_group:
                     gr.Markdown('### Selected region')
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
@@ -284,7 +284,7 @@ def create_app(options):
                 # redundant region table.
                 status_table=gr.State([])
                 with gr.Group(visible=False,
-                              elem_classes=['section','sidebar-section']) as order_group:
+                              elem_classes=['section','sidebar-section','sidebar-component']) as order_group:
                     gr.Markdown('### Reading order')
                     gr.Markdown('Drag the text cards into sequence. Apply assigns them to boxes in detector-sorted spatial order.',
                                 elem_classes='sidebar-help')
@@ -295,7 +295,7 @@ def create_app(options):
                             value=False,label='Suspicious annotation',show_label=False,
                             interactive=False,container=False,elem_id='suspicious-toggle')
                 order_text=gr.State('[]')
-                with gr.Group(visible=False, elem_classes=['section','sidebar-section']) as crop_group:
+                with gr.Group(visible=False, elem_classes=['section','sidebar-section','sidebar-component']) as crop_group:
                     gr.Markdown('### Crop')
                     gr.Markdown('Adjust the orange crop frame. Oversized crops are scaled automatically on export.',
                                 elem_classes='sidebar-help')
