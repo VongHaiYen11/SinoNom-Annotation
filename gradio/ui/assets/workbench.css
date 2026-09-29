@@ -226,10 +226,10 @@ body,
 .stepper-item.is-complete { color: #b3b6bd; }
 .stepper-item.is-complete .stepper-dot { border-color: #9a531f; background: #302116; color: var(--color-accent); }
 
-/* The workspace is one stretching grid row shared by both panels. */
+/* The workspace uses four equal tracks: one for the sidebar, three for the main panel. */
 #workspace {
   display: grid;
-  grid-template-columns: minmax(280px, var(--sidebar-width)) minmax(0, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-rows: auto;
   align-items: start !important;
   height: auto;
@@ -240,6 +240,8 @@ body,
   padding: 0;
   overflow: visible;
 }
+#control-panel { grid-column: 1; }
+#main-workspace { grid-column: 2 / 5; }
 #image-start {
   grid-column: 1 / -1;
   width: min(560px, 100%);
@@ -731,7 +733,7 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   .stepper-item:not(:last-child)::after { flex-basis: 16px; min-width: var(--space-1); }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 767.98px) {
   .gradio-container { --page-padding: 12px; }
   .gradio-container .main { display: flex; height: auto; overflow: visible; }
   #topbar { grid-template-columns: minmax(0, 1fr) auto; padding-inline: var(--space-3); }

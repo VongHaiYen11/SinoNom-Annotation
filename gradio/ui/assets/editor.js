@@ -211,12 +211,29 @@ const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => 
   const scrollbarAllowance = renderedWidth > availableWidth + .5 ? 16 : 0;
   const fullViewportHeight = renderedHeight + verticalPadding + scrollbarAllowance;
   const sidebar = root.querySelector('#control-panel');
-  const sidebarHeight = sidebar && !matchMedia('(max-width: 700px)').matches
-    ? sidebar.getBoundingClientRect().height : Infinity;
+  const board = viewport.closest('.workbench-board');
+  const isStacked = matchMedia('(max-width: 767.98px)').matches;
+  let targetViewportHeight = fullViewportHeight;
+  if (sidebar && board && !isStacked) {
+    const boardRect = board.getBoundingClientRect();
+    const viewportRect = viewport.getBoundingClientRect();
+    const siblingHeight = [...board.children].reduce((total, child) => {
+      if (child === viewport || child.classList.contains('order-editor')) return total;
+      return total + child.getBoundingClientRect().height;
+    }, 0);
+    const sidebarHeight = sidebar.getBoundingClientRect().height;
+    const maxBoardHeight = Math.max(1, window.innerHeight - Math.max(0, boardRect.top));
+    const targetBoardHeight = Math.min(sidebarHeight, maxBoardHeight);
+    const heightToViewportBottom = Math.max(1, window.innerHeight - Math.max(0, viewportRect.top));
+    targetViewportHeight = Math.min(
+      Math.max(fullViewportHeight, targetBoardHeight - siblingHeight),
+      heightToViewportBottom,
+    );
+  }
   svg.style.width = `${renderedWidth}px`;
   svg.style.height = `${renderedHeight}px`;
   svg.style.maxWidth = 'none';
-  viewport.style.height = `${Math.max(1, Math.min(fullViewportHeight, sidebarHeight))}px`;
+  viewport.style.height = `${Math.max(1, targetViewportHeight)}px`;
   const label = element.querySelector('.zoom-label');
   if (label) label.textContent = `${imageTransform.zoom}%`;
 };

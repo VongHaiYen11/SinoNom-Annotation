@@ -105,7 +105,9 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('const availableWidth = Math.max(1, viewport.clientWidth',script)
         self.assertIn('const fit = availableWidth / width',script)
         self.assertIn("root.querySelector('#control-panel')",script)
-        self.assertIn('Math.min(fullViewportHeight, sidebarHeight)',script)
+        self.assertIn("matchMedia('(max-width: 767.98px)').matches",script)
+        self.assertIn("child.classList.contains('order-editor')",script)
+        self.assertIn('const targetBoardHeight = Math.min(sidebarHeight, maxBoardHeight)',script)
         workbench_css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
         self.assertIn('color-scheme: dark',workbench_css)
         self.assertIn('button:not(:disabled):hover',workbench_css)
@@ -132,6 +134,11 @@ class GradioCallbacks(unittest.TestCase):
         css=(Path(__file__).resolve().parents[1]/'ui/assets/editor.css').read_text()
         self.assertIn('grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr)',css)
         self.assertIn('.status-order-board .image-viewport',css)
+        workbench_css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
+        self.assertIn('grid-template-columns: repeat(4, minmax(0, 1fr))',workbench_css)
+        self.assertIn('#control-panel { grid-column: 1; }',workbench_css)
+        self.assertIn('#main-workspace { grid-column: 2 / 5; }',workbench_css)
+        self.assertIn('@media (max-width: 767.98px)',workbench_css)
 
     def test_apply_and_next_snapshot_visible_text_cards(self):
         source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
