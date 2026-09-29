@@ -334,6 +334,8 @@ class Workflow:
             if (step == 7 and source_mismatch_confirmed(s)
                     and s['source_mismatch']['issue_type'] == 'other'):
                 s['current_step'] = 3
+            elif step == 6:
+                s['current_step'] = 4
             else:
                 s['current_step'] = max(1, step - 1)
         elif action == 'field':
@@ -453,6 +455,14 @@ class Workflow:
             refresh_bbox_validation(s)
             if s['workflow']['bbox_valid']:
                 s['source_mismatch'] = None
+        elif action == 'sort_boxes':
+            require(s, 'content_verified')
+            if step != 3:
+                raise ValueError('Sort bounding boxes in Step 3.')
+            refresh_bbox_validation(s)
+            if not (s['workflow']['bbox_valid'] or source_mismatch_confirmed(s)):
+                raise ValueError('Match the box and character counts or confirm a source mismatch before sorting.')
+            initialize_alignment(s)
         elif action == 'confirm_source_mismatch':
             if step != 3:
                 raise ValueError('Confirm a source mismatch in Step 3.')
@@ -523,13 +533,13 @@ class Workflow:
             s['suspicious_token_ids'] = sorted(suspicious, key=int)
             s['saved'] = False
         elif action == 'status':
-            if step != 5:
-                raise ValueError('Edit status in Step 5.')
+            if step not in (4, 5):
+                raise ValueError('Edit status in the Status & Order step.')
             box_id = str(payload.get('id') or s['selected_box_id'])
             update_status(s, s['region_uid_by_box_id'].get(box_id), payload['status'])
         elif action == 'statuses':
-            if step != 5:
-                raise ValueError('Edit statuses in Step 5.')
+            if step not in (4, 5):
+                raise ValueError('Edit statuses in the Status & Order step.')
             replace_statuses(s, payload.get('statuses'))
         elif action == 'reorder_text':
             if step != 4:
@@ -569,7 +579,10 @@ class Workflow:
                 if not validate_reading_order(s):
                     raise ValueError('Invalid coordinate-slot order.')
                 s['workflow']['reading_order_valid'] = True
-                s['current_step'] = 5
+                confirm_status(s)
+                (final_source_mismatch_document(s) if source_mismatch_confirmed(s)
+                 else final_document(s))
+                s['current_step'] = 6
             elif step == 5:
                 require(s, 'alignment_valid')
                 require(s, 'reading_order_valid')

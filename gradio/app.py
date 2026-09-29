@@ -244,6 +244,8 @@ def create_app(options):
                           <li><kbd>Alt/Option + Drag</kbd><span>Create a new bounding box.</span></li>
                         </ul>
                     </section>''', elem_id='selection-guide-host')
+                    sort_boxes=gr.Button('Sort Boxes', variant='primary', size='sm',
+                                         min_width=0, elem_id='sort-boxes')
                     delete=gr.Button('Delete Selected', size='sm', min_width=0,
                                      elem_id='delete-box')
                     detect_confirm=gr.Checkbox(value=False,visible=False)
@@ -267,14 +269,6 @@ def create_app(options):
                             clear_mismatch=gr.Button(
                                 'Clear', visible=False, variant='secondary', min_width=0,
                                 elem_id='clear-source-mismatch')
-                with gr.Group(visible=False,
-                              elem_classes=['section','sidebar-section','sidebar-component','box-color-control']) as box_color_group:
-                    gr.Markdown('### Box color')
-                    box_color=gr.Dropdown(
-                        ['White','Cyan','Amber','Violet','Pink'],
-                        value='White',show_label=False,interactive=True,
-                        filterable=False,container=False,
-                        elem_id='bbox-color-palette')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','sidebar-component','selection-section']) as status_group:
                     gr.Markdown('### Selected region')
@@ -334,7 +328,6 @@ def create_app(options):
         normalized=gr.State(None)
         outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,order_group,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table,
                  mismatch_group,mismatch_type,mismatch_note,confirm_mismatch,clear_mismatch]
-        outputs.append(box_color_group)
         outputs.append(workflow_chrome)
         outputs.append(loading_modal)
         outputs.extend([image_start,control_panel,main_workspace,workflow_footer,current_image])
@@ -376,7 +369,7 @@ def create_app(options):
             return [ctx,app_identity(s),gr.update(value=msg,visible=bool(msg)),
                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
                     gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected_region),*region_box['bbox'],
-                    gr.update(visible=step==5),gr.update(choices=box_ids,value=selected_box),
+                    gr.update(visible=step==4),gr.update(choices=box_ids,value=selected_box),
                     gr.update(choices=status_choices,value=status_box['status'],interactive=not missing),
                     gr.update(visible=step==4),json.dumps(s['reading_order']),gr.update(value=final,visible=step==7),
                     gr.update(visible=step==6),json.dumps(s.get('crop')),gr.update(visible=step==7),
@@ -386,7 +379,6 @@ def create_app(options):
                     gr.update(value=issue.get('issue_type')),
                     gr.update(value=issue.get('note','')),
                     gr.update(interactive=has and step==3),gr.update(visible=mismatch),
-                    gr.update(visible=has and step in (3,4)),
                     workflow_progress(s),LOADING_HIDDEN,
                     gr.update(visible=step==1),gr.update(visible=has and step>1),
                     gr.update(visible=has and step>1),gr.update(visible=has and step>1),
@@ -427,7 +419,7 @@ def create_app(options):
                     'field': {0,2,6,7},
                 }.get(action)
                 if affected is not None:
-                    always={1,25,37,38}
+                    always={1,25,36,37}
                     result = [value if i in affected | always else gr.skip() for i,value in enumerate(result)]
                 return result
             except Exception as exc:
@@ -455,13 +447,6 @@ def create_app(options):
         # Hide Gradio's per-component timers/spinners and show one centered modal instead.
         event_args=dict(outputs=outputs,concurrency_id='annotation-actions',concurrency_limit=1,
                         show_progress='hidden',js=SHOW_LOADING_JS)
-        box_color.change(
-            fn=None, inputs=[box_color], outputs=None, show_progress='hidden',
-            js="""(color) => {
-                document.querySelector('#annotation-board')?.dispatchEvent(
-                    new CustomEvent('bbox-color-change', {detail: color, bubbles: true})
-                );
-            }""")
         def clear_loading_when_done(event):
             # The returned loading HTML is normally identical to its initial value,
             # so Gradio may skip patching the DOM after a completed action. Clear
@@ -587,40 +572,25 @@ def create_app(options):
                     ctx = dict(ctx, active=updated)
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
-            if ctx['active']['current_step'] == 5:
-                try:
-                    active, _ = frontend_selection(selection)
-                    statuses = {
-                        uid: box['status']
-                        for uid, box in ctx['active']['regions'].items()
-                    }
-                    # The radio is a direct Next input and is therefore the
-                    # freshest value when its bridge update and the click
-                    # happen in the same browser tick.
-                    if active:
-                        region_uid=ctx['active']['region_uid_by_box_id'].get(str(active))
-                        if region_uid:
-                            statuses[region_uid] = status_value
-                    # Every earlier radio edit is already persisted. Reconcile
-                    # the full canonical map atomically, using only the active
-                    # radio as a last-tick fallback; a stale browser bridge must
-                    # never overwrite statuses saved for other regions.
-                    updated = engine.apply(ctx['active'], 'statuses', {
-                        'statuses': statuses,
-                    })
-                    ctx = dict(ctx, active=updated)
-                except Exception as exc:
-                    return render(ctx, WARNING+' '+html.escape(str(exc)))
             if ctx['active']['current_step'] == 4:
                 try:
+                    ctx = commit_statuses(ctx, selection, status_value)
                     text_sequence,token_order,suspicious_token_ids = frontend_text_sequence(selection)
-                    if text_sequence:
+                    if text_sequence is not None and (text_sequence or ctx['active']['annotations']):
                         updated = engine.apply(ctx['active'], 'reorder_text', {
                             'sequence': text_sequence,
                             'token_order': token_order,
                             'suspicious_token_ids': suspicious_token_ids,
                         })
                         ctx = dict(ctx, active=updated)
+                    elif suspicious_token_ids is not None:
+                        updated = engine.apply(ctx['active'], 'reorder_text', {
+                            'sequence': list(ctx['active'].get('text_sequence', [])),
+                            'token_order': list(map(str, ctx['active'].get('text_token_ids', []))),
+                            'suspicious_token_ids': suspicious_token_ids,
+                        })
+                        ctx = dict(ctx, active=updated)
+                    ctx = commit_statuses(ctx, selection, status_value)
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if ctx['active']['current_step'] == 6:
@@ -658,7 +628,7 @@ def create_app(options):
                 result[2] = gr.update(value='Running detection…', visible=True)
                 result[29] = gr.update(interactive=False)
                 result[28] = gr.update(interactive=False)
-                result[38] = loading_markup('Running detection…', visible=True)
+                result[37] = loading_markup('Running detection…', visible=True)
             yield result
             if needs_detection:
                 yield run(result[0], 'detect')
@@ -775,6 +745,34 @@ def create_app(options):
                 return sequence,token_order,suspicious_token_ids
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local text sequence is invalid.')
+        def frontend_statuses(value):
+            try:
+                parsed=json.loads(value or '{}')
+                statuses=parsed.get('statuses',{})
+                if (not isinstance(statuses,dict)
+                        or any(not isinstance(box_id,str)
+                               or status not in ('intact','damaged','unknown')
+                               for box_id,status in statuses.items())):
+                    raise ValueError
+                return statuses
+            except (ValueError,TypeError,AttributeError):
+                raise gr.Error('The local status selection is invalid.')
+        def commit_statuses(ctx,selection,status_value='intact'):
+            statuses={
+                uid: box['status']
+                for uid,box in ctx['active']['regions'].items()
+            }
+            for box_id,status_name in frontend_statuses(selection).items():
+                region_uid=ctx['active']['region_uid_by_box_id'].get(str(box_id))
+                if region_uid:
+                    statuses[region_uid]=status_name
+            active,_=frontend_selection(selection)
+            if active:
+                region_uid=ctx['active']['region_uid_by_box_id'].get(str(active))
+                if region_uid:
+                    statuses[region_uid]=status_value
+            updated=engine.apply(ctx['active'],'statuses',{'statuses':statuses})
+            return dict(ctx,active=updated)
         def update_coordinates(ctx,selection,a,b,d,e):
             active,_=frontend_selection(selection)
             if not active:raise gr.Error('Select a bounding box first.')
@@ -801,6 +799,15 @@ def create_app(options):
                 const hasBoxes=Object.keys(ctx?.active?.regions || {}).length > 0;
                 return [ctx, !hasBoxes || window.confirm('Run detection again and replace all existing boxes?')];
             }""")))
+        def sort_current_boxes(ctx,selection,a,b,d,e):
+            try:
+                ctx,_,_=commit_frontend_boxes(ctx,selection,(a,b,d,e))
+                return run(ctx,'sort_boxes')
+            except Exception as exc:
+                return render(ctx,WARNING+' '+html.escape(str(exc)))
+        clear_loading_when_done(sort_boxes.click(
+            sort_current_boxes,[session,selection_bridge,x1,y1,x2,y2],
+            **dict(event_args,js=snapshot_board_state_js(1))))
         def confirm_source_mismatch(ctx,issue_type,note):
             return run(ctx,'confirm_source_mismatch',dict(issue_type=issue_type,note=note))
         def clear_source_mismatch(ctx):
@@ -815,17 +822,26 @@ def create_app(options):
             try:return run(c,a,{key:json.loads(value)})
             except ValueError as exc:return render(c,'Invalid JSON: '+str(exc))
         clear_loading_when_done(apply_crop.click(lambda c,v:parse_action(c,'crop','bbox',v),[session,crop_coords],**event_args))
-        def apply_reading_order(ctx,selection):
+        def apply_reading_order(ctx,selection,status_value='intact'):
             sequence,token_order,suspicious_token_ids=frontend_text_sequence(selection)
-            if sequence is None:
-                raise gr.Error('No reading-order change is available.')
-            if not sequence and not ctx['active']['annotations']:
+            try:
+                if sequence is not None and (sequence or ctx['active']['annotations']):
+                    updated=engine.apply(ctx['active'],'reorder_text',{
+                        'sequence':sequence,'token_order':token_order,
+                        'suspicious_token_ids':suspicious_token_ids})
+                    ctx=dict(ctx,active=updated)
+                elif suspicious_token_ids is not None:
+                    updated=engine.apply(ctx['active'],'reorder_text',{
+                        'sequence':list(ctx['active'].get('text_sequence',[])),
+                        'token_order':list(map(str,ctx['active'].get('text_token_ids',[]))),
+                        'suspicious_token_ids':suspicious_token_ids})
+                    ctx=dict(ctx,active=updated)
+                ctx=commit_statuses(ctx,selection,status_value)
                 return render(ctx)
-            return run(ctx,'reorder_text',{
-                'sequence':sequence,'token_order':token_order,
-                'suspicious_token_ids':suspicious_token_ids})
+            except Exception as exc:
+                return render(ctx,WARNING+' '+html.escape(str(exc)))
         clear_loading_when_done(apply_order.click(
-            apply_reading_order,[session,selection_bridge],
+            apply_reading_order,[session,selection_bridge,status],
             **dict(event_args,js=snapshot_board_state_js(1))))
         def on_action(ctx,evt:gr.EventData):
             return run(ctx,evt._data['action'],evt._data['payload'])

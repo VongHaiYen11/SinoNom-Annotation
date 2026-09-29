@@ -7,7 +7,7 @@ from .fonts import FONT_CSS
 from .icons import ALERT, CHECK
 
 APP_CSS = FONT_CSS + (Path(__file__).parent / 'assets/workbench.css').read_text()
-LABELS = ('Image', 'Content', 'Bounding Boxes', 'Reading Order', 'Status', 'Crop', 'Review')
+LABELS = ('Image', 'Content', 'Bounding Boxes & Sort', 'Status & Order', 'Crop', 'Review')
 SECTION_LABELS = {
     'Nguyên văn chữ Hán Nôm': 'Nguyên văn chữ Hán Nôm',
     'Phiên âm Hán Việt': 'Phiên âm Hán Việt',
@@ -24,11 +24,10 @@ def app_identity(state):
 
 
 def workflow_progress(state):
-    step = state['current_step']; workflow = state['workflow']
+    step = display_step(state['current_step']); workflow = state['workflow']
     complete = [bool(state['image']), workflow['content_verified'],
                 workflow['content_verified'] and (workflow['bbox_valid'] or source_mismatch_confirmed(state)),
-                workflow['content_verified'] and workflow['reading_order_valid'],
-                workflow['content_verified'] and workflow['status_valid'],
+                workflow['content_verified'] and workflow['reading_order_valid'] and workflow['status_valid'],
                 state['crop_saved'], state['saved']]
     steps = []
     for index, label in enumerate(LABELS, 1):
@@ -49,9 +48,10 @@ def header(state):
 
 
 def panel_heading(state):
+    step = display_step(state['current_step'])
     return f'''<div class="panel-heading">
       <span class="panel-eyebrow">Inspector</span>
-      <h2>{LABELS[state["current_step"]-1]}</h2>
+      <h2>{LABELS[step-1]}</h2>
     </div>'''
 
 
@@ -80,5 +80,15 @@ def status_rows(state):
 
 
 def footer(state):
-    step = state['current_step']
-    return f'<div class="footer-step-label">{LABELS[step-1]} <span>/</span> {step} of 7</div>'
+    step = display_step(state['current_step'])
+    return f'<div class="footer-step-label">{LABELS[step-1]} <span>/</span> {step} of 6</div>'
+
+
+def display_step(step):
+    if step <= 4:
+        return step
+    if step == 6:
+        return 5
+    if step == 7:
+        return 6
+    return 4

@@ -5,11 +5,6 @@ let syncingCoordinateControls = false;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId = null;
 let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
-let annotationColor = '#f4f4f5';
-const annotationColors = {
-  White:'#f4f4f5', Cyan:'#22d3ee', Amber:'#f59e0b',
-  Violet:'#a78bfa', Pink:'#f472b6',
-};
 const chipReflowAnimations = new WeakMap();
 const imageTransform = {zoom: 100, width: props.value.width, height: props.value.height};
 
@@ -20,33 +15,6 @@ const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-bo
   group => group.dataset.boxId === String(id)
 );
 const root = element.closest('.gradio-container') || document;
-const applyAnnotationColor = () => {
-  if (![3,4].includes(props.value.step)) return;
-  element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group=>{
-    if(group.classList.contains('suspicious-region')) return;
-    const rect=group.querySelector('rect:not([data-image-resize-handle])');
-    if(rect){rect.setAttribute('fill',annotationColor);rect.setAttribute('stroke',annotationColor);}
-    const label=group.querySelector('text');
-    if(label)label.setAttribute('fill',annotationColor);
-  });
-};
-const readAnnotationColor = () => {
-  const selected=root.querySelector('#bbox-color-palette input, #bbox-color-palette select');
-  if(selected && annotationColors[selected.value]) annotationColor=annotationColors[selected.value];
-};
-const handleAnnotationColor = target => {
-  const color=target.closest('#bbox-color-palette input, #bbox-color-palette select');
-  if(!color)return false;
-  if(annotationColors[color.value])annotationColor=annotationColors[color.value];
-  applyAnnotationColor();
-  return true;
-};
-root.addEventListener('bbox-color-change', event => {
-  const value=event.detail;
-  if(!annotationColors[value])return;
-  annotationColor=annotationColors[value];
-  applyAnnotationColor();
-});
 const setInputValue = (selector, value) => {
   const input = root.querySelector(`${selector} input, ${selector} textarea`);
   if (!input) return;
@@ -94,7 +62,7 @@ const syncExternalControls = () => {
       syncingCoordinateControls = false;
     }
   }
-  if (props.value.step === 5) {
+  if (props.value.step === 4) {
     const status = root.querySelector(`#status-radio input[value="${active.status}"]`);
     if (status && !status.checked) {
       syncingStatusControl = true;
@@ -110,7 +78,7 @@ const renderLocalStatus = (id, status) => {
   const group = groupFor(id);
   if (!box || !group) return;
   box.status = status;
-  const revealStatus = props.value.step >= 5;
+  const revealStatus = props.value.step >= 4;
   const color = !revealStatus ? '#f4f4f5' : status === 'unknown' ? '#f59e0b' : status === 'damaged' ? '#ef4444' : '#22c55e';
   const rect = group.querySelector('rect:not([data-image-resize-handle])');
   if (rect) {
@@ -172,8 +140,6 @@ const hydrateLocalState = () => {
     updateExcludedChips(container);
   });
   renderSelection();
-  readAnnotationColor();
-  applyAnnotationColor();
 };
 
 const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => {
@@ -230,7 +196,6 @@ const sidebar = root.querySelector('#control-panel');
 if (sidebar) resizeObserver.observe(sidebar);
 
 root.addEventListener('change', event => {
-  if(handleAnnotationColor(event.target))return;
   const suspicious = event.target.closest('#suspicious-toggle input[type="checkbox"]');
   if (suspicious && props.value.step === 4 && activeTokenId) {
     if(suspicious.checked)localSuspiciousTokenIds.add(activeTokenId);
@@ -242,7 +207,7 @@ root.addEventListener('change', event => {
     return;
   }
   const input = event.target.closest('#status-radio input');
-  if (!input || props.value.step !== 5 || !activeBoxId) return;
+  if (!input || props.value.step !== 4 || !activeBoxId) return;
   renderLocalStatus(activeBoxId, input.value);
   syncExternalControls();
   // Status is canonical annotation data, so persist each user edit instead of
@@ -251,7 +216,6 @@ root.addEventListener('change', event => {
 });
 
 root.addEventListener('input', event => {
-  if(handleAnnotationColor(event.target))return;
   if (syncingCoordinateControls || props.value.step !== 3 || !activeBoxId
       || !event.target.closest('#bbox-x1 input, #bbox-y1 input, #bbox-x2 input, #bbox-y2 input')) return;
   const rawValues=['#bbox-x1','#bbox-y1','#bbox-x2','#bbox-y2'].map(selector =>
@@ -352,7 +316,8 @@ function renderSuspiciousPreview(){
     const chip=element.querySelector(`[data-order-chip][data-assigned-box-id="${group.dataset.boxId}"]`);
     const suspicious=Boolean(chip?.classList.contains('suspicious'));
     group.classList.toggle('suspicious-region',suspicious);
-    const color=suspicious?'#facc15':annotationColor;
+    const status=localBoxes[group.dataset.boxId]?.status || 'intact';
+    const color=suspicious?'#facc15':status==='unknown'?'#f59e0b':status==='damaged'?'#ef4444':'#22c55e';
     const rect=group.querySelector('rect:not([data-image-resize-handle])');
     if(rect){rect.setAttribute('fill',color);rect.setAttribute('stroke',color);}
     const label=group.querySelector('text');if(label)label.setAttribute('fill',color);

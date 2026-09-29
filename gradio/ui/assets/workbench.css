@@ -507,6 +507,35 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   box-shadow: 0 0 0 1000px var(--color-page) inset !important;
   -webkit-text-fill-color: var(--color-text) !important;
 }
+/* Gradio dropdowns render a custom listbox outside the input surface. Chrome
+   light mode can otherwise recolor that popup independently of the app. */
+.gradio-container select option,
+.gradio-container [role="listbox"],
+.gradio-container ul.options {
+  border-color: var(--color-border) !important;
+  background: var(--color-page) !important;
+  color: var(--color-text) !important;
+  color-scheme: dark !important;
+}
+.gradio-container [role="option"],
+.gradio-container ul.options > li {
+  background: var(--color-page) !important;
+  color: var(--color-text) !important;
+  -webkit-text-fill-color: var(--color-text) !important;
+}
+.gradio-container [role="option"]:hover,
+.gradio-container [role="option"][aria-selected="true"],
+.gradio-container ul.options > li:hover,
+.gradio-container ul.options > li.selected {
+  background: var(--color-panel-hover) !important;
+  color: var(--color-text) !important;
+  -webkit-text-fill-color: var(--color-text) !important;
+}
+.gradio-container .dropdown-arrow,
+.gradio-container .dropdown-arrow svg {
+  color: var(--color-text) !important;
+  fill: currentColor !important;
+}
 .gradio-container .block-label { padding-bottom: var(--space-2) !important; font-size: 12px; }
 .gradio-container label > span { margin-bottom: var(--space-2); }
 #control-panel button,
@@ -591,6 +620,29 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 #action-message p { margin: 0; font-size: 12px; }
 #action-message .ui-icon { width: 16px; height: 16px; margin-right: var(--space-2); color: #f87171; }
 #final-preview { width: auto; margin: 0; padding: var(--card-padding); overflow: auto; }
+#final-preview .block-label,
+#final-preview .label-wrap,
+#final-preview button,
+#final-preview [role="button"] {
+  border-color: var(--color-border) !important;
+  background: var(--color-panel) !important;
+  color: var(--color-text) !important;
+  -webkit-text-fill-color: var(--color-text) !important;
+}
+#final-preview .block-label *,
+#final-preview .label-wrap *,
+#final-preview button svg,
+#final-preview [role="button"] svg {
+  color: var(--color-text) !important;
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+#final-preview pre,
+#final-preview code,
+#final-preview .json-holder {
+  background: var(--color-page) !important;
+  color: var(--color-text) !important;
+}
 
 .han-nom-text textarea { padding: var(--space-4) !important; overflow-x: hidden !important; font-family: var(--han-nom-font), Arial, sans-serif !important; font-size: 20px !important; line-height: 1.8 !important; overflow-wrap: anywhere !important; white-space: pre-wrap !important; word-break: normal !important; }
 .han-nom-json,
