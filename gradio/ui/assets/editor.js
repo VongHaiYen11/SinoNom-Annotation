@@ -80,7 +80,7 @@ const syncExternalControls = () => {
       const chip=activeBoxId && element.querySelector(
         `[data-order-chip][data-assigned-box-id="${activeBoxId}"]`);
       activeTokenId=chip?.dataset.tokenId || null;
-      suspicious.disabled = !chip || chip.classList.contains('excluded');
+      suspicious.disabled = !chip || chip.classList.contains('excluded') || chip.classList.contains('missing');
       suspicious.checked = Boolean(chip && localSuspiciousTokenIds.has(activeTokenId));
     }
   }
@@ -117,10 +117,10 @@ const renderLocalStatus = (id, status) => {
   if (rect) {
     const missing = rect.dataset.missing === '1';
     const suspicious = group.classList.contains('suspicious-region');
-    rect.setAttribute('fill', suspicious ? '#facc15' : missing ? '#f59e0b' : color);
+    rect.setAttribute('fill', suspicious ? '#facc15' : missing ? '#e5e7eb' : color);
     rect.setAttribute('stroke', color);
     rect.removeAttribute('stroke-dasharray');
-    rect.setAttribute('fill-opacity', suspicious ? '.15' : missing ? '.10' : '.04');
+    rect.setAttribute('fill-opacity', suspicious ? '.20' : missing ? '.30' : '.04');
   }
   const label = group.querySelector('text');
   if (label) label.setAttribute('fill', color);
@@ -140,7 +140,7 @@ const renderSelection = (sync=true) => {
       const suspicious=group.classList.contains('suspicious-region');
       const missing=rect.dataset.missing === '1';
       rect.setAttribute('fill-opacity', props.value.step >= 4
-        ? suspicious ? '.15' : missing ? '.10' : '.04'
+        ? suspicious ? '.20' : missing ? '.30' : '.04'
         : selected ? '.16' : '.04');
       rect.setAttribute('stroke-width', suspicious && active ? '3' : suspicious ? '2' : active ? '2.5' : selected ? '2' : '1.5');
     }
@@ -155,6 +155,9 @@ const hydrateLocalState = () => {
   const preserveSelection = context === localContext;
   const preserveOrder = preserveSelection && ['select','suspicious'].includes(pendingAction);
   localBoxes = cloneBoxes(props.value.boxes);
+  if (props.value.step !== 4) {
+    element.querySelectorAll('[data-miss-mark]').forEach(mark => mark.remove());
+  }
   if (!preserveOrder) {
     localTextSequence = [...(props.value.orderedAnnotations || [])].map(String);
     localTokenOrder = [];
@@ -282,6 +285,15 @@ const drawPreview = (group, box) => {
   rect.setAttribute('x',box[0]); rect.setAttribute('y',box[1]);
   rect.setAttribute('width',Math.max(0,box[2]-box[0]));
   rect.setAttribute('height',Math.max(0,box[3]-box[1]));
+  const missMark=group.querySelector('[data-miss-mark]');
+  if(missMark){
+    const lines=missMark.querySelectorAll('line');
+    [[box[0],box[1],box[2],box[3]],[box[2],box[1],box[0],box[3]]]
+      .forEach((coords,index)=>{
+        const line=lines[index];
+        if(line) ['x1','y1','x2','y2'].forEach((attr,pos)=>line.setAttribute(attr,coords[pos]));
+      });
+  }
   const label=group.querySelector('text');
   if(label){
     const unit=Math.max(props.value.width,props.value.height)/900;
@@ -368,8 +380,8 @@ function renderSuspiciousPreview(){
     const rect=group.querySelector('rect:not([data-image-resize-handle])');
     if(rect){
       const missing=rect.dataset.missing === '1';
-      rect.setAttribute('fill',suspicious?'#facc15':missing?'#f59e0b':stroke);
-      rect.setAttribute('fill-opacity',suspicious?'.15':missing?'.10':'.04');
+      rect.setAttribute('fill',suspicious?'#facc15':missing?'#e5e7eb':stroke);
+      rect.setAttribute('fill-opacity',suspicious?'.20':missing?'.30':'.04');
       rect.setAttribute('stroke',stroke);
     }
     const label=group.querySelector('text');if(label)label.setAttribute('fill',stroke);

@@ -203,6 +203,7 @@ def create_app(options):
                 save_all=gr.Button('Download All', variant='primary', scale=0, elem_id='save-all')
             workflow_chrome=gr.HTML(workflow_progress(initial['active']),
                                     elem_id='workflow-chrome')
+        message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
         download_payload=gr.Textbox(visible=False)
         # This remains mounted across every callback, so only one loading modal is shown.
         loading_modal=gr.HTML(value=LOADING_HIDDEN, elem_id='global-loading-host')
@@ -331,7 +332,6 @@ def create_app(options):
                             )
                     board=gr.HTML(value=snapshot(initial['active']),html_template='${value.markup}',css_template=CSS,js_on_load=SCRIPT, elem_id='annotation-board')
                     preview=gr.JSON(label='Image JSON',visible=False, elem_id='final-preview', elem_classes='han-nom-json')
-            message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
         with gr.Row(visible=False, elem_id='workflow-footer',elem_classes='button-group') as workflow_footer:
             back=gr.Button('Back', interactive=False, scale=0, elem_id='back-button')
             footer_label=gr.HTML(footer(initial['active']), elem_id='footer-step')
@@ -577,7 +577,8 @@ def create_app(options):
                     return result
             if ctx['active']['current_step'] == 3:
                 try:
-                    ctx,_,_=commit_frontend_boxes(ctx,selection)
+                    ctx,_,_=commit_frontend_boxes(
+                        ctx, selection, (x1_value, y1_value, x2_value, y2_value))
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if (ctx['active']['current_step'] == 3
