@@ -105,11 +105,22 @@ const syncExternalControls = () => {
       try { statusRadio.click(); } finally { syncingStatusControl = false; }
     }
     const unknownRadioInputs = root.querySelectorAll('#unknown-radio input');
+    const unknownContainer = root.querySelector('#unknown-radio');
     const isDamaged = active.status === 'damaged';
     const targetValue = isDamaged && active.unknown ? 'True' : 'False';
+    if (unknownContainer) {
+      unknownContainer.classList.toggle('disabled', !isDamaged);
+      unknownContainer.style.pointerEvents = isDamaged ? 'auto' : 'none';
+      unknownContainer.style.opacity = isDamaged ? '1' : '0.6';
+    }
     unknownRadioInputs.forEach(input => {
       input.disabled = !isDamaged;
-      if (input.value === targetValue && !input.checked && isDamaged) {
+      const label = input.closest('label');
+      if (label) {
+        label.classList.toggle('disabled', !isDamaged);
+        label.style.pointerEvents = isDamaged ? 'auto' : 'none';
+      }
+      if (input.value === targetValue && !input.checked) {
         syncingStatusControl = true;
         try { input.click(); } finally { syncingStatusControl = false; }
       }
@@ -285,6 +296,7 @@ const sidebar = root.querySelector('#control-panel');
 if (sidebar) resizeObserver.observe(sidebar);
 
 root.addEventListener('change', event => {
+  if (syncingStatusControl) return;
   if(handleAnnotationColor(event.target))return;
   const suspicious = event.target.closest('#suspicious-toggle input[type="checkbox"]');
   if (suspicious && props.value.step === 4 && activeTokenId) {

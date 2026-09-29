@@ -293,7 +293,7 @@ def create_app(options):
                     gr.Markdown('### Selected region')
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
-                    unknown_status=gr.Radio(['False','True'],value='False',label='Unknown character (Damaged only)',interactive=False,elem_id='unknown-radio')
+                    unknown_status=gr.Radio(['False','True'],value='False',label='Unknown character (Damaged only)',interactive=True,elem_id='unknown-radio')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','sidebar-component','box-color-control']) as box_color_group:
                     gr.Markdown('### Box color')
