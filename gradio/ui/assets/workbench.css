@@ -648,12 +648,25 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 #content-editor .prose h2 { margin: 0; font-size: 20px; }
 #annotation-board,
 #annotation-board > .html-container,
-#annotation-board > div,
-#annotation-board .prose,
+#annotation-board > .html-container > .prose,
 .workbench-board {
+  display: flex !important;
+  flex-direction: column !important;
   height: 100% !important;
   min-height: 0 !important;
-  flex: 1 1 0% !important;
+  flex: 1 1 100% !important;
+  align-self: stretch !important;
+}
+
+.image-viewport {
+  display: grid;
+  place-items: center;
+  flex: 1 1 100% !important;
+  min-height: 0 !important;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: var(--space-6, 24px);
+  box-sizing: border-box;
 }
 
 #action-message { grid-column: 1 / -1; width: auto; margin: 0; padding: var(--space-3) var(--space-4); border: 1px solid #7f1d1d; border-radius: var(--radius-md); background: #291719; color: #fca5a5; }

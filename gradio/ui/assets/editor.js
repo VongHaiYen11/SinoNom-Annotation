@@ -220,25 +220,39 @@ const fitCanvas = (width, height) => {
   const svg = element.querySelector('.annotation-canvas');
   const viewport = element.querySelector('.image-viewport');
   if (!svg || !viewport) return;
+  const board = viewport.closest('.workbench-board') || viewport.parentElement;
+  const toolbar = board?.querySelector('.workspace-toolbar');
+  const legend = board?.querySelector('.status-legend');
+
   const viewBox = (svg.getAttribute('viewBox') || '').split(' ').map(Number);
   const w = width || (viewBox.length === 4 && viewBox[2]) || imageTransform.width || props.value?.width || 1000;
   const h = height || (viewBox.length === 4 && viewBox[3]) || imageTransform.height || props.value?.height || 1000;
   if (!w || !h) return;
+
   const style = getComputedStyle(viewport);
   const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
   const padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
-  const availW = Math.max(100, (viewport.offsetWidth || viewport.clientWidth || 400) - padX);
-  const availH = Math.max(100, (viewport.offsetHeight || viewport.clientHeight || 400) - padY);
+
+  const boardH = board?.clientHeight || viewport.clientHeight || 500;
+  const toolbarH = toolbar?.offsetHeight || 0;
+  const legendH = legend?.offsetHeight || 0;
+
+  const availW = Math.max(100, (board?.clientWidth || viewport.clientWidth || 400) - padX);
+  const availH = Math.max(100, (boardH - toolbarH - legendH) - padY);
+
   const fitScale = Math.min(availW / w, availH / h);
   const fittedWidth = w * fitScale;
   const fittedHeight = h * fitScale;
+
   const zoomFactor = Math.max(25, Math.min(150, imageTransform.zoom || 100)) / 100;
   const renderedWidth = Math.round(fittedWidth * zoomFactor);
   const renderedHeight = Math.round(fittedHeight * zoomFactor);
+
   svg.style.width = `${renderedWidth}px`;
   svg.style.height = `${renderedHeight}px`;
   svg.style.maxWidth = 'none';
   svg.style.maxHeight = 'none';
+
   const label = element.querySelector('.zoom-label');
   if (label) label.textContent = `${imageTransform.zoom}%`;
 };
