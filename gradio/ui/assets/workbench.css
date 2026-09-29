@@ -646,8 +646,15 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 #content-editor { gap: var(--section-gap) !important; padding: var(--card-padding) !important; background: var(--color-page) !important; }
 #content-editor > .styler { gap: var(--section-gap) !important; }
 #content-editor .prose h2 { margin: 0; font-size: 20px; }
-#annotation-board { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; padding: 0; border: 0; }
-#annotation-board > div { flex: 1; min-height: 0; }
+#annotation-board,
+#annotation-board > .html-container,
+#annotation-board > div,
+#annotation-board .prose,
+.workbench-board {
+  height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 0% !important;
+}
 
 #action-message { grid-column: 1 / -1; width: auto; margin: 0; padding: var(--space-3) var(--space-4); border: 1px solid #7f1d1d; border-radius: var(--radius-md); background: #291719; color: #fca5a5; }
 #action-message p { margin: 0; font-size: 12px; }
