@@ -56,7 +56,11 @@ def snapshot_board_state_js(selection_index):
     """Submit the live board state instead of a potentially stale bridge."""
     return f"""(...args) => {{
         document.getElementById('global-loading')?.classList.add('is-visible');
-        const board = document.querySelector('#annotation-board');
+        // The editor owns the canvas; there is no #annotation-board wrapper.
+        // Read the live SVG so drag/resize changes are committed before the
+        // Gradio event sends the selection bridge to Python.
+        const board = document.querySelector('.annotation-canvas')?.closest('.workbench-board')
+            || document.querySelector('.annotation-canvas')?.parentElement;
         const cards = board?.querySelector('.order-chips');
         let snapshot = {{}};
         try {{ snapshot = JSON.parse(args[{selection_index}] || '{{}}'); }} catch (_) {{}}
@@ -228,7 +232,7 @@ def create_app(options):
                     selection_bridge=gr.Textbox(value='{}',show_label=False,
                                                 elem_id='selection-bridge',
                                                 elem_classes='frontend-bridge')
-                    with gr.Group(elem_classes=['section','sidebar-section','sidebar-component','selection-section']):
+                    with gr.Group(visible=False, elem_classes=['section','sidebar-section','sidebar-component','selection-section']) as bbox_selection_group:
                         gr.Markdown('### Selected region')
                         with gr.Row(elem_classes=['coordinate-row','field-group']):
                             x1=gr.Number(label='x1', min_width=0,elem_id='bbox-x1');y1=gr.Number(label='y1', min_width=0,elem_id='bbox-y1')
@@ -244,17 +248,20 @@ def create_app(options):
                           <li><kbd>Alt/Option + Drag</kbd><span>Create a new bounding box.</span></li>
                         </ul>
                     </section>''', elem_id='selection-guide-host')
-                    sort_boxes=gr.Button('Sort Boxes', variant='primary', size='sm',
-                                         min_width=0, elem_id='sort-boxes')
                     delete=gr.Button('Delete Selected', size='sm', min_width=0,
                                      elem_id='delete-box')
                     detect_confirm=gr.Checkbox(value=False,visible=False)
-                    detect=gr.Button('Run Detection', variant='primary', size='sm',
-                                     interactive=not skip_detection,elem_id='run-detection',
-                                     min_width=0)
+                    with gr.Row(elem_classes=['button-group','sidebar-action-row','bbox-action-row']):
+                        sort_boxes=gr.Button('Sort Boxes', variant='primary', size='sm',
+                                             min_width=0, elem_id='sort-boxes')
+                        detect=gr.Button('Run Detection', variant='primary', size='sm',
+                                         interactive=not skip_detection,elem_id='run-detection',
+                                         min_width=0)
                     with gr.Group(visible=False,
                                   elem_classes=['section','sidebar-section','sidebar-component','mismatch-panel']) as mismatch_group:
                         gr.Markdown('### Box-Content Mismatch')
+                        summary=gr.HTML(panel_summary(initial['active']),
+                                        elem_id='validation-summary-host')
                         mismatch_type=gr.Dropdown([
                             ('Missing Content','missing_text'),
                             ('Extra Content','extra_text'),
@@ -304,8 +311,6 @@ def create_app(options):
                     crop_coords=gr.Textbox(label='Coordinates [x1, y1, x2, y2]',
                                            elem_id='crop-coordinates')
                     apply_crop=gr.Button('Apply crop',variant='primary')
-                summary=gr.HTML(panel_summary(initial['active']),
-                                elem_id='validation-summary-host')
             with gr.Column(visible=False, elem_id='main-workspace', min_width=0, scale=1,
                            elem_classes='panel') as main_workspace:
                 with gr.Column(elem_id='workspace-body'):
@@ -572,8 +577,7 @@ def create_app(options):
                     return result
             if ctx['active']['current_step'] == 3:
                 try:
-                    ctx,_,_=commit_frontend_boxes(
-                        ctx,selection,(x1_value,y1_value,x2_value,y2_value))
+                    ctx,_,_=commit_frontend_boxes(ctx,selection)
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if (ctx['active']['current_step'] == 3
@@ -797,7 +801,7 @@ def create_app(options):
             [session,selection_bridge,x1,y1,x2,y2],**event_args))
         def delete_selected(ctx,selection,a,b,d,e):
             try:
-                ctx,_,selected=commit_frontend_boxes(ctx,selection,(a,b,d,e))
+                ctx,_,selected=commit_frontend_boxes(ctx,selection)
                 if not selected:raise ValueError('Select at least one box to delete.')
                 return run(ctx,'delete',dict(ids=selected))
             except Exception as exc:
@@ -817,7 +821,7 @@ def create_app(options):
             }""")))
         def sort_current_boxes(ctx,selection,a,b,d,e):
             try:
-                ctx,_,_=commit_frontend_boxes(ctx,selection,(a,b,d,e))
+                ctx,_,_=commit_frontend_boxes(ctx,selection)
                 return run(ctx,'sort_boxes')
             except Exception as exc:
                 return render(ctx,WARNING+' '+html.escape(str(exc)))

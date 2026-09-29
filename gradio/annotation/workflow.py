@@ -46,6 +46,26 @@ def _source_mismatch_from_document(document):
     return result
 
 
+def _carry_source_mismatch_if_same_case(state):
+    issue = state.get('source_mismatch')
+    if not issue or issue.get('source_text') != state.get('annotation_text'):
+        state['source_mismatch'] = None
+        return
+    issue_type = canonical_issue_type(issue.get('issue_type'))
+    character_count = count_annotation_characters(state['annotation_text'])
+    box_count = len(state['regions'])
+    try:
+        validate_source_mismatch_type(issue_type, character_count, box_count)
+    except ValueError:
+        state['source_mismatch'] = None
+        return
+    state['source_mismatch'] = dict(
+        issue,
+        source_character_count=character_count,
+        bounding_box_count=box_count,
+    )
+
+
 def fingerprint(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
@@ -450,11 +470,11 @@ class Workflow:
                     delete_bbox(s, uid)
                 s['selected_region_uids'] = [uid for uid in s.get('selected_region_uids', []) if uid in s['regions']]
                 s['selected_region_uid'] = s['selected_region_uids'][-1] if s['selected_region_uids'] else next(iter(s['regions']), None)
-            if action in ('add', 'delete', 'detect'):
-                s['source_mismatch'] = None
             refresh_bbox_validation(s)
             if s['workflow']['bbox_valid']:
                 s['source_mismatch'] = None
+            elif action in ('add', 'delete', 'detect'):
+                _carry_source_mismatch_if_same_case(s)
         elif action == 'sort_boxes':
             require(s, 'content_verified')
             if step != 3:
