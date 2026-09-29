@@ -424,6 +424,12 @@ button#next-button::after { transform: rotate(180deg); }
 #control-panel .sidebar-action-row button,
 #control-panel .sidebar-section > button { width: 100%; }
 #current-image-name { overflow-wrap: anywhere; }
+#current-image-name code {
+  border: 1px solid var(--color-border) !important;
+  background: var(--color-page) !important;
+  color: var(--color-text) !important;
+  -webkit-text-fill-color: var(--color-text) !important;
+}
 #control-panel .sidebar-action-row button {
   height: var(--button-height);
   min-height: var(--button-height);
@@ -477,6 +483,30 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 #control-panel input[type="text"],
 #control-panel input[type="number"],
 #control-panel select { min-height: var(--input-height); font-size: 12px; }
+.gradio-container input[type="text"],
+.gradio-container input[type="number"],
+.gradio-container textarea,
+.gradio-container select {
+  border-color: var(--color-border) !important;
+  background-color: var(--color-page) !important;
+  color: var(--color-text) !important;
+  caret-color: var(--color-text) !important;
+  -webkit-text-fill-color: var(--color-text) !important;
+}
+.gradio-container input[type="text"]::placeholder,
+.gradio-container input[type="number"]::placeholder,
+.gradio-container textarea::placeholder {
+  color: var(--input-placeholder-color) !important;
+  -webkit-text-fill-color: var(--input-placeholder-color) !important;
+  opacity: 1;
+}
+.gradio-container input:-webkit-autofill,
+.gradio-container input:-webkit-autofill:hover,
+.gradio-container input:-webkit-autofill:focus,
+.gradio-container textarea:-webkit-autofill {
+  box-shadow: 0 0 0 1000px var(--color-page) inset !important;
+  -webkit-text-fill-color: var(--color-text) !important;
+}
 .gradio-container .block-label { padding-bottom: var(--space-2) !important; font-size: 12px; }
 .gradio-container label > span { margin-bottom: var(--space-2); }
 #control-panel button,
