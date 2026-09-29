@@ -21,7 +21,7 @@ from annotation.io import atomic_write
 from annotation.text_extraction import content_fields
 from annotation.workflow import Workflow
 from ui.presentation import SECTION_LABELS, header
-from ui.editor import snapshot
+from ui.editor import snapshot, source_text
 from PIL import Image
 
 
@@ -55,7 +55,9 @@ class GradioCallbacks(unittest.TestCase):
         app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
         self.assertNotIn("send('select'",script)
         self.assertNotIn("send('commit_boxes'",script)
-        self.assertIn("send('status'",script)
+        self.assertNotIn("send('status'",script)
+        self.assertIn('statuses: Object.fromEntries',script)
+        self.assertIn('previousBoxes[id]?.status',script)
         self.assertIn('boxes: Object.fromEntries',script)
         self.assertIn("kind:'marquee'",script)
         self.assertIn('selectedIds = new Set()',script)
@@ -113,6 +115,23 @@ class GradioCallbacks(unittest.TestCase):
         editor_source=(Path(__file__).resolve().parents[1]/'ui/editor.py').read_text()
         self.assertNotIn('data-zoom="fit"',editor_source)
         self.assertNotIn('Fit image to view',editor_source)
+
+    def test_status_order_uses_sidebar_source_and_dominant_image_grid(self):
+        state=new_state();state.update(image='12305.png',image_size=[100,100],
+                                      image_url='image.jpg',current_step=4)
+        set_verified_content(state,{},'永寺樂')
+        for x in (0,20,40):add_bbox(state,[x,0,x+10,10])
+        refresh_bbox_validation(state);confirm_status(state);initialize_alignment(state)
+        markup=snapshot(state)['markup']
+        sidebar=source_text(state)
+        self.assertIn('workbench-board status-order-board',markup)
+        self.assertIn('class="order-editor"',markup)
+        self.assertNotIn('class="source-preview"',markup)
+        self.assertIn('class="sidebar-source-text"',sidebar)
+        self.assertIn('永寺樂',sidebar)
+        css=(Path(__file__).resolve().parents[1]/'ui/assets/editor.css').read_text()
+        self.assertIn('grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr)',css)
+        self.assertIn('.status-order-board .image-viewport',css)
 
     def test_apply_and_next_snapshot_visible_text_cards(self):
         source=(Path(__file__).resolve().parents[1]/'app.py').read_text()

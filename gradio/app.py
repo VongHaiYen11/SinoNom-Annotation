@@ -21,7 +21,7 @@ from annotation.text_alignment import count_annotation_characters
 from annotation.export import (collect_annotations, collect_content_documents,
                                collect_source_mismatches, collect_suspicious_details,
                                save_export_archive)
-from ui.editor import snapshot, SCRIPT, CSS
+from ui.editor import snapshot, source_text, SCRIPT, CSS
 from ui.presentation import (APP_CSS, app_identity, workflow_progress,
                              panel_heading, panel_summary, footer,
                              status_rows, SECTION_LABELS)
@@ -304,6 +304,9 @@ def create_app(options):
                         suspicious_toggle=gr.Checkbox(
                             value=False,label='Suspicious annotation',show_label=False,
                             interactive=False,container=False,elem_id='suspicious-toggle')
+                source_text_group=gr.HTML(
+                    value='', visible=False, elem_id='sidebar-source-text',
+                    elem_classes=['section','sidebar-section','sidebar-component'])
                 order_text=gr.State('[]')
                 with gr.Group(visible=False, elem_classes=['section','sidebar-section','sidebar-component']) as crop_group:
                     gr.Markdown('### Crop')
@@ -347,6 +350,7 @@ def create_app(options):
         outputs.extend([image_start,control_panel,main_workspace,workflow_footer,current_image])
         outputs.append(content_bridge)
         outputs.append(suspicious_toggle)
+        outputs.append(source_text_group)
 
         def render(ctx, msg=''):
             s=ctx['active']; step=s['current_step']; has=bool(s.get('image'))
@@ -399,7 +403,8 @@ def create_app(options):
                     (f'`{s["image"]}`' if has else '—'),
                     browser_draft,
                     gr.update(value=selected_box in suspicious_ids,
-                              interactive=step==4 and selected_box is not None)]
+                              interactive=step==4 and selected_box is not None),
+                    gr.update(value=source_text(s), visible=step==4 and has)]
 
         def run(ctx, action, payload=None, auto_detect=True):
             try:
@@ -422,7 +427,7 @@ def create_app(options):
                         msg='Detection failed: '+str(exc)
                 result = render(ctx,msg)
                 # Preserve unaffected editors and avoid replacing unrelated component values.
-                suspicious_outputs={len(outputs)-1}
+                suspicious_outputs={len(outputs)-2}
                 affected = {
                     'select': {0,2,8,10,11,12,13,14,16,17} | suspicious_outputs,
                     'suspicious': {0,2,8} | suspicious_outputs,
@@ -783,12 +788,16 @@ def create_app(options):
                 uid: box['status']
                 for uid,box in ctx['active']['regions'].items()
             }
-            for box_id,status_name in frontend_statuses(selection).items():
+            frontend=frontend_statuses(selection)
+            for box_id,status_name in frontend.items():
                 region_uid=ctx['active']['region_uid_by_box_id'].get(str(box_id))
                 if region_uid:
                     statuses[region_uid]=status_name
             active,_=frontend_selection(selection)
-            if active:
+            # The bridge contains the complete live working set. The mounted
+            # radio value is only a compatibility fallback for an older or
+            # incomplete browser snapshot; it must not overwrite that map.
+            if active and str(active) not in frontend:
                 region_uid=ctx['active']['region_uid_by_box_id'].get(str(active))
                 if region_uid:
                     statuses[region_uid]=status_value

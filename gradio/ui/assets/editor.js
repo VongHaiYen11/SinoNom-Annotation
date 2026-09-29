@@ -154,7 +154,15 @@ const hydrateLocalState = () => {
   const context = `${props.value.image || ''}:${props.value.step}`;
   const preserveSelection = context === localContext;
   const preserveOrder = preserveSelection && ['select','suspicious'].includes(pendingAction);
+  const previousBoxes = localBoxes;
   localBoxes = cloneBoxes(props.value.boxes);
+  // Selecting another box causes a Python render. Preserve the uncommitted
+  // status working set across that render until Apply Changes or Next.
+  if (preserveOrder && props.value.step === 4) {
+    Object.entries(localBoxes).forEach(([id, box]) => {
+      if (previousBoxes[id]?.status) box.status = previousBoxes[id].status;
+    });
+  }
   if (props.value.step !== 4) {
     element.querySelectorAll('[data-miss-mark]').forEach(mark => mark.remove());
   }
@@ -179,6 +187,9 @@ const hydrateLocalState = () => {
     if (preserveOrder && localTokenOrder.length) arrangeOrder(container, localTokenOrder);
     updateExcludedChips(container);
   });
+  if (props.value.step === 4) {
+    Object.entries(localBoxes).forEach(([id, box]) => renderLocalStatus(id, box.status));
+  }
   renderSelection();
   readAnnotationColor();
   applyAnnotationColor();
@@ -253,9 +264,8 @@ root.addEventListener('change', event => {
   if (!input || props.value.step !== 4 || !activeBoxId) return;
   renderLocalStatus(activeBoxId, input.value);
   syncExternalControls();
-  // Status is canonical annotation data, so persist each user edit instead of
-  // relying solely on the browser-local bridge at the Next boundary.
-  if (!syncingStatusControl) send('status', {id: activeBoxId, status: input.value});
+  // Keep radio edits local until Apply Changes or Next commits the complete
+  // status map together with any reading-order edits.
 });
 
 root.addEventListener('input', event => {

@@ -682,6 +682,19 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 #control-panel .compact-disclosure .label-wrap { padding-inline: 0; }
 #status-radio label:has(input[value="intact"]) { color: #22c55e; }
 #status-radio label:has(input[value="damaged"]) { color: #ef4444; }
+#sidebar-source-text .sidebar-source-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+#sidebar-source-text .sidebar-source-text p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--han-nom-font), Arial, sans-serif;
+  font-size: 18px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
 #control-panel .box-color-control,
 #control-panel .box-color-control > .styler,
 #control-panel .box-color-control > .form {

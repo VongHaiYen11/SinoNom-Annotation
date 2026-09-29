@@ -100,6 +100,26 @@
 .source-preview p { margin: 0; overflow-wrap: anywhere; font-size: 18px; line-height: 1.7; white-space: pre-wrap; }
 
 .order-editor { display: flex; flex-direction: column; gap: var(--space-4, 16px); padding: var(--space-6, 24px); border-top: 1px solid var(--color-border, #303237); }
+.status-order-board {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr);
+  grid-template-rows: auto auto auto;
+  align-items: start;
+}
+.status-order-board .order-editor {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  min-height: 100%;
+  border-top: 0;
+  border-right: 1px solid var(--color-border, #303237);
+  box-sizing: border-box;
+}
+.status-order-board .workspace-toolbar,
+.status-order-board .image-viewport,
+.status-order-board .status-legend { grid-column: 2; }
+.status-order-board .workspace-toolbar { grid-row: 1; }
+.status-order-board .image-viewport { grid-row: 2; width: 100%; }
+.status-order-board .status-legend { grid-row: 3; }
 .order-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3, 12px); }
 .order-heading > div { display: flex; flex-direction: column; gap: var(--space-1, 4px); }
 .order-heading h2 { margin: 0; color: var(--color-text, #f4f4f5); font-size: 14px; }
@@ -216,4 +236,11 @@ button:focus-visible { outline: 2px solid var(--color-accent, #ff7a1a); outline-
   .source-preview,
   .order-editor,
   .review-detail { padding: var(--space-4, 16px); }
+  .status-order-board { display: flex; }
+  .status-order-board .order-editor {
+    order: 2;
+    min-height: 0;
+    border-top: 1px solid var(--color-border, #303237);
+    border-right: 0;
+  }
 }

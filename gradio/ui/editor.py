@@ -10,6 +10,18 @@ SCRIPT = (Path(__file__).parent / 'assets/editor.js').read_text()
 CSS = (Path(__file__).parent / 'assets/editor.css').read_text()
 
 
+def source_text(s):
+    """Render the Status & Order reference text for the sidebar."""
+    if not s.get('image') or s.get('current_step') != 4:
+        return ''
+    source_mismatch = source_mismatch_confirmed(s)
+    label = ('Source text' if source_mismatch else
+             'Verified annotation text' if s['workflow']['content_verified'] else
+             'Unverified annotation text')
+    return (f'<section class="sidebar-source-text"><span class="eyebrow">'
+            f'{html.escape(label)}</span><p>{html.escape(s["annotation_text"])}</p></section>')
+
+
 def snapshot(s):
     if not s.get('image'):
         return dict(markup=f'''<div class="empty-workspace"><span class="empty-icon">{DOCUMENT}</span>
@@ -44,7 +56,8 @@ def snapshot(s):
                   f'{source_w} × {source_h} px → {w} × {h} px'
                   if step == 6 and [w,h] != [source_w,source_h]
                   else f'{w} × {h} px')
-    markup=f'''<div class="workbench-board"><div class="workspace-toolbar">
+    board_class = ' status-order-board' if step == 4 else ''
+    markup=f'''<div class="workbench-board{board_class}"><div class="workspace-toolbar">
         <div class="workspace-context"><span class="file-icon">{DOCUMENT}</span><strong>{filename}</strong><span class="dimensions">{dimensions}</span></div>
         <div class="toolbar-tools"><span class="zoom-label" aria-live="polite">100%</span>
         <button type="button" data-zoom="out" aria-label="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
@@ -100,11 +113,6 @@ def snapshot(s):
                            if suspicious_boxes else '')
         markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">MISS content</span>{suspicious_legend}</div>'
     if step in (4,7) and not (step==7 and other_mismatch):
-        source=html.escape(s['annotation_text'])
-        verified=s['workflow']['content_verified']
-        source_label=('Source text' if source_mismatch else
-                      'Verified annotation text' if verified else 'Unverified annotation text')
-        markup+=f'<section class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></section>'
         if step == 4:
             chips=[]
             extra=(source_mismatch and s['source_mismatch']['issue_type']=='extra_text')
@@ -136,6 +144,11 @@ def snapshot(s):
                 <div class="order-chips" data-excluded-count="{excluded_count}" role="list" aria-label="Sortable character assignment">{''.join(chips)}</div>
                 <p class="order-sync-note" aria-live="polite">Order changes stay local until you apply them or continue.</p></section>'''
         if step==7:
+            source=html.escape(s['annotation_text'])
+            source_label=('Source text' if source_mismatch else
+                          'Verified annotation text' if s['workflow']['content_verified']
+                          else 'Unverified annotation text')
+            markup+=f'<section class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></section>'
             if source_mismatch:
                 issue=s['source_mismatch']
                 note=(f'<small>Note: {html.escape(issue["note"])}</small>'
