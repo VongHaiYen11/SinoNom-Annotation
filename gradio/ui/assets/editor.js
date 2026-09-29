@@ -14,13 +14,13 @@ const chipReflowAnimations = new WeakMap();
 const imageTransform = {zoom: 100, width: props.value.width, height: props.value.height};
 
 const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map(
-  ([id, box]) => [id, {...box, bbox: [...box.bbox]}]
+  ([id, box]) => [id, {...box, bbox: [...box.bbox], unknown: Boolean(box.unknown)}]
 ));
 const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-box-id]')].find(
   group => group.dataset.boxId === String(id)
 );
 const root = element.closest('.gradio-container') || document;
-const statusColor = status => status === 'damaged' ? '#ef4444' : '#22c55e';
+const statusColor = (status, unknown=false) => status === 'damaged' ? (unknown ? '#f59e0b' : '#ef4444') : '#22c55e';
 const applyAnnotationColor = () => {
   if (props.value.step !== 3) return;
   element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group=>{
@@ -64,6 +64,9 @@ const syncExternalControls = () => {
     statuses: Object.fromEntries(Object.entries(localBoxes).map(
       ([id, box]) => [id, box.status]
     )),
+    unknowns: Object.fromEntries(Object.entries(localBoxes).map(
+      ([id, box]) => [id, Boolean(box.status === 'damaged' && box.unknown)]
+    )),
     boxes: Object.fromEntries(Object.entries(localBoxes).map(
       ([id, box]) => [id, [...box.bbox]]
     )),
@@ -96,24 +99,40 @@ const syncExternalControls = () => {
     }
   }
   if (props.value.step === 4) {
-    const status = root.querySelector(`#status-radio input[value="${active.status}"]`);
-    if (status && !status.checked) {
+    const statusRadio = root.querySelector(`#status-radio input[value="${active.status}"]`);
+    if (statusRadio && !statusRadio.checked) {
       syncingStatusControl = true;
-      try { status.click(); } finally { syncingStatusControl = false; }
+      try { statusRadio.click(); } finally { syncingStatusControl = false; }
     }
+    const unknownRadioInputs = root.querySelectorAll('#unknown-radio input');
+    const isDamaged = active.status === 'damaged';
+    const targetValue = isDamaged && active.unknown ? 'True' : 'False';
+    unknownRadioInputs.forEach(input => {
+      input.disabled = !isDamaged;
+      if (input.value === targetValue && !input.checked && isDamaged) {
+        syncingStatusControl = true;
+        try { input.click(); } finally { syncingStatusControl = false; }
+      }
+    });
   }
   if (props.value.step === 6 && localBoxes.crop) {
     setInputValue('#crop-coordinates', JSON.stringify(localBoxes.crop.bbox));
   }
 };
-const renderLocalStatus = (id, status) => {
+const renderLocalStatus = (id, status, unknown=null) => {
   const box = localBoxes[id];
   const group = groupFor(id);
   if (!box || !group) return;
   box.status = status;
+  if (unknown !== null) {
+    box.unknown = Boolean(unknown && status === 'damaged');
+  } else if (status !== 'damaged') {
+    box.unknown = false;
+  }
   group.dataset.status = status;
+  group.dataset.unknown = String(Boolean(box.unknown));
   const revealStatus = props.value.step >= 4;
-  const color = !revealStatus ? annotationColor : statusColor(status);
+  const color = !revealStatus ? annotationColor : statusColor(status, box.unknown);
   const rect = group.querySelector('rect:not([data-image-resize-handle])');
   if (rect) {
     const missing = rect.dataset.missing === '1';
@@ -162,6 +181,7 @@ const hydrateLocalState = () => {
   if (preserveOrder && props.value.step === 4) {
     Object.entries(localBoxes).forEach(([id, box]) => {
       if (previousBoxes[id]?.status) box.status = previousBoxes[id].status;
+      if (previousBoxes[id]?.unknown !== undefined) box.unknown = previousBoxes[id].unknown;
     });
   }
   if (props.value.step !== 4) {
@@ -189,7 +209,7 @@ const hydrateLocalState = () => {
     updateExcludedChips(container);
   });
   if (props.value.step === 4) {
-    Object.entries(localBoxes).forEach(([id, box]) => renderLocalStatus(id, box.status));
+    Object.entries(localBoxes).forEach(([id, box]) => renderLocalStatus(id, box.status, box.unknown));
   }
   renderSelection();
   readAnnotationColor();
@@ -261,11 +281,22 @@ root.addEventListener('change', event => {
     return;
   }
   const input = event.target.closest('#status-radio input');
-  if (!input || props.value.step !== 4 || !activeBoxId) return;
-  renderLocalStatus(activeBoxId, input.value);
-  syncExternalControls();
-  // Keep radio edits local until Apply Changes or Next commits the complete
-  // status map together with any reading-order edits.
+  if (input && props.value.step === 4 && activeBoxId) {
+    const currentBox = localBoxes[activeBoxId];
+    renderLocalStatus(activeBoxId, input.value, currentBox?.unknown);
+    syncExternalControls();
+    return;
+  }
+  const unknownInput = event.target.closest('#unknown-radio input');
+  if (unknownInput && props.value.step === 4 && activeBoxId) {
+    const currentBox = localBoxes[activeBoxId];
+    if (currentBox && currentBox.status === 'damaged') {
+      const isUnknown = unknownInput.value === 'True' || unknownInput.value === 'true';
+      renderLocalStatus(activeBoxId, 'damaged', isUnknown);
+      syncExternalControls();
+    }
+    return;
+  }
 });
 
 root.addEventListener('input', event => {
@@ -386,7 +417,8 @@ function renderSuspiciousPreview(){
     const suspicious=Boolean(chip?.classList.contains('suspicious'));
     group.classList.toggle('suspicious-region',suspicious);
     const status=localBoxes[group.dataset.boxId]?.status || 'intact';
-    const stroke=statusColor(status);
+    const unknown=Boolean(localBoxes[group.dataset.boxId]?.unknown);
+    const stroke=statusColor(status, unknown);
     const rect=group.querySelector('rect:not([data-image-resize-handle])');
     if(rect){
       const missing=rect.dataset.missing === '1';

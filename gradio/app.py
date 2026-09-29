@@ -76,6 +76,7 @@ def snapshot_board_state_js(selection_index):
         const groups = [...(board?.querySelectorAll('.annotation-canvas [data-box-id]') || [])];
         const boxes = {{}};
         const statuses = {{}};
+        const unknowns = {{}};
         for (const group of groups) {{
             const id = group.dataset.boxId;
             const rect = group.querySelector('rect:not([data-image-resize-handle])');
@@ -85,12 +86,15 @@ def snapshot_board_state_js(selection_index):
                           y + Number(rect.getAttribute('height'))];
             if (id === 'crop') snapshot.crop = bbox; else {{
                 boxes[id] = bbox;
-                if (group.dataset.status === 'intact' || group.dataset.status === 'damaged')
+                if (group.dataset.status === 'intact' || group.dataset.status === 'damaged') {{
                     statuses[id] = group.dataset.status;
+                    unknowns[id] = group.dataset.status === 'damaged' && group.dataset.unknown === 'true';
+                }}
             }}
         }}
         if (Object.keys(boxes).length) snapshot.boxes = boxes;
         if (Object.keys(statuses).length) snapshot.statuses = statuses;
+        if (Object.keys(unknowns).length) snapshot.unknowns = unknowns;
         args[{selection_index}] = JSON.stringify(snapshot);
         return args;
     }}"""
@@ -289,6 +293,7 @@ def create_app(options):
                     gr.Markdown('### Selected region')
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
+                    unknown_status=gr.Radio(['False','True'],value='False',label='Unknown character (Damaged only)',interactive=False,elem_id='unknown-radio')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','sidebar-component','box-color-control']) as box_color_group:
                     gr.Markdown('### Box color')
@@ -828,12 +833,17 @@ def create_app(options):
             try:
                 parsed=json.loads(value or '{}')
                 statuses=parsed.get('statuses',{})
+                unknowns=parsed.get('unknowns',{})
                 if (not isinstance(statuses,dict)
                         or any(not isinstance(box_id,str)
                                or status not in ('intact','damaged')
                                for box_id,status in statuses.items())):
                     raise ValueError
-                return statuses
+                if (not isinstance(unknowns,dict)
+                        or any(not isinstance(box_id,str) or not isinstance(val,bool)
+                               for box_id,val in unknowns.items())):
+                    raise ValueError
+                return statuses, unknowns
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local status selection is invalid.')
         def commit_statuses(ctx,selection,status_value='intact'):
@@ -841,20 +851,23 @@ def create_app(options):
                 uid: box['status']
                 for uid,box in ctx['active']['regions'].items()
             }
-            frontend=frontend_statuses(selection)
+            unknowns_map={
+                uid: bool(box.get('unknown', False))
+                for uid,box in ctx['active']['regions'].items()
+            }
+            frontend, frontend_unknowns = frontend_statuses(selection)
             for box_id,status_name in frontend.items():
                 region_uid=ctx['active']['region_uid_by_box_id'].get(str(box_id))
                 if region_uid:
                     statuses[region_uid]=status_name
+                    if box_id in frontend_unknowns:
+                        unknowns_map[region_uid]=bool(frontend_unknowns[box_id]) if status_name == 'damaged' else False
             active,_=frontend_selection(selection)
-            # The bridge contains the complete live working set. The mounted
-            # radio value is only a compatibility fallback for an older or
-            # incomplete browser snapshot; it must not overwrite that map.
             if active and str(active) not in frontend:
                 region_uid=ctx['active']['region_uid_by_box_id'].get(str(active))
                 if region_uid:
                     statuses[region_uid]=status_value
-            updated=engine.apply(ctx['active'],'statuses',{'statuses':statuses})
+            updated=engine.apply(ctx['active'],'statuses',{'statuses':statuses, 'unknowns':unknowns_map})
             return dict(ctx,active=updated)
         def update_coordinates(ctx,selection,a,b,d,e):
             active,_=frontend_selection(selection)

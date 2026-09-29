@@ -72,7 +72,8 @@ def snapshot(s):
         x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6; multi_selected=key in selected_ids
         suspicious = key in suspicious_boxes
         reveal_status = step >= 4 and not other_mismatch
-        status_color=('#ef4444' if b['status']=='damaged' else '#22c55e')
+        is_unknown = bool(b.get('unknown', False)) and b['status'] == 'damaged'
+        status_color = ('#f59e0b' if is_unknown else '#ef4444') if b['status'] == 'damaged' else '#22c55e'
         stroke_color=('#ff7a1a' if step==6 else '#f4f4f5' if not reveal_status
                       else status_color)
         missing_annotation = (step == 4 and s.get('annotations', {}).get(str(key)) == MISSING_ANNOTATION)
@@ -91,14 +92,14 @@ def snapshot(s):
         dashed=''
         identity_attr = (f'data-box-id="{key}" data-region-uid="{key}"'
                          if step == 3 else f'data-box-id="{key}"')
-        identity_attr += f' data-status="{b["status"]}"'
+        identity_attr += f' data-status="{b["status"]}" data-unknown="{str(is_unknown).lower()}"'
         group_classes=' '.join(filter(None,(
             'selected-region' if multi_selected else '',
             'active-region' if key==selected_id else '',
             'suspicious-region' if suspicious else '',
         )))
         missing_attr = ' data-missing="1"' if missing_annotation else ''
-        markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}{' · suspicious' if suspicious else ''}</title>
+        markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}{' · unknown' if is_unknown else ''}{' · suspicious' if suspicious else ''}</title>
             <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{fill_color}" fill-opacity="{fill_opacity}" stroke="{stroke_color}" stroke-width="{'3' if suspicious and multi_selected else '2' if suspicious else '2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{missing_attr}{dashed}/>
             {f'<g data-miss-mark="1" stroke="#ef4444" stroke-width="{max(2*unit, 2)}" vector-effect="non-scaling-stroke" pointer-events="none"><line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}"/><line x1="{x2}" y1="{y1}" x2="{x1}" y2="{y2}"/></g>' if missing_annotation else ''}
             {f'<text x="{x1+2*unit}" y="{max(15*unit,y1-4*unit)}" fill="{stroke_color}" font-size="{15*unit}" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{2*unit}">{label}</text>' if label else ''}'''
@@ -112,7 +113,7 @@ def snapshot(s):
     if step in (4, 5) or (step == 7 and not other_mismatch):
         suspicious_legend=('<span class="suspicious">Suspicious content</span>'
                            if suspicious_boxes else '')
-        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">MISS content</span>{suspicious_legend}</div>'
+        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown-damaged">Unknown</span><span class="unknown">MISS content</span>{suspicious_legend}</div>'
     if step in (4,7) and not (step==7 and other_mismatch):
         if step == 4:
             chips=[]

@@ -375,6 +375,11 @@ button#next-button::after { transform: rotate(180deg); }
   margin: 0 !important;
   padding: 0 !important;
 }
+
+#selection-guide-host .html-container {
+    padding: 0 !important;
+}
+
 #control-panel .selection-guide {
   display: flex;
   flex-direction: column;

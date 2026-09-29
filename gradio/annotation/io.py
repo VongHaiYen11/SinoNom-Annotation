@@ -96,6 +96,8 @@ def validate_document(doc, image, size):
         validate_coordinates(box['bbox'], size)
         if box['status'] not in ('intact', 'damaged', 'unknown'):
             raise ValueError('Invalid status.')
+        if 'unknown' in box and not isinstance(box['unknown'], bool):
+            raise ValueError('Unknown attribute must be boolean.')
     expected_ids = {str(index) for index in range(1, len(doc['bounding_boxes']) + 1)}
     if set(doc['bounding_boxes']) != expected_ids:
         raise ValueError('Box IDs must be contiguous from 1 to n.')

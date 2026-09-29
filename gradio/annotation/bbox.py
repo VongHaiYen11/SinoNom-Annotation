@@ -17,7 +17,7 @@ def validate_coordinates(bbox, size):
 def add_bbox(state, bbox):
     coords = validate_coordinates(bbox, state['image_size'])
     uid = uuid4().hex
-    state['regions'][uid] = dict(bbox=coords, status='intact')
+    state['regions'][uid] = dict(bbox=coords, status='intact', unknown=False)
     invalidate(state, clear=True)
     return uid
 

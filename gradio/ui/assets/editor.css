@@ -92,6 +92,7 @@
 .status-legend span::before { width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
 .status-legend .intact { color: #22c55e; }
 .status-legend .damaged { color: #ef4444; }
+.status-legend .unknown-damaged { color: #f59e0b; }
 .status-legend .unknown { color: #f59e0b; }
 .status-legend .suspicious { color: #facc15; }
 
