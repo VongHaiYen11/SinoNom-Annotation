@@ -247,6 +247,25 @@ class ParserTests(unittest.TestCase):
         self.assertIn("thiếu mốc", issues[0]["loi"][0])
         self.assertIn("Tên bia: Thiếu phần nội dung", issues[0]["du_lieu_nguon"])
 
+    def test_records_with_unresolved_placeholders_are_flagged_invalid(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1", 3),
+            line("Tên bia: Có chữ thiếu", 3),
+            line("Địa điểm: A", 3),
+            line("Niên đại: B", 3),
+            line("Kí hiệu VNCHN: <10>", 3),
+            line("Nguyên văn chữ Hán Nôm:", 3),
+            line("<10> □□□□□□□", 3),
+        ]
+
+        records, warnings, issues = parse_records_with_issues(source, config())
+
+        self.assertEqual([1], [record["so_van_bia"] for record in records])
+        self.assertEqual(1, issues[0]["so_van_bia"])
+        self.assertIn("chứa ký tự chưa giải mã được", issues[0]["canh_bao"][0])
+        self.assertIn("□□□□□□□", issues[0]["van_bia"]["noi_dung"][0]["chuyen_muc"][0]["van_ban"])
+        self.assertEqual(issues[0]["canh_bao"], warnings)
+
     def test_json_is_deterministic_and_content_is_last(self) -> None:
         record = {
             "so_van_bia": 1,

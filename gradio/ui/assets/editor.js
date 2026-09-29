@@ -203,33 +203,10 @@ const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => 
   const style = getComputedStyle(viewport);
   const availableWidth = Math.max(1, viewport.clientWidth
     - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
-  const sidebar = root.querySelector('#control-panel');
   const board = viewport.closest('.workbench-board');
-  const isStacked = matchMedia('(max-width: 767.98px)').matches;
-  let targetViewportHeight = Math.max(1, viewport.clientHeight);
-  if (sidebar && board && !isStacked) {
-    const boardRect = board.getBoundingClientRect();
-    const siblingHeight = [...board.children].reduce((total, child) => {
-      if (child === viewport || child.classList.contains('order-editor')) return total;
-      return total + child.getBoundingClientRect().height;
-    }, 0);
-    const sidebarHeight = sidebar.getBoundingClientRect().height;
-    const footer = root.querySelector('#workflow-footer');
-    const main = root.querySelector('.main');
-    const mainStyle = main ? getComputedStyle(main) : null;
-    const footerHeight = footer?.getBoundingClientRect().height || 0;
-    const rowGap = mainStyle ? parseFloat(mainStyle.rowGap || mainStyle.gap) || 0 : 0;
-    const bottomPadding = mainStyle ? parseFloat(mainStyle.paddingBottom) || 0 : 0;
-    const availableBoardHeight = Math.max(1,
-      window.innerHeight - Math.max(0, boardRect.top) - footerHeight - rowGap - bottomPadding);
-    const targetBoardHeight = Math.max(availableBoardHeight, sidebarHeight);
-    board.style.height = `${targetBoardHeight}px`;
-    targetViewportHeight = Math.max(1, targetBoardHeight - siblingHeight);
-  } else if (board) {
-    board.style.height = '';
-  }
-  viewport.style.height = `${targetViewportHeight}px`;
-  const fittedHeight = Math.max(1, targetViewportHeight
+  if (board) board.style.height = '';
+  viewport.style.height = '';
+  const fittedHeight = Math.max(1, viewport.clientHeight
     - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom));
   const fit = Math.min(availableWidth / width, fittedHeight / height);
   const renderedWidth = width * fit * imageTransform.zoom / 100;

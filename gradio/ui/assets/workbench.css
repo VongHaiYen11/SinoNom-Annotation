@@ -276,7 +276,7 @@ body,
   box-sizing: border-box;
 }
 #control-panel .sidebar-step-stack > * > button { width: 100% !important; }
-#main-workspace { display: flex !important; flex-direction: column !important; gap: 0 !important; min-width: 0 !important; min-height: 0; padding: 0; }
+#main-workspace { display: flex !important; flex-direction: column !important; gap: 0 !important; min-width: 0 !important; min-height: 700px; padding: 0; }
 #workspace-body { display: flex; flex: 1 1 auto !important; flex-direction: column; gap: var(--section-gap); min-width: 0; min-height: 0; padding: 0; }
 
 /* Footer is a sibling after the complete two-column workspace. */
@@ -746,6 +746,7 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   .stepper-label { line-height: 1.2; }
   #workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; overflow: visible; }
   .panel { height: auto; }
+  #main-workspace { min-height: 0; }
   #control-panel { max-height: none; padding: var(--space-4); overflow: visible; }
   #workflow-footer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #footer-step { grid-column: 1 / -1; grid-row: 1; }

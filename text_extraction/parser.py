@@ -299,6 +299,17 @@ def _issue(
     return item
 
 
+def _contains_unresolved_placeholder(value: Any) -> bool:
+    """Return whether a parsed record still contains unresolved glyph markers."""
+    if isinstance(value, str):
+        return "□" in value
+    if isinstance(value, list):
+        return any(_contains_unresolved_placeholder(item) for item in value)
+    if isinstance(value, dict):
+        return any(_contains_unresolved_placeholder(item) for item in value.values())
+    return False
+
+
 def parse_records_with_issues(
     lines: list[TextLine], config: ExtractConfig
 ) -> tuple[list[dict[str, Any]], list[str], list[dict[str, Any]]]:
@@ -329,6 +340,12 @@ def parse_records_with_issues(
             issues.append(_issue(number, record_lines, errors=[str(exc)]))
             continue
         records.append(record)
+        if _contains_unresolved_placeholder(record):
+            _add_warning(
+                local_warnings,
+                f"Văn bia số {number}: chứa ký tự chưa giải mã được '□'; "
+                "đưa vào file invalid để rà soát glyph profile.",
+            )
         warnings.extend(item for item in local_warnings if item not in warnings)
         if local_warnings:
             issues.append(_issue(number, record_lines, warnings=local_warnings, record=record))
