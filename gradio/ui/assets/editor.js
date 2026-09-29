@@ -5,6 +5,11 @@ let syncingCoordinateControls = false;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId = null;
 let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
+let annotationColor = '#f4f4f5';
+const annotationColors = {
+  White:'#f4f4f5', Cyan:'#22d3ee', Amber:'#f59e0b',
+  Violet:'#a78bfa', Pink:'#f472b6',
+};
 const chipReflowAnimations = new WeakMap();
 const imageTransform = {zoom: 100, width: props.value.width, height: props.value.height};
 
@@ -15,6 +20,34 @@ const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-bo
   group => group.dataset.boxId === String(id)
 );
 const root = element.closest('.gradio-container') || document;
+const statusColor = status => status === 'damaged' ? '#ef4444' : '#22c55e';
+const applyAnnotationColor = () => {
+  if (props.value.step !== 3) return;
+  element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group=>{
+    const rect=group.querySelector('rect:not([data-image-resize-handle])');
+    if(rect){rect.setAttribute('fill',annotationColor);rect.setAttribute('stroke',annotationColor);}
+    const label=group.querySelector('text');
+    if(label)label.setAttribute('fill',annotationColor);
+    group.querySelectorAll('[data-corner]').forEach(handle=>handle.setAttribute('fill',annotationColor));
+  });
+};
+const readAnnotationColor = () => {
+  const selected=root.querySelector('#bbox-color-palette input, #bbox-color-palette select');
+  if(selected && annotationColors[selected.value]) annotationColor=annotationColors[selected.value];
+};
+const handleAnnotationColor = target => {
+  const color=target.closest('#bbox-color-palette input, #bbox-color-palette select');
+  if(!color)return false;
+  if(annotationColors[color.value])annotationColor=annotationColors[color.value];
+  applyAnnotationColor();
+  return true;
+};
+root.addEventListener('bbox-color-change', event => {
+  const value=event.detail;
+  if(!annotationColors[value])return;
+  annotationColor=annotationColors[value];
+  applyAnnotationColor();
+});
 const setInputValue = (selector, value) => {
   const input = root.querySelector(`${selector} input, ${selector} textarea`);
   if (!input) return;
@@ -79,14 +112,15 @@ const renderLocalStatus = (id, status) => {
   if (!box || !group) return;
   box.status = status;
   const revealStatus = props.value.step >= 4;
-  const color = !revealStatus ? '#f4f4f5' : status === 'unknown' ? '#f59e0b' : status === 'damaged' ? '#ef4444' : '#22c55e';
+  const color = !revealStatus ? annotationColor : statusColor(status);
   const rect = group.querySelector('rect:not([data-image-resize-handle])');
   if (rect) {
-    rect.setAttribute('fill', color);
+    const missing = rect.dataset.missing === '1';
+    const suspicious = group.classList.contains('suspicious-region');
+    rect.setAttribute('fill', suspicious ? '#facc15' : missing ? '#f59e0b' : color);
     rect.setAttribute('stroke', color);
-    if (revealStatus && status === 'damaged') rect.setAttribute('stroke-dasharray', '5 4');
-    else if (revealStatus && status === 'unknown') rect.setAttribute('stroke-dasharray', '2 3');
-    else rect.removeAttribute('stroke-dasharray');
+    rect.removeAttribute('stroke-dasharray');
+    rect.setAttribute('fill-opacity', suspicious ? '.15' : missing ? '.10' : '.04');
   }
   const label = group.querySelector('text');
   if (label) label.setAttribute('fill', color);
@@ -104,7 +138,10 @@ const renderSelection = (sync=true) => {
     const rect = group.querySelector('rect:not([data-image-resize-handle])');
     if (rect) {
       const suspicious=group.classList.contains('suspicious-region');
-      rect.setAttribute('fill-opacity', selected ? '.16' : suspicious ? '.10' : '.04');
+      const missing=rect.dataset.missing === '1';
+      rect.setAttribute('fill-opacity', props.value.step >= 4
+        ? suspicious ? '.15' : missing ? '.10' : '.04'
+        : selected ? '.16' : '.04');
       rect.setAttribute('stroke-width', suspicious && active ? '3' : suspicious ? '2' : active ? '2.5' : selected ? '2' : '1.5');
     }
   });
@@ -140,6 +177,8 @@ const hydrateLocalState = () => {
     updateExcludedChips(container);
   });
   renderSelection();
+  readAnnotationColor();
+  applyAnnotationColor();
 };
 
 const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => {
@@ -196,6 +235,7 @@ const sidebar = root.querySelector('#control-panel');
 if (sidebar) resizeObserver.observe(sidebar);
 
 root.addEventListener('change', event => {
+  if(handleAnnotationColor(event.target))return;
   const suspicious = event.target.closest('#suspicious-toggle input[type="checkbox"]');
   if (suspicious && props.value.step === 4 && activeTokenId) {
     if(suspicious.checked)localSuspiciousTokenIds.add(activeTokenId);
@@ -216,6 +256,7 @@ root.addEventListener('change', event => {
 });
 
 root.addEventListener('input', event => {
+  if(handleAnnotationColor(event.target))return;
   if (syncingCoordinateControls || props.value.step !== 3 || !activeBoxId
       || !event.target.closest('#bbox-x1 input, #bbox-y1 input, #bbox-x2 input, #bbox-y2 input')) return;
   const rawValues=['#bbox-x1','#bbox-y1','#bbox-x2','#bbox-y2'].map(selector =>
@@ -241,6 +282,12 @@ const drawPreview = (group, box) => {
   rect.setAttribute('x',box[0]); rect.setAttribute('y',box[1]);
   rect.setAttribute('width',Math.max(0,box[2]-box[0]));
   rect.setAttribute('height',Math.max(0,box[3]-box[1]));
+  const label=group.querySelector('text');
+  if(label){
+    const unit=Math.max(props.value.width,props.value.height)/900;
+    label.setAttribute('x',box[0]+2*unit);
+    label.setAttribute('y',Math.max(15*unit,box[1]-4*unit));
+  }
   const corners = [[box[0],box[1]], [box[2],box[1]], [box[2],box[3]], [box[0],box[3]]];
   group.querySelectorAll('[data-corner]').forEach(handle => {
     const [x,y] = corners[Number(handle.dataset.corner)];
@@ -317,10 +364,15 @@ function renderSuspiciousPreview(){
     const suspicious=Boolean(chip?.classList.contains('suspicious'));
     group.classList.toggle('suspicious-region',suspicious);
     const status=localBoxes[group.dataset.boxId]?.status || 'intact';
-    const color=suspicious?'#facc15':status==='unknown'?'#f59e0b':status==='damaged'?'#ef4444':'#22c55e';
+    const stroke=statusColor(status);
     const rect=group.querySelector('rect:not([data-image-resize-handle])');
-    if(rect){rect.setAttribute('fill',color);rect.setAttribute('stroke',color);}
-    const label=group.querySelector('text');if(label)label.setAttribute('fill',color);
+    if(rect){
+      const missing=rect.dataset.missing === '1';
+      rect.setAttribute('fill',suspicious?'#facc15':missing?'#f59e0b':stroke);
+      rect.setAttribute('fill-opacity',suspicious?'.15':missing?'.10':'.04');
+      rect.setAttribute('stroke',stroke);
+    }
+    const label=group.querySelector('text');if(label)label.setAttribute('fill',stroke);
   });
 }
 const orderRows = chips => {

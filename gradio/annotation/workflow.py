@@ -570,8 +570,7 @@ class Workflow:
                         and s['source_mismatch']['issue_type'] == 'other'):
                     s['current_step'] = 7
                 elif not s['workflow']['alignment_valid']:
-                    initialize_alignment(s)
-                    s['current_step'] = 4
+                    raise ValueError('Sort boxes before continuing so the numbered reading order is saved.')
                 else:
                     s['current_step'] = 4
             elif step == 4:

@@ -62,7 +62,7 @@ def update_text_tokens(state, sequence, token_order):
 
 
 def _apply_text_sequence(state, sequence, token_order, extra):
-    order = spatial_box_order(state)
+    order = list(state.get('reading_order') or spatial_box_order(state))
     if (not extra and len(order) != len(sequence)):
         raise ValueError('Text sequence and bounding-box counts do not match.')
     kept=sequence[:len(order)]
@@ -94,12 +94,12 @@ def suspicious_box_ids(state):
     suspicious=set(map(str,state.get('suspicious_token_ids',[])))
     if not tokens or not suspicious or not state.get('bounding_boxes'):
         return []
-    order=list(map(str,spatial_box_order(state)))
+    order=list(map(str,state.get('reading_order') or spatial_box_order(state)))
     return [box_id for box_id,token_id in zip(order,tokens) if token_id in suspicious]
 
 
 def restore_suspicious_tokens(state, box_ids):
-    order=list(map(str,spatial_box_order(state)))
+    order=list(map(str,state.get('reading_order') or spatial_box_order(state)))
     tokens=list(map(str,state.get('text_token_ids',[])))
     by_box=dict(zip(order,tokens))
     unknown=set(map(str,box_ids))-set(by_box)
@@ -110,7 +110,7 @@ def restore_suspicious_tokens(state, box_ids):
 
 def token_id_for_box(state, box_id):
     """Resolve a spatial coordinate slot to its currently assigned token."""
-    order = list(map(str, spatial_box_order(state)))
+    order = list(map(str, state.get('reading_order') or spatial_box_order(state)))
     tokens = list(map(str, state.get('text_token_ids', [])))
     mapping = dict(zip(order, tokens))
     return mapping.get(str(box_id))
@@ -119,4 +119,5 @@ def token_id_for_box(state, box_id):
 def build_text_sequence(state):
     if not validate_reading_order(state):
         raise ValueError('Invalid coordinate-slot order.')
-    return ''.join(state['annotations'][str(i)] for i in spatial_box_order(state))
+    order = state.get('reading_order') or spatial_box_order(state)
+    return ''.join(state['annotations'][str(i)] for i in order)

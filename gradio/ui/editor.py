@@ -59,19 +59,23 @@ def snapshot(s):
         x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6; multi_selected=key in selected_ids
         suspicious = key in suspicious_boxes
         reveal_status = step >= 4 and not other_mismatch
-        color=('#ff7a1a' if step==6 else '#facc15' if suspicious
-               else '#f4f4f5' if not reveal_status
-               else '#f59e0b' if b['status']=='unknown'
-               else '#ef4444' if b['status']=='damaged' else '#22c55e')
+        status_color=('#ef4444' if b['status']=='damaged' else '#22c55e')
+        stroke_color=('#ff7a1a' if step==6 else '#f4f4f5' if not reveal_status
+                      else status_color)
+        missing_annotation = (step in (4,7) and s.get('annotations', {}).get(str(key)) == MISSING_ANNOTATION)
+        fill_color = ('#ff7a1a' if step==6 else '#facc15' if suspicious
+                      else '#f59e0b' if missing_annotation else stroke_color)
+        fill_opacity = ('.16' if multi_selected and step in (3,6) else
+                        '.15' if suspicious else
+                        '.10' if missing_annotation else
+                        '.04')
         public_box = step not in (6,) and not other_mismatch
         if step == 3:
             public_id = s.get('box_id_by_region', {}).get(key)
             label = html.escape(public_id) if public_id else ''
         else:
             label=html.escape(key+' '+s['annotations'].get(key,'')) if public_box else ''
-        dashed=('' if not reveal_status else
-                ' stroke-dasharray="5 4"' if b['status']=='damaged' else
-                ' stroke-dasharray="2 3"' if b['status']=='unknown' else '')
+        dashed=''
         identity_attr = (f'data-box-id="{key}" data-region-uid="{key}"'
                          if step == 3 else f'data-box-id="{key}"')
         group_classes=' '.join(filter(None,(
@@ -79,20 +83,21 @@ def snapshot(s):
             'active-region' if key==selected_id else '',
             'suspicious-region' if suspicious else '',
         )))
+        missing_attr = ' data-missing="1"' if missing_annotation else ''
         markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}{' · suspicious' if suspicious else ''}</title>
-            <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{color}" fill-opacity="{'.16' if multi_selected else '.10' if suspicious else '.04'}" stroke="{color}" stroke-width="{'3' if suspicious and multi_selected else '2' if suspicious else '2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{dashed}/>
-            {f'<text x="{x1+2*unit}" y="{max(15*unit,y1-4*unit)}" fill="{color}" font-size="{15*unit}" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{2*unit}">{label}</text>' if label else ''}'''
+            <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{fill_color}" fill-opacity="{fill_opacity}" stroke="{stroke_color}" stroke-width="{'3' if suspicious and multi_selected else '2' if suspicious else '2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{missing_attr}{dashed}/>
+            {f'<text x="{x1+2*unit}" y="{max(15*unit,y1-4*unit)}" fill="{stroke_color}" font-size="{15*unit}" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{2*unit}">{label}</text>' if label else ''}'''
         # Handles are pre-rendered for local selection changes; CSS exposes
         # them only on the browser-local active region.
         if step in (3, 6):
             for n,(x,y) in enumerate([(x1,y1),(x2,y1),(x2,y2),(x1,y2)]):
-                markup+=f'<circle data-corner="{n}" cx="{x}" cy="{y}" r="{6*unit}" fill="{color}" stroke="#17191c" stroke-width="{1.5*unit}"/>'
+                markup+=f'<circle data-corner="{n}" cx="{x}" cy="{y}" r="{6*unit}" fill="{stroke_color}" stroke="#17191c" stroke-width="{1.5*unit}"/>'
         markup+='</g>'
     markup+='</svg></div>'
     if step in (4, 5) or (step == 7 and not other_mismatch):
         suspicious_legend=('<span class="suspicious">Suspicious content</span>'
                            if suspicious_boxes else '')
-        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown / MISS</span>{suspicious_legend}</div>'
+        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">MISS content</span>{suspicious_legend}</div>'
     if step in (4,7) and not (step==7 and other_mismatch):
         source=html.escape(s['annotation_text'])
         verified=s['workflow']['content_verified']
@@ -151,7 +156,7 @@ def snapshot(s):
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=canvas_w,height=canvas_h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
                 readingOrder=list(s['reading_order']),
-                spatialBoxOrder=(spatial_box_order(s) if s.get('bounding_boxes') else []),
+                spatialBoxOrder=(list(s.get('reading_order', [])) if s.get('bounding_boxes') else []),
                 suspiciousTokenIds=list(map(str,s.get('suspicious_token_ids',[]))),
                 selectedTokenId=(str(s['selected_token_id'])
                                  if s.get('selected_token_id') is not None else None),

@@ -7,11 +7,10 @@ UNKNOWN_STATUS = 'unknown'
 
 
 def synchronize_missing_statuses(state):
-    """Derive unknown status from MISS assignments after alignment/reordering."""
+    """Keep legacy unknown statuses editable as intact/damaged."""
     for box_id, region_uid in state['region_uid_by_box_id'].items():
-        missing = state['annotations'].get(box_id) == MISSING_ANNOTATION
         current = state['regions'][region_uid]['status']
-        status = UNKNOWN_STATUS if missing else ('intact' if current == UNKNOWN_STATUS else current)
+        status = 'intact' if current == UNKNOWN_STATUS else current
         state['regions'][region_uid]['status'] = status
         state['bounding_boxes'][box_id]['status'] = status
 
@@ -20,10 +19,8 @@ def update_status(state, region_uid, status):
     if region_uid not in state['regions']:
         raise ValueError('Invalid region or status.')
     box_id = state['box_id_by_region'].get(region_uid)
-    allowed = ((UNKNOWN_STATUS,) if state['annotations'].get(box_id) == MISSING_ANNOTATION
-               else EDITABLE_STATUSES)
-    if status not in allowed:
-        raise ValueError('MISS boxes must be unknown; other boxes must be intact or damaged.')
+    if status not in EDITABLE_STATUSES:
+        raise ValueError('Every box must be intact or damaged.')
     state['regions'][region_uid]['status'] = status
     if box_id:
         state['bounding_boxes'][box_id]['status'] = status
@@ -36,10 +33,8 @@ def replace_statuses(state, statuses):
         raise ValueError('Statuses must contain every region exactly once.')
     for region_uid, status in statuses.items():
         box_id = state['box_id_by_region'].get(region_uid)
-        allowed = ((UNKNOWN_STATUS,) if state['annotations'].get(box_id) == MISSING_ANNOTATION
-                   else EDITABLE_STATUSES)
-        if status not in allowed:
-            raise ValueError('MISS boxes must be unknown; other boxes must be intact or damaged.')
+        if status not in EDITABLE_STATUSES:
+            raise ValueError('Every box must be intact or damaged.')
     for region_uid, status in statuses.items():
         state['regions'][region_uid]['status'] = status
         box_id = state['box_id_by_region'].get(region_uid)
@@ -53,9 +48,7 @@ def confirm_status(state):
         raise ValueError('Bounding-box and character counts must match or have a confirmed source mismatch.')
     synchronize_missing_statuses(state)
     for region_uid, box_id in state['box_id_by_region'].items():
-        expected = ((UNKNOWN_STATUS,) if state['annotations'].get(box_id) == MISSING_ANNOTATION
-                    else EDITABLE_STATUSES)
-        if state['regions'][region_uid]['status'] not in expected:
+        if state['regions'][region_uid]['status'] not in EDITABLE_STATUSES:
             raise ValueError('Every region must have a valid status.')
     # Regions are the editable source of truth. Re-copy every known status at
     # the step boundary so Reading Order, Review, and export cannot retain a

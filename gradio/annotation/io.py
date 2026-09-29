@@ -105,11 +105,6 @@ def validate_document(doc, image, size):
         if any(not isinstance(c, str) or (c != MISSING_ANNOTATION and characters(c) != [c])
                for c in doc['annotations'].values()):
             raise ValueError('Each annotation must contain one valid character.')
-    for key, box in doc['bounding_boxes'].items():
-        missing = doc.get('annotations', {}).get(key) == MISSING_ANNOTATION
-        if ((missing and box['status'] != 'unknown')
-                or (not missing and box['status'] == 'unknown')):
-            raise ValueError('MISS boxes must be unknown; other boxes cannot be unknown.')
     resized_size = size
     if 'image_resize' in doc:
         from crop.crop import image_resize

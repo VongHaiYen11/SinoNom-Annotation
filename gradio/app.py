@@ -274,6 +274,14 @@ def create_app(options):
                     gr.Markdown('### Selected region')
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
+                with gr.Group(visible=False,
+                              elem_classes=['section','sidebar-section','sidebar-component','box-color-control']) as box_color_group:
+                    gr.Markdown('### Box color')
+                    box_color=gr.Dropdown(
+                        ['White','Cyan','Amber','Violet','Pink'],
+                        value='White',show_label=False,interactive=True,
+                        filterable=False,container=False,
+                        elem_id='bbox-color-palette')
                 # Preserve the status-table callback slot without rendering the
                 # redundant region table.
                 status_table=gr.State([])
@@ -328,6 +336,7 @@ def create_app(options):
         normalized=gr.State(None)
         outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,order_group,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table,
                  mismatch_group,mismatch_type,mismatch_note,confirm_mismatch,clear_mismatch]
+        outputs.append(box_color_group)
         outputs.append(workflow_chrome)
         outputs.append(loading_modal)
         outputs.extend([image_start,control_panel,main_workspace,workflow_footer,current_image])
@@ -359,8 +368,7 @@ def create_app(options):
             selected_box=(s['selected_box_id'] if s['selected_box_id'] in box_ids
                           else (box_ids[0] if box_ids else None))
             status_box=s['bounding_boxes'].get(selected_box,dict(status='intact'))
-            missing=s['annotations'].get(selected_box)=='MISS'
-            status_choices=['unknown'] if missing else ['intact','damaged']
+            status_choices=['intact','damaged']
             suspicious_ids=set(suspicious_box_ids(s))
             mismatch=source_mismatch_confirmed(s)
             final=(final_source_mismatch_document(s) if mismatch else final_document(s)) if step==7 else None
@@ -370,7 +378,7 @@ def create_app(options):
                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
                     gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected_region),*region_box['bbox'],
                     gr.update(visible=step==4),gr.update(choices=box_ids,value=selected_box),
-                    gr.update(choices=status_choices,value=status_box['status'],interactive=not missing),
+                    gr.update(choices=status_choices,value=('intact' if status_box['status']=='unknown' else status_box['status']),interactive=True),
                     gr.update(visible=step==4),json.dumps(s['reading_order']),gr.update(value=final,visible=step==7),
                     gr.update(visible=step==6),json.dumps(s.get('crop')),gr.update(visible=step==7),
                     panel_heading(s),panel_summary(s),footer(s),gr.update(visible=step==2 and has),
@@ -379,6 +387,7 @@ def create_app(options):
                     gr.update(value=issue.get('issue_type')),
                     gr.update(value=issue.get('note','')),
                     gr.update(interactive=has and step==3),gr.update(visible=mismatch),
+                    gr.update(visible=has and step==3),
                     workflow_progress(s),LOADING_HIDDEN,
                     gr.update(visible=step==1),gr.update(visible=has and step>1),
                     gr.update(visible=has and step>1),gr.update(visible=has and step>1),
@@ -419,7 +428,7 @@ def create_app(options):
                     'field': {0,2,6,7},
                 }.get(action)
                 if affected is not None:
-                    always={1,25,36,37}
+                    always={1,25,37,38}
                     result = [value if i in affected | always else gr.skip() for i,value in enumerate(result)]
                 return result
             except Exception as exc:
@@ -447,6 +456,13 @@ def create_app(options):
         # Hide Gradio's per-component timers/spinners and show one centered modal instead.
         event_args=dict(outputs=outputs,concurrency_id='annotation-actions',concurrency_limit=1,
                         show_progress='hidden',js=SHOW_LOADING_JS)
+        box_color.change(
+            fn=None, inputs=[box_color], outputs=None, show_progress='hidden',
+            js="""(color) => {
+                document.querySelector('#annotation-board')?.dispatchEvent(
+                    new CustomEvent('bbox-color-change', {detail: color, bubbles: true})
+                );
+            }""")
         def clear_loading_when_done(event):
             # The returned loading HTML is normally identical to its initial value,
             # so Gradio may skip patching the DOM after a completed action. Clear
@@ -628,7 +644,7 @@ def create_app(options):
                 result[2] = gr.update(value='Running detection…', visible=True)
                 result[29] = gr.update(interactive=False)
                 result[28] = gr.update(interactive=False)
-                result[37] = loading_markup('Running detection…', visible=True)
+                result[38] = loading_markup('Running detection…', visible=True)
             yield result
             if needs_detection:
                 yield run(result[0], 'detect')
@@ -751,7 +767,7 @@ def create_app(options):
                 statuses=parsed.get('statuses',{})
                 if (not isinstance(statuses,dict)
                         or any(not isinstance(box_id,str)
-                               or status not in ('intact','damaged','unknown')
+                               or status not in ('intact','damaged')
                                for box_id,status in statuses.items())):
                     raise ValueError
                 return statuses
