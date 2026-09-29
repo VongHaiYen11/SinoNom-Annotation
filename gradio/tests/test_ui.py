@@ -117,7 +117,7 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn("snapshot.textSequence = [...cards.querySelectorAll('[data-order-chip]')]",source)
         self.assertIn("snapshot.crop = bbox",source)
         self.assertIn("snapshot.boxes = boxes",source)
-        self.assertIn('snapshot_board_state_js(5)',source)
+        self.assertIn('snapshot_board_state_js(4)',source)
         self.assertIn('snapshot_board_state_js(1)',source)
         self.assertIn('delete_selected,[session,selection_bridge,x1,y1,x2,y2]',source)
         self.assertIn("value='White',show_label=False,interactive=True",source)
@@ -215,8 +215,9 @@ class GradioCallbacks(unittest.TestCase):
         titles=['Nguyên văn chữ Hán Nôm','Phiên âm Hán Việt','Dịch nghĩa','Toát yếu','Chú thích']
         app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
         self.assertIn("field=gr.Dropdown(label='Section', filterable=False)",app_source)
-        self.assertIn('choose_field,[session,field],[field_value],queue=False,',app_source)
-        self.assertNotIn('field.input(choose_field',app_source)
+        self.assertIn('fn=None,inputs=[field,content_bridge],outputs=[field_value],queue=False,',app_source)
+        self.assertIn('fn=None,inputs=[field,field_value,content_bridge],',app_source)
+        self.assertIn('save_content_draft,[session,content_bridge]',app_source)
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder).resolve()
             image=root/'12306.png';Image.new('RGB',(100,100),'white').save(image)
@@ -246,9 +247,7 @@ class GradioCallbacks(unittest.TestCase):
             app=create_app(options)
             functions=[f.fn for f in app.fns.values() if f.fn]
             open_image=next(f for f in functions if f.__name__=='open_image')
-            choose=next(f for f in functions if f.__name__=='choose_field')
-            edit=next(f for f in functions if f.__name__=='apply_content_field')
-            save=next(f for f in functions if f.__name__=='<lambda>' and f.__defaults__==('save_content',))
+            save=next(f for f in functions if f.__name__=='save_content_draft')
             result=open_image(dict(active=new_state(),drafts={}),str(image))
             ctx=result[0];choices=result[4]['choices']
             self.assertEqual(
@@ -261,15 +260,12 @@ class GradioCallbacks(unittest.TestCase):
             self.assertNotIn('ten_bia',result[6])
             choice_by_label=dict(choices)
             metadata_path=choice_by_label['Tên bia']
-            self.assertEqual(choose(ctx,metadata_path),'Giữ tên bia')
-            edited=edit(ctx,metadata_path,'Tên bia đã sửa')
-            ctx=edited[0]
             selected=choice_by_label['Dịch nghĩa']
-            self.assertEqual(choose(ctx,selected),'Dịch nghĩa gốc')
-            edited=edit(ctx,selected,'Bản dịch\nđã sửa')
-            self.assertIn('Bản dịch\\nđã sửa',edited[6])
-            ctx=edited[0]
-            ctx=save(ctx)[0]
+            browser_draft=json.loads(result[-2])
+            browser_draft[metadata_path]['value']='Tên bia đã sửa'
+            browser_draft[selected]['value']='Bản dịch\nđã sửa'
+            draft_json=json.dumps(browser_draft,ensure_ascii=False)
+            ctx=save(ctx,draft_json)[0]
             expected=deepcopy(original)
             expected[0]['ten_bia']='Tên bia đã sửa'
             expected[0]['noi_dung'][1]['chuyen_muc'][2]['van_ban']='Bản dịch\nđã sửa'
@@ -294,9 +290,11 @@ class GradioCallbacks(unittest.TestCase):
             for path in (['extra','keep'],['noi_dung',0,'chuyen_muc',0,'van_ban'],
                          ['noi_dung',1,'chuyen_muc',0,'tieu_de'],
                          ['noi_dung',1,'chuyen_muc',5,'van_ban']):
-                with self.assertLogs('app',level='ERROR'):
-                    rejected=edit(ctx,json.dumps(path),'Không được ghi')
-                self.assertEqual(rejected[0]['active']['draft_content'],ctx['active']['draft_content'])
+                tampered=deepcopy(browser_draft)
+                tampered[json.dumps(path,ensure_ascii=False)]={
+                    'title':'Không hợp lệ','path':path,'value':'Không được ghi'}
+                rejected=save(ctx,json.dumps(tampered,ensure_ascii=False))
+                self.assertIn('incomplete or invalid',rejected[2]['value'])
             self.assertEqual([field['title'] for field in content_fields(record,'12305')],[titles[0]])
 
     def test_next_saves_current_editor_and_stays_on_save_failure(self):
@@ -316,12 +314,14 @@ class GradioCallbacks(unittest.TestCase):
                 return list(advance_stream(*args))[-1]
             opened=open_image(dict(active=new_state(),drafts={}),str(image))
             ctx=opened[0];path=opened[4]['choices'][0][1]
+            draft=json.loads(opened[-2]);draft[path]['value']='永\n寺'
+            draft=json.dumps(draft,ensure_ascii=False)
             with patch('annotation.workflow.save_source_content',side_effect=OSError('write failed')), self.assertLogs('app',level='ERROR'):
-                failed=advance(ctx,path,'永\n寺')
+                failed=advance(ctx,draft)
             self.assertEqual(failed[0]['active']['current_step'],2)
             self.assertIn('write failed',failed[2]['value'])
             self.assertEqual(content_fields(failed[0]['active']['draft_content'],'12305')[0]['value'],'永\n寺')
-            result=advance(failed[0],path,'永\n寺')
+            result=advance(failed[0],draft)
             self.assertEqual(result[0]['active']['current_step'],3)
             self.assertTrue(result[0]['active']['workflow']['content_verified'])
             self.assertEqual(json.loads(source.read_text())[0]['noi_dung'][0]['chuyen_muc'][0]['van_ban'],'永\n寺')
@@ -344,12 +344,15 @@ class GradioCallbacks(unittest.TestCase):
             def action(name):
                 if name == 'next':
                     stream=next(f for f in functions if f.__name__=='next_with_progress')
-                    return lambda ctx: list(stream(ctx))[-1]
+                    return lambda ctx,draft=None: list(stream(ctx,draft))[-1]
+                if name == 'save_content':
+                    return next(f for f in functions if f.__name__=='save_content_draft')
                 return next(f for f in functions if f.__name__=='<lambda>' and f.__defaults__==(name,))
-            ctx=open_image(dict(active=new_state(),drafts={}),str(image))[0]
-            ctx=action('save_content')(ctx)[0]
+            opened=open_image(dict(active=new_state(),drafts={}),str(image))
+            ctx=opened[0];content_draft=opened[-2]
+            saved=action('save_content')(ctx,content_draft);ctx=saved[0]
             with patch('annotation.workflow.detect') as detector:
-                result=action('next')(ctx);ctx=result[0]
+                result=action('next')(ctx,saved[-2]);ctx=result[0]
                 self.assertEqual(ctx['active']['current_step'],3)
                 self.assertFalse(result[2]['visible'])
                 # Even an explicitly submitted canvas/API action cannot invoke the model.
@@ -395,12 +398,14 @@ class GradioCallbacks(unittest.TestCase):
             def action(name):
                 if name == 'next':
                     stream=next(f for f in functions if f.__name__=='next_with_progress')
-                    return lambda ctx: list(stream(ctx))[-1]
+                    return lambda ctx,draft=None: list(stream(ctx,draft))[-1]
+                if name == 'save_content':
+                    return next(f for f in functions if f.__name__=='save_content_draft')
                 return next(f for f in lambdas if f.__defaults__==(name,))
-            ctx=action('save_content')(ctx)[0]
+            saved=action('save_content')(ctx,result[-2]);ctx=saved[0]
             self.assertTrue(ctx['active']['workflow']['content_verified'])
             with self.assertLogs('app',level='ERROR'), patch('annotation.workflow.detect',side_effect=RuntimeError('fixture model unavailable')) as detector:
-                stream=next(f for f in functions if f.__name__=='next_with_progress')(ctx)
+                stream=next(f for f in functions if f.__name__=='next_with_progress')(ctx,saved[-2])
                 running=next(stream)
                 self.assertEqual(running[0]['active']['current_step'],3)
                 self.assertEqual(running[2]['value'],'Running detection…')
@@ -415,7 +420,7 @@ class GradioCallbacks(unittest.TestCase):
             # rather than treating those placeholders as a manual edit.
             with patch('annotation.workflow.detect',side_effect=RuntimeError('fixture model unavailable')):
                 no_boxes=list(advance(
-                    ctx,None,None,None,'','{}','intact',0,0,1,1,None))[-1]
+                    ctx,None,None,'','{}','intact',0,0,1,1,None))[-1]
             self.assertNotIn('Select a box and enter all four coordinates',
                              no_boxes[2]['value'])
             ctx=board_action(ctx,'add',{'bbox':[0,0,10,10]})[0]
@@ -456,7 +461,7 @@ class GradioCallbacks(unittest.TestCase):
             # A first-time manual coordinate edit is a direct Next input; it
             # must not require Update coordinates or a Back/Next round trip.
             result=list(advance(
-                ctx,None,None,None,'',local_selection,'intact',3,3,13,13,None))[-1]
+                ctx,None,None,'',local_selection,'intact',3,3,13,13,None))[-1]
             ctx=result[0]
             self.assertEqual(ctx['active']['regions'][first_uid]['bbox'],[3,3,13,13])
             self.assertEqual(ctx['active']['current_step'],4)
@@ -512,7 +517,7 @@ class GradioCallbacks(unittest.TestCase):
                 'active':damaged_box_id,'selected':[damaged_box_id],
                 'statuses':{uid:'intact' for uid in region_uids},
             })
-            result=list(advance(ctx,None,None,None,'',local_selection,'damaged'))[-1]
+            result=list(advance(ctx,None,None,'',local_selection,'damaged'))[-1]
             ctx=result[0]
             self.assertEqual(ctx['active']['regions'][first_damaged_uid]['status'],'damaged')
             self.assertEqual(ctx['active']['regions'][damaged_uid]['status'],'damaged')
@@ -521,7 +526,7 @@ class GradioCallbacks(unittest.TestCase):
             self.assertNotIn('data-image-resize-handle',result[8]['value']['markup'])
             # Typed crop coordinates are committed by Next without Apply crop.
             result=list(advance(
-                ctx,None,None,None,'','{}','intact',None,None,None,None,
+                ctx,None,None,'','{}','intact',None,None,None,None,
                 json.dumps([5,10,95,70])))[-1]
             ctx=result[0]
             self.assertEqual(ctx['active']['annotations'],mapping)
@@ -569,16 +574,16 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(contents[0]['content']['Nguyên văn chữ Hán Nôm'],'永寺樂')
             # Reopening reads the durable annotation, starts at Content, and
             # marks detection as already loaded.
-            restored=open_image(ctx,str(path))[0]
+            restored_result=open_image(ctx,str(path));restored=restored_result[0]
             self.assertEqual(restored['active']['current_step'],2)
             self.assertTrue(restored['active']['detection_loaded'])
             self.assertEqual(restored['active']['annotations'],{'1':'永','2':'樂','3':'寺'})
-            reopened=action('save_content')(restored)[0]
-            reopened=action('next')(reopened)[0]
+            reopened_saved=action('save_content')(restored,restored_result[-2])
+            reopened=action('next')(reopened_saved[0],reopened_saved[-2])[0]
             self.assertEqual(reopened['active']['current_step'],3)
             first_loaded=next(iter(reopened['active']['regions'].values()))['bbox']
             reopened_result=list(advance(
-                reopened,None,None,None,'','{}','intact',*first_loaded,None))[-1]
+                reopened,None,None,'','{}','intact',*first_loaded,None))[-1]
             self.assertEqual(reopened_result[0]['active']['current_step'],4)
             self.assertNotIn('Select a box and enter all four coordinates',
                              reopened_result[2]['value'])
@@ -610,11 +615,14 @@ class GradioCallbacks(unittest.TestCase):
             def action(name):
                 if name=='next':
                     stream=next(f for f in functions if f.__name__=='next_with_progress')
-                    return lambda ctx:list(stream(ctx))[-1]
+                    return lambda ctx,draft=None:list(stream(ctx,draft))[-1]
+                if name=='save_content':
+                    return next(f for f in functions if f.__name__=='save_content_draft')
                 return next(f for f in lambdas if f.__defaults__==(name,))
 
-            ctx=open_image(dict(active=new_state(),drafts={}),str(image))[0]
-            ctx=action('save_content')(ctx)[0];ctx=action('next')(ctx)[0]
+            opened=open_image(dict(active=new_state(),drafts={}),str(image))
+            ctx=opened[0];saved=action('save_content')(ctx,opened[-2]);ctx=saved[0]
+            ctx=action('next')(ctx,saved[-2])[0]
             active=ctx['active']
             result=on_action(ctx,gr.EventData(None,dict(
                 action='add',payload={'bbox':[0,0,10,10],

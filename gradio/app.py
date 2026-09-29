@@ -313,6 +313,8 @@ def create_app(options):
                         # combobox only delays committing a click selection.
                         field=gr.Dropdown(label='Section', filterable=False)
                         field_value=gr.Textbox(label='Content',lines=8, elem_classes='han-nom-text')
+                        content_bridge=gr.Textbox(
+                            value='{}',visible=False,elem_id='content-draft-bridge')
                         with gr.Row(elem_classes='button-group'):
                             apply_field=gr.Button('Save change', variant='primary')
                         with gr.Accordion('Content JSON', open=False, elem_classes='section'):
@@ -336,6 +338,7 @@ def create_app(options):
         outputs.append(workflow_chrome)
         outputs.append(loading_modal)
         outputs.extend([image_start,control_panel,main_workspace,workflow_footer,current_image])
+        outputs.append(content_bridge)
         outputs.append(suspicious_toggle)
 
         def render(ctx, msg=''):
@@ -350,6 +353,11 @@ def create_app(options):
                 [dict(tieu_de=field['title'],van_ban=field['value']) for field in fields],
                 ensure_ascii=False, indent=2,
             )
+            browser_draft=json.dumps({
+                json.dumps(field['path'],ensure_ascii=False): {
+                    'title':field['title'],'path':field['path'],'value':field['value']}
+                for field in fields
+            },ensure_ascii=False)
             region_ids=list(s['regions'])
             selected_region=(s['selected_region_uid'] if s['selected_region_uid'] in region_ids
                              else (region_ids[0] if region_ids else None))
@@ -383,6 +391,7 @@ def create_app(options):
                     gr.update(visible=step==1),gr.update(visible=has and step>1),
                     gr.update(visible=has and step>1),gr.update(visible=has and step>1),
                     (f'`{s["image"]}`' if has else '—'),
+                    browser_draft,
                     gr.update(value=selected_box in suspicious_ids,
                               interactive=step==4 and selected_box is not None)]
 
@@ -512,17 +521,49 @@ def create_app(options):
             **dict(event_args,js="""(ctx, confirmed) => [ctx, window.confirm(
                 'Reset all changes for this image to the state from server startup?\\n\\nShared record metadata may also affect related image faces.'
             )]""")))
-        for button,action in [(back,'back'),(save,'save'),(save_content,'save_content'),(undo,'undo')]:
+        for button,action in [(back,'back'),(save,'save'),(undo,'undo')]:
             clear_loading_when_done(button.click(lambda c,a=action:run(c,a),[session],**event_args))
-        def next_step(ctx, path=None, value=None, auto_detect=True,
+        def commit_frontend_content(ctx,draft):
+            try:
+                parsed=json.loads(draft or '{}')
+                s=ctx['active']
+                fields=content_fields(
+                    s['draft_content'],s['code'],engine.content_titles,
+                    engine.metadata_fields)
+                expected={json.dumps(field['path'],ensure_ascii=False):field
+                          for field in fields}
+                if not isinstance(parsed,dict) or set(parsed) != set(expected):
+                    raise ValueError('The local content draft is incomplete or invalid.')
+                updated=s
+                for key,field in expected.items():
+                    entry=parsed[key]
+                    if (not isinstance(entry,dict)
+                            or entry.get('title') != field['title']
+                            or entry.get('path') != list(field['path'])
+                            or not isinstance(entry.get('value'),str)):
+                        raise ValueError('The local content draft is invalid.')
+                    if entry['value'] != field['value']:
+                        updated=engine.apply(updated,'field',{
+                            'path':entry['path'],'value':entry['value']})
+                return dict(ctx,active=updated)
+            except (ValueError,TypeError,AttributeError) as exc:
+                raise ValueError(str(exc)) from exc
+
+        def save_content_draft(ctx,draft):
+            try:
+                return run(commit_frontend_content(ctx,draft),'save_content')
+            except Exception as exc:
+                return render(ctx,WARNING+' '+html.escape(str(exc)))
+        clear_loading_when_done(save_content.click(
+            save_content_draft,[session,content_bridge],**event_args))
+
+        def next_step(ctx, content_draft=None, auto_detect=True,
                       issue_type=None, mismatch_note_value='', selection='{}',
                       status_value='intact', x1_value=None, y1_value=None,
                       x2_value=None, y2_value=None, crop_coordinates=None):
-            if ctx['active']['current_step'] == 2 and path is not None:
+            if ctx['active']['current_step'] == 2:
                 try:
-                    updated = engine.apply(ctx['active'], 'field',
-                                           dict(path=json.loads(path), value=value))
-                    ctx = dict(ctx, active=updated)
+                    ctx=commit_frontend_content(ctx,content_draft)
                 except Exception as exc:
                     result = render(ctx, WARNING+' '+html.escape(str(exc)))
                     result[4] = gr.skip()
@@ -600,12 +641,12 @@ def create_app(options):
                 result[4] = gr.skip()
                 result[5] = gr.skip()
             return result
-        def next_with_progress(ctx, path=None, value=None, issue_type=None,
+        def next_with_progress(ctx, content_draft=None, issue_type=None,
                                mismatch_note_value='', selection='{}',
                                status_value='intact', x1_value=None, y1_value=None,
                                x2_value=None, y2_value=None, crop_coordinates=None):
             result = next_step(
-                ctx, path, value, auto_detect=False, issue_type=issue_type,
+                ctx, content_draft, auto_detect=False, issue_type=issue_type,
                 mismatch_note_value=mismatch_note_value, selection=selection,
                 status_value=status_value, x1_value=x1_value,
                 y1_value=y1_value, x2_value=x2_value, y2_value=y2_value,
@@ -623,32 +664,26 @@ def create_app(options):
                 yield run(result[0], 'detect')
         clear_loading_when_done(next_button.click(
             next_with_progress,
-            [session,field,field_value,mismatch_type,mismatch_note,
+            [session,content_bridge,mismatch_type,mismatch_note,
              selection_bridge,status,x1,y1,x2,y2,crop_coords],
-            **dict(event_args,js=snapshot_board_state_js(5))))
-        def choose_field(ctx,path):
-            if not path:return ''
-            s=ctx['active']
-            try:
-                selected=tuple(json.loads(path))
-                for entry in content_fields(
-                        s['draft_content'],s['code'],engine.content_titles,
-                        engine.metadata_fields):
-                    if entry['path']==selected:return entry['value']
-            except (ValueError,TypeError):
-                pass
-            raise gr.Error('This section does not belong to the selected image.')
-
+            **dict(event_args,js=snapshot_board_state_js(4))))
         field.change(
-            choose_field,[session,field],[field_value],queue=False,
-            trigger_mode='always_last',show_progress='hidden')
-        def apply_content_field(ctx,path,value):
-            try:
-                parsed=json.loads(path)
-            except (ValueError,TypeError):
-                return render(ctx,'Select a content section.')
-            return run(ctx,'field',dict(path=parsed,value=value))
-        clear_loading_when_done(apply_field.click(apply_content_field,[session,field,field_value],**event_args))
+            fn=None,inputs=[field,content_bridge],outputs=[field_value],queue=False,
+            js="""(path, draft) => {
+                try { return JSON.parse(draft || '{}')?.[path]?.value ?? ''; }
+                catch (_) { return ''; }
+            }""",show_progress='hidden')
+        apply_field.click(
+            fn=None,inputs=[field,field_value,content_bridge],
+            outputs=[content_bridge,content_preview],queue=False,
+            js="""(path, value, draft) => {
+                let fields={};
+                try { fields=JSON.parse(draft || '{}'); } catch (_) {}
+                if (fields[path]) fields[path].value=String(value ?? '');
+                const preview=Object.values(fields).map(
+                    field => ({tieu_de:field.title, van_ban:field.value}));
+                return [JSON.stringify(fields), JSON.stringify(preview,null,2)];
+            }""",show_progress='hidden')
         def frontend_selection(value):
             try:
                 parsed=json.loads(value or '{}')
