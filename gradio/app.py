@@ -14,8 +14,9 @@ import gradio as gr
 from annotation.state import new_state, source_mismatch_confirmed
 from annotation.reading_order import suspicious_box_ids
 from annotation.workflow import Workflow
-from annotation.io import (final_document, final_source_mismatch_document,
-                           load_image_list, read_json)
+from annotation.io import (SUSPICIOUS_NOTE, final_document,
+                           final_source_mismatch_document, load_image_list,
+                           load_suspicious_details, read_json)
 from annotation.text_extraction import content_fields, normalize_content_titles
 from annotation.text_alignment import count_annotation_characters
 from annotation.export import (collect_annotations, collect_content_documents,
@@ -340,7 +341,25 @@ def create_app(options):
                                 lines=12, max_lines=30, elem_classes='han-nom-json',
                             )
                     board=gr.HTML(value=snapshot(initial['active']),html_template='${value.markup}',css_template=CSS,js_on_load=SCRIPT, elem_id='annotation-board')
-                    preview=gr.JSON(label='Image JSON',visible=False, elem_id='final-preview', elem_classes='han-nom-json')
+                    with gr.Group(visible=False, elem_id='final-json-previews',
+                                  elem_classes=['section','final-json-previews']) as final_json_group:
+                        with gr.Accordion('text_annotations.json', open=True,
+                                          elem_classes='section'):
+                            preview=gr.JSON(
+                                label='Image JSON', visible=True,
+                                elem_id='final-preview', elem_classes='han-nom-json')
+                        with gr.Accordion('suspicious_details.json', open=False,
+                                          elem_classes='section') as suspicious_json_section:
+                            suspicious_preview=gr.JSON(
+                                label='Suspicious Details', visible=True,
+                                elem_id='suspicious-preview',
+                                elem_classes='han-nom-json')
+                        with gr.Accordion('source_mismatches.json', open=False,
+                                          elem_classes='section') as source_mismatches_json_section:
+                            source_mismatches_preview=gr.JSON(
+                                label='Source Mismatches', visible=True,
+                                elem_id='source-mismatches-preview',
+                                elem_classes='han-nom-json')
         with gr.Row(visible=False, elem_id='workflow-footer',elem_classes='button-group') as workflow_footer:
             back=gr.Button('Back', interactive=False, scale=0, elem_id='back-button')
             footer_label=gr.HTML(footer(initial['active']), elem_id='footer-step')
@@ -357,6 +376,10 @@ def create_app(options):
         outputs.append(content_bridge)
         outputs.append(suspicious_toggle)
         outputs.append(source_text_group)
+        outputs.extend([
+            final_json_group,suspicious_preview,suspicious_json_section,
+            source_mismatches_preview,source_mismatches_json_section,
+        ])
 
         def render(ctx, msg=''):
             s=ctx['active']; step=s['current_step']; has=bool(s.get('image'))
@@ -387,6 +410,25 @@ def create_app(options):
             suspicious_ids=set(suspicious_box_ids(s))
             mismatch=source_mismatch_confirmed(s)
             final=(final_source_mismatch_document(s) if mismatch else final_document(s)) if step==7 else None
+            suspicious_json={}
+            source_mismatch_json=[]
+            if step==7:
+                suspicious_json=load_suspicious_details(options.output_dir)
+                if suspicious_ids:
+                    suspicious_json=dict(suspicious_json)
+                    suspicious_json[str(s['code'])]={
+                        'issue_type':'suspicious_content',
+                        'box_ids':sorted({int(box_id) for box_id in suspicious_ids}),
+                        'note':SUSPICIOUS_NOTE,
+                    }
+                source_mismatch_json=collect_source_mismatches(
+                    images,options.output_dir,allow_empty=True)
+                if mismatch and final:
+                    current_code=str(s['code'])
+                    source_mismatch_json=[
+                        doc for doc in source_mismatch_json
+                        if str(doc.get('inscription_code')) != current_code
+                    ] + [final]
             issue=s.get('source_mismatch') or {}
             counts_differ=bool(has and len(s['regions']) != count_annotation_characters(s['annotation_text']))
             return [ctx,app_identity(s),gr.update(value=msg,visible=bool(msg)),
@@ -394,7 +436,7 @@ def create_app(options):
                     gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected_region),*region_box['bbox'],
                     gr.update(visible=step==4),gr.update(choices=box_ids,value=selected_box),
                     gr.update(choices=status_choices,value=('intact' if status_box['status']=='unknown' else status_box['status']),interactive=True),
-                    gr.update(visible=step==4),json.dumps(s['reading_order']),gr.update(value=final,visible=step==7),
+                    gr.update(visible=step==4),json.dumps(s['reading_order']),gr.update(value=final),
                     gr.update(visible=step==6),json.dumps(s.get('crop')),gr.update(visible=step==7),
                     panel_heading(s),panel_summary(s),footer(s),gr.update(visible=step==2 and has),
                     gr.update(interactive=has and step>1),gr.update(interactive=has and step<7,visible=step<7),
@@ -410,7 +452,12 @@ def create_app(options):
                     browser_draft,
                     gr.update(value=selected_box in suspicious_ids,
                               interactive=step==4 and selected_box is not None),
-                    gr.update(value=source_text(s), visible=step==4 and has)]
+                    gr.update(value=source_text(s), visible=step==4 and has),
+                    gr.update(visible=step==7),
+                    gr.update(value=suspicious_json),
+                    gr.update(visible=step==7 and bool(suspicious_json)),
+                    gr.update(value=source_mismatch_json),
+                    gr.update(visible=step==7 and bool(source_mismatch_json))]
 
         def run(ctx, action, payload=None, auto_detect=True):
             try:

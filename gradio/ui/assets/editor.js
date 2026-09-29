@@ -201,12 +201,20 @@ const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => 
   const viewport = element.querySelector('.image-viewport');
   if (!svg || !viewport) return;
   const style = getComputedStyle(viewport);
-  const availableWidth = Math.max(1, viewport.clientWidth
+  const viewportBox = viewport.getBoundingClientRect();
+  const availableWidth = Math.max(1, viewportBox.width
     - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
   const board = viewport.closest('.workbench-board');
   if (board) board.style.height = '';
   viewport.style.height = '';
-  const fittedHeight = Math.max(1, viewport.clientHeight
+  const previousWidth = svg.style.width;
+  const previousHeight = svg.style.height;
+  svg.style.width = '0px';
+  svg.style.height = '0px';
+  const measuredViewportBox = viewport.getBoundingClientRect();
+  svg.style.width = previousWidth;
+  svg.style.height = previousHeight;
+  const fittedHeight = Math.max(1, measuredViewportBox.height
     - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom));
   const fit = Math.min(availableWidth / width, fittedHeight / height);
   const renderedWidth = width * fit * imageTransform.zoom / 100;
@@ -696,7 +704,7 @@ element.addEventListener('pointercancel',()=>{
 element.addEventListener('click', event => {
   const control=event.target.closest('[data-zoom]');
   if(control){
-    imageTransform.zoom=control.dataset.zoom==='fit'?100:Math.max(50,Math.min(300,
+    imageTransform.zoom=control.dataset.zoom==='fit'?100:Math.max(25,Math.min(150,
       imageTransform.zoom+(control.dataset.zoom==='in'?25:-25)));
     applyZoom();return;
   }
