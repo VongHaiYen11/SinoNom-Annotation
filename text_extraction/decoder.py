@@ -232,8 +232,12 @@ class GlyphDecoder:
 
     def log_fallbacks(self) -> None:
         """Emit all fallback/unresolved characters with source evidence."""
+        def sort_key(item):
+            page, font, xref, source, replacement, status, reason = item[0]
+            return (page, font, -1 if xref is None else xref, source, replacement, status, reason)
+
         for (page, font, xref, source, replacement, status, reason), count in sorted(
-            self._fallbacks.items()
+            self._fallbacks.items(), key=sort_key
         ):
             LOGGER.warning(
                 "Character %s: page=%d font=%r xref=%s source=%r output=%r "

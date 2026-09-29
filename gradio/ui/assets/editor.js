@@ -111,6 +111,7 @@ const renderLocalStatus = (id, status) => {
   const group = groupFor(id);
   if (!box || !group) return;
   box.status = status;
+  group.dataset.status = status;
   const revealStatus = props.value.step >= 4;
   const color = !revealStatus ? annotationColor : statusColor(status);
   const rect = group.querySelector('rect:not([data-image-resize-handle])');
@@ -199,41 +200,43 @@ const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => 
   const svg = element.querySelector('.annotation-canvas');
   const viewport = element.querySelector('.image-viewport');
   if (!svg || !viewport) return;
-  // 100% fits the workspace width. The viewport then grows to the complete
-  // rendered image height, so only horizontal overflow needs an inner scroll.
   const style = getComputedStyle(viewport);
   const availableWidth = Math.max(1, viewport.clientWidth
     - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
-  const fit = availableWidth / width;
-  const renderedWidth = width * fit * imageTransform.zoom / 100;
-  const renderedHeight = height * fit * imageTransform.zoom / 100;
-  const verticalPadding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-  const scrollbarAllowance = renderedWidth > availableWidth + .5 ? 16 : 0;
-  const fullViewportHeight = renderedHeight + verticalPadding + scrollbarAllowance;
   const sidebar = root.querySelector('#control-panel');
   const board = viewport.closest('.workbench-board');
   const isStacked = matchMedia('(max-width: 767.98px)').matches;
-  let targetViewportHeight = fullViewportHeight;
+  let targetViewportHeight = Math.max(1, viewport.clientHeight);
   if (sidebar && board && !isStacked) {
     const boardRect = board.getBoundingClientRect();
-    const viewportRect = viewport.getBoundingClientRect();
     const siblingHeight = [...board.children].reduce((total, child) => {
       if (child === viewport || child.classList.contains('order-editor')) return total;
       return total + child.getBoundingClientRect().height;
     }, 0);
     const sidebarHeight = sidebar.getBoundingClientRect().height;
-    const maxBoardHeight = Math.max(1, window.innerHeight - Math.max(0, boardRect.top));
-    const targetBoardHeight = Math.min(sidebarHeight, maxBoardHeight);
-    const heightToViewportBottom = Math.max(1, window.innerHeight - Math.max(0, viewportRect.top));
-    targetViewportHeight = Math.min(
-      Math.max(fullViewportHeight, targetBoardHeight - siblingHeight),
-      heightToViewportBottom,
-    );
+    const footer = root.querySelector('#workflow-footer');
+    const main = root.querySelector('.main');
+    const mainStyle = main ? getComputedStyle(main) : null;
+    const footerHeight = footer?.getBoundingClientRect().height || 0;
+    const rowGap = mainStyle ? parseFloat(mainStyle.rowGap || mainStyle.gap) || 0 : 0;
+    const bottomPadding = mainStyle ? parseFloat(mainStyle.paddingBottom) || 0 : 0;
+    const availableBoardHeight = Math.max(1,
+      window.innerHeight - Math.max(0, boardRect.top) - footerHeight - rowGap - bottomPadding);
+    const targetBoardHeight = Math.max(availableBoardHeight, sidebarHeight);
+    board.style.height = `${targetBoardHeight}px`;
+    targetViewportHeight = Math.max(1, targetBoardHeight - siblingHeight);
+  } else if (board) {
+    board.style.height = '';
   }
+  viewport.style.height = `${targetViewportHeight}px`;
+  const fittedHeight = Math.max(1, targetViewportHeight
+    - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom));
+  const fit = Math.min(availableWidth / width, fittedHeight / height);
+  const renderedWidth = width * fit * imageTransform.zoom / 100;
+  const renderedHeight = height * fit * imageTransform.zoom / 100;
   svg.style.width = `${renderedWidth}px`;
   svg.style.height = `${renderedHeight}px`;
   svg.style.maxWidth = 'none';
-  viewport.style.height = `${Math.max(1, targetViewportHeight)}px`;
   const label = element.querySelector('.zoom-label');
   if (label) label.textContent = `${imageTransform.zoom}%`;
 };

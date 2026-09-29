@@ -1,5 +1,5 @@
 {
-  "input_pdf_path": "../input/tap1-short-21-page.pdf",
+  "input_pdf_path": "../input/Tap-1_Bia-Hau-the-ki-XVII_760-trang.pdf",
   "paths": {
     "output_json": "../output/tap_1.json",
     "glyph_profile": "../data/glyph_profiles/tap1-short_1.json"
@@ -12,10 +12,14 @@
   "encoded_fonts": {
     "Calibri": "../fonts/calibri.ttf",
     "Cambria-Bold": "../fonts/Cambria Bold.ttf",
+    "DengXian": "../fonts/DengXian.ttf",
     "NomNaTong": "../fonts/NomNaTong.ttf",
     "PalatinoLinotype": "../fonts/Palatino-Regular.ttf",
     "PalatinoLinotype,Bold": "../fonts/Palatino-Bold.ttf",
-    "PalatinoLinotype,BoldItalic": "../fonts/Palatino-BoldItalic.ttf"
+    "PalatinoLinotype,BoldItalic": "../fonts/Palatino-BoldItalic.ttf",
+    "PalatinoLinotype,Italic": "../fonts/Palatino-Italic.ttf",
+    "PMingLiU": "../fonts/PMingLiU.ttf",
+    "TimesNewRoman": "../fonts/TimesNewRoman.ttf"
   },
   "page_filter": {
     "margins": {

@@ -231,7 +231,7 @@ body,
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-rows: auto;
-  align-items: start !important;
+  align-items: stretch !important;
   height: auto;
   gap: var(--panel-gap);
   width: 100%;
@@ -253,7 +253,7 @@ body,
 #image-start .prose p { margin: 0; }
 #image-start button { width: 100%; min-height: var(--button-height); }
 
-.panel { align-self: start; min-width: 0; height: auto; overflow: visible; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-panel); }
+.panel { align-self: stretch; min-width: 0; height: auto; overflow: visible; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-panel); }
 #control-panel {
   display: flex !important;
   flex-direction: column !important;

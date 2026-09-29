@@ -1,6 +1,7 @@
 .workbench-board {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 100%;
   color: var(--color-text, #f4f4f5);
   background: var(--color-panel, #17191c);
@@ -53,9 +54,8 @@
 
 .image-viewport {
   display: grid;
-  align-items: start;
-  justify-items: safe center;
-  flex: 0 0 auto;
+  place-items: center;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
@@ -70,7 +70,7 @@
   display: block;
   width: auto;
   max-width: 100%;
-  height: 100%;
+  max-height: 100%;
   overflow: visible;
   background: var(--color-panel, #17191c);
   box-shadow: 0 4px 24px #0007;
@@ -103,8 +103,8 @@
 .status-order-board {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr);
-  grid-template-rows: auto auto auto;
-  align-items: start;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: stretch;
 }
 .status-order-board .order-editor {
   grid-column: 1;
@@ -118,7 +118,7 @@
 .status-order-board .image-viewport,
 .status-order-board .status-legend { grid-column: 2; }
 .status-order-board .workspace-toolbar { grid-row: 1; }
-.status-order-board .image-viewport { grid-row: 2; width: 100%; }
+.status-order-board .image-viewport { grid-row: 2; width: 100%; min-height: 0; }
 .status-order-board .status-legend { grid-row: 3; }
 .order-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3, 12px); }
 .order-heading > div { display: flex; flex-direction: column; gap: var(--space-1, 4px); }

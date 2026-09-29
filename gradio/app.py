@@ -74,6 +74,7 @@ def snapshot_board_state_js(selection_index):
         }}
         const groups = [...(board?.querySelectorAll('.annotation-canvas [data-box-id]') || [])];
         const boxes = {{}};
+        const statuses = {{}};
         for (const group of groups) {{
             const id = group.dataset.boxId;
             const rect = group.querySelector('rect:not([data-image-resize-handle])');
@@ -81,9 +82,14 @@ def snapshot_board_state_js(selection_index):
             const x = Number(rect.getAttribute('x')), y = Number(rect.getAttribute('y'));
             const bbox = [x, y, x + Number(rect.getAttribute('width')),
                           y + Number(rect.getAttribute('height'))];
-            if (id === 'crop') snapshot.crop = bbox; else boxes[id] = bbox;
+            if (id === 'crop') snapshot.crop = bbox; else {{
+                boxes[id] = bbox;
+                if (group.dataset.status === 'intact' || group.dataset.status === 'damaged')
+                    statuses[id] = group.dataset.status;
+            }}
         }}
         if (Object.keys(boxes).length) snapshot.boxes = boxes;
+        if (Object.keys(statuses).length) snapshot.statuses = statuses;
         args[{selection_index}] = JSON.stringify(snapshot);
         return args;
     }}"""

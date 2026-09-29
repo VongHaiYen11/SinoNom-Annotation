@@ -79,6 +79,19 @@ class ParserTests(unittest.TestCase):
             serialize_json([{"noi_dung": fallback}]),
         )
 
+    def test_fallback_logging_sorts_missing_and_known_xrefs(self) -> None:
+        decoder = GlyphDecoder.__new__(GlyphDecoder)
+        decoder._fallbacks = {}
+        decoder._record_fallback(1, "NomNaTong", None, "a", "a", "fallback", "ambiguous font resource")
+        decoder._record_fallback(1, "NomNaTong", 56, "b", "□", "unresolved", "glyph signature missing from profile")
+
+        with self.assertLogs("text_extraction.decoder", level="WARNING") as captured:
+            decoder.log_fallbacks()
+
+        self.assertEqual(2, len(captured.output))
+        self.assertIn("xref=None", captured.output[0])
+        self.assertIn("xref=56", captured.output[1])
+
     def test_metadata_faces_sections_and_missing_closing_bracket(self) -> None:
         source = [
             line("VĂN BIA SỐ 1"),

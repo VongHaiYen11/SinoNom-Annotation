@@ -91,6 +91,7 @@ def snapshot(s):
         dashed=''
         identity_attr = (f'data-box-id="{key}" data-region-uid="{key}"'
                          if step == 3 else f'data-box-id="{key}"')
+        identity_attr += f' data-status="{b["status"]}"'
         group_classes=' '.join(filter(None,(
             'selected-region' if multi_selected else '',
             'active-region' if key==selected_id else '',
