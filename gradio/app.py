@@ -302,7 +302,8 @@ def create_app(options):
                     crop_coords=gr.Textbox(label='Coordinates [x1, y1, x2, y2]',
                                            elem_id='crop-coordinates')
                     apply_crop=gr.Button('Apply crop',variant='primary')
-                summary=gr.HTML(panel_summary(initial['active']))
+                summary=gr.HTML(panel_summary(initial['active']),
+                                elem_id='validation-summary-host')
             with gr.Column(visible=False, elem_id='main-workspace', min_width=0, scale=1,
                            elem_classes='panel') as main_workspace:
                 with gr.Column(elem_id='workspace-body'):

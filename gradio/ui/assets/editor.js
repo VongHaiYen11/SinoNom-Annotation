@@ -335,16 +335,6 @@ const textSequenceFromDOM = container => [...container.querySelectorAll('[data-o
 const updateExcludedChips = container => {
   const chips=[...container.querySelectorAll('[data-order-chip]')];
   const count=Number(container.dataset.excludedCount || 0);
-  let divider=container.querySelector('.excluded-divider');
-  if(count>0 && chips.length){
-    if(!divider){
-      divider=document.createElement('div');
-      divider.className='excluded-divider';
-      divider.setAttribute('role','separator');
-      divider.innerHTML='<span>Excluded from data</span>';
-    }
-    container.insertBefore(divider,chips[Math.max(0,chips.length-count)]);
-  }else divider?.remove();
   chips.forEach((chip,index)=>{
     const excluded=count>0 && index>=chips.length-count;
     chip.classList.toggle('excluded',excluded);

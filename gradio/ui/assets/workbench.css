@@ -329,9 +329,20 @@ button#next-button::after { transform: rotate(180deg); }
   width: 100%;
   min-width: 0;
 }
-#selection-guide-host {
+#selection-guide-host,
+#validation-summary-host {
   width: 100% !important;
   min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+#selection-guide-host > .prose,
+#validation-summary-host > .prose {
+  width: 100% !important;
+  max-width: none !important;
   margin: 0 !important;
   padding: 0 !important;
 }
