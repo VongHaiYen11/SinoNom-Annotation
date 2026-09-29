@@ -309,7 +309,9 @@ def create_app(options):
                 with gr.Column(elem_id='workspace-body'):
                     with gr.Group(visible=False, elem_id='content-editor',elem_classes='section') as content_group:
                         gr.Markdown('## Content Verification')
-                        field=gr.Dropdown(label='Section')
+                        # These are fixed record sections, so an editable/searchable
+                        # combobox only delays committing a click selection.
+                        field=gr.Dropdown(label='Section', filterable=False)
                         field_value=gr.Textbox(label='Content',lines=8, elem_classes='han-nom-text')
                         with gr.Row(elem_classes='button-group'):
                             apply_field=gr.Button('Save change', variant='primary')
@@ -636,8 +638,10 @@ def create_app(options):
             except (ValueError,TypeError):
                 pass
             raise gr.Error('This section does not belong to the selected image.')
-        field.input(choose_field,[session,field],[field_value],concurrency_id='annotation-actions',
-                    show_progress='hidden')
+        # A section switch is a read-only lookup.  Handle the committed dropdown
+        # change outside the action queue so the editor updates on that click.
+        field.change(choose_field,[session,field],[field_value],queue=False,
+                     trigger_mode='always_last',show_progress='hidden')
         def apply_content_field(ctx,path,value):
             try:
                 parsed=json.loads(path)

@@ -213,6 +213,10 @@ class GradioCallbacks(unittest.TestCase):
 
     def test_content_editor_only_selected_face_sections(self):
         titles=['Nguyên văn chữ Hán Nôm','Phiên âm Hán Việt','Dịch nghĩa','Toát yếu','Chú thích']
+        app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
+        self.assertIn("field=gr.Dropdown(label='Section', filterable=False)",app_source)
+        self.assertIn('field.change(choose_field,[session,field],[field_value],queue=False,',app_source)
+        self.assertNotIn('field.input(choose_field',app_source)
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder).resolve()
             image=root/'12306.png';Image.new('RGB',(100,100),'white').save(image)

@@ -38,6 +38,7 @@
     - [Gradio Output Format](#gradio-output-format)
       - [`text_annotations.json`](#text_annotationsjson)
       - [`source_mismatches.json`](#source_mismatchesjson)
+      - [`suspicious_details.json`](#suspicious_detailsjson)
       - [`inscription_content.json`](#inscription_contentjson)
   - [📦 Outputs](#-outputs)
   - [🗂️ Repository Layout](#️-repository-layout)
@@ -414,40 +415,45 @@ Open the local URL printed by Gradio (normally `http://127.0.0.1:7860`; a later 
 1. **🖼️ Image** — Select an image from the configured folder
 2. **📝 Content** — Verify and save the five configured sections: original Hán/Nôm, Sino-Vietnamese transcription, translation, summary and notes
 3. **🔲 Bounding Boxes** — Detect regions, use Alt/Option-drag to add one, move/resize locally, or delete selected regions; compare box/character counts and record a source mismatch only when the extracted source is known to be wrong
-4. **🔢 Character Assignment** — Use the detector's already-sorted coordinate slots, drag text tokens to correct their box assignment, and flag questionable content as Suspicious
+4. **🔢 Reading Order** — Use the detector's already-sorted coordinate slots, drag character tokens to correct their box assignment, and flag questionable content with the toggle in the sidebar
 5. **🏷️ Status** — Review the final box/character mapping and mark ordinary boxes `intact` or `damaged`; `MISS` boxes are automatically `unknown`
 6. **✂️ Crop** — Adjust the orange crop frame on the original image; when its longest side exceeds 4096 pixels, export scales it down proportionally and records the scale factors
 7. **✅ Review** — Inspect the annotated canvas, final text/JSON and save the image object
 
-The browser keeps transient geometry, selection, text-sequence and crop edits for responsive interaction; Next validates and commits the relevant local snapshot to the authoritative Python state. Detection and Reading Order deliberately render every box with a neutral white outline, regardless of the detector's stored status; condition colors are revealed only in Status and Review. Before Reading Order, every editable region has a hidden `region_uid`, so edits do not depend on unstable public Box IDs. Entering Reading Order spatially sorts the committed regions with the detection-stage algorithm and assigns contiguous Box IDs from `1` to `n`. The editor renders only the annotation text as compact, horizontally flowing cards that wrap across rows; Box IDs are not shown on the cards. Dragging moves the text card itself and reflows nearby cards locally, with no Python callback during pointer movement. Dropping synchronizes the visible character sequence to the Gradio bridge. **Apply Changes** assigns that sequence to the spatially sorted boxes and redraws the canvas, while Next also commits the visible sequence before continuing.
+The browser keeps transient geometry, selection, text-sequence and crop edits for responsive interaction; **Next** validates and commits the relevant local snapshot to the authoritative Python state. Detection and Reading Order deliberately render every box with a neutral white outline, regardless of the detector's stored status; condition colors are revealed only in Status and Review. Before Reading Order, every editable region has a hidden `region_uid`, so edits do not depend on unstable public Box IDs. Entering Reading Order spatially sorts the committed regions with the detection-stage algorithm and assigns contiguous Box IDs from `1` to `n`. The editor renders only the annotation text as compact, horizontally flowing cards that wrap across rows; Box IDs are not shown on the cards. Dragging moves the text card itself and reflows nearby cards locally, with no Python callback during pointer movement. Dropping synchronizes the visible character sequence to the Gradio bridge. **Apply Changes** assigns that sequence to the spatially sorted boxes and redraws the canvas, while **Next** also commits the visible sequence before continuing.
 
-The normal path requires exactly one source character per box. When there are more boxes than source characters, selecting `missing_text` creates enough `MISS` tags to make the tag count equal the box count; `extra_text` handles extra source characters. These tags can be reordered with normal characters and are written to `annotations`. A box currently assigned `MISS` is always given the derived status `unknown` and is rendered yellow from the Status stage onward. Other source problems use `other` with a required note. Legacy mismatch names are normalized when loaded.
+The normal path requires exactly one source character per box. In **Box-Content Mismatch**, **Missing Content** creates enough `MISS` tags to make the tag count equal the box count, while **Extra Content** handles extra source characters. Press **Confirm Mismatch** to confirm the selected issue; **Clear** removes that confirmation. These tags can be reordered with normal characters and are written to `annotations`. A box currently assigned `MISS` is always given the derived status `unknown` and is rendered yellow from the Status stage onward. **Other** requires a note. After it is confirmed, pressing **Next** skips the character-mapping stages and opens Review because an `other` record deliberately has no character annotations.
 
-In Reading Order, clicking a box selects its assigned chip and clicking a chip selects its box. Boxes are read-only in this step. The compact **Suspicious** toggle marks the selected character token for later QA without changing its content, geometry, status, or inclusion in the dataset. Suspicious chips use a yellow background and the box currently receiving that token uses a yellow outline/fill; selection remains a separate visual state. The flag moves with its character token when cards are reordered and is persisted only by **Save Annotation**. `suspicious_details.json` resolves the token back to its currently assigned Box ID at save time.
+In Reading Order, bounding boxes are selectable but read-only: they cannot be moved, resized, created or deleted. Selecting a box resolves the character token currently assigned to that coordinate slot, and the compact toggle reflects that token's suspicious state. Clicking a chip does not select its box or control the toggle. Suspicious chips use a yellow background and the box currently receiving that token uses a yellow outline/fill. The flag moves with its character token when cards are reordered and is persisted only by **Save Annotation**. `suspicious_details.json` resolves the token back to its currently assigned Box ID at save time.
 
 If a region is added, deleted, moved or resized before alignment, Next commits the final geometry and builds the Box ID and annotation mapping. Status remains attached to each surviving region. Hidden `region_uid` and token IDs are never written to output JSON.
 
-Bounding-box manipulation is frontend-first. Selection, Ctrl/Cmd multi-selection, selection rectangles, dragging, resizing, group movement, valid coordinate typing and deselection update the SVG-local geometry immediately. Repeated edits stay local—even after pointer-up or selecting another box—and Next reads the live SVG and submits one validated geometry snapshot. **Delete selected** first commits that same live snapshot and the active coordinate fields, then deletes the selected regions, so unrelated local changes survive its board refresh. Alt/Option-drag follows the same transaction rule: it commits every existing local box before creating the new region. Detection and manually entered coordinates via **Update coordinates** also commit immediately. Coordinates typed without pressing **Update coordinates** are submitted directly by Next and override the selected box in that snapshot. There is no separate Add Box button. In Bounding Boxes and Reading Order, the sidebar offers a visual-only five-color outline palette (White, Cyan, Amber, Violet and Pink); this preference never changes or replaces stored statuses.
+Bounding-box manipulation is frontend-first. Selection, Ctrl/Cmd multi-selection, selection rectangles, dragging, resizing, group movement, valid coordinate typing and deselection update the SVG-local geometry immediately. Repeated edits stay local—even after pointer-up or selecting another box—and **Next** reads the live SVG and submits one validated geometry snapshot. **Delete Selected** first commits that same live snapshot and the active coordinate fields, then deletes the selected regions, so unrelated local changes survive its board refresh. Alt/Option-drag follows the same transaction rule: it commits every existing local box before creating the new region. **Run Detection** replaces the detected regions after confirmation when boxes already exist. Manually entered coordinates can be committed with **Update coordinates**; coordinates typed without pressing it are submitted directly by **Next** and override the selected box in that snapshot. There is no separate Add Box button. In Bounding Boxes and Reading Order, **Box color** offers a visual-only five-color outline palette (White, Cyan, Amber, Violet and Pink); this preference applies immediately and never changes or replaces stored statuses.
 
 After Reading Order is fixed, changing `intact`/`damaged` immediately switches the selected ordinary box between a solid green and dashed red outline and persists that edit to the Python session. A `MISS` box shows a disabled `unknown` status and a dotted yellow outline. Next atomically reconciles the complete canonical status map before Crop; there is no Update Status button.
 
-Crop dragging follows the same model: moving, resizing, or drawing the orange frame updates only local state and never opens a loading modal. Next snapshots the live frame and also submits the coordinate textbox directly, so it has the same persistence behavior as **Apply crop**. The desktop and mobile layouts use normal page scrolling rather than clipping long content into a fixed-height application shell.
+Crop dragging follows the same model: moving, resizing, or drawing the orange frame updates only local state and never opens a loading modal. **Next** snapshots the live frame and also submits the coordinate textbox directly, so it has the same persistence behavior as **Apply crop**. The desktop and mobile layouts use normal page scrolling rather than clipping long content into a fixed-height application shell.
 
 Review renders the cropped image viewport from the accepted crop coordinates after drawing the annotation overlays. Bounding boxes retain their original image-space coordinates and are clipped together with the source image at the crop boundary; export data is not rewritten into crop-relative coordinates.
 
-Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengXian and PMingLiU fonts. PMingLiU-ExtB is included as a fallback for extended CJK characters that may be missing from the primary fonts. The font picker affects only how Hán/Nôm characters are displayed; it never changes the stored Unicode text, character count, annotation mapping or reading order.
+Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengXian and PMingLiU fonts. PMingLiU-ExtB is included as a fallback for extended CJK characters that may be missing from the primary fonts.
 
 ### Saving
 
-- **Save Content** updates the source JSON and adds/updates that image in the internal content registry. It does not download a file
-- **Next** on Content (Step 2) applies the currently displayed editor text and saves all draft content before entering Bounding Boxes (Step 3). If saving fails, it stays on Step 2 with the editor text preserved. Apply each edited section before switching sections; Next also includes those applied edits.
+- **Start Verification** opens the image selected in the **Image** dropdown
+- **Reset All** restores the currently open image to its initial server snapshot
+- **Save change** applies the currently displayed Content editor value to the selected section
+- **Undo changes** restores the current Content draft
+- **Save Content** updates the source JSON and adds or updates that image in the internal content registry. It does not download a file
+- **Back** returns to the preceding applicable workflow step
+- **Next** on Content (Step 2) applies the currently displayed editor text and saves all draft content before entering Bounding Boxes (Step 3). If saving fails, it stays on Step 2 with the editor text preserved. Use **Save change** before switching sections; **Next** also includes previously applied edits.
 - **Next** on Bounding Boxes commits the final locally dragged/resized geometry, validates the box/character relationship and auto-confirms the selected mismatch type when needed
 - **Next** on Reading Order assigns the visible text-card sequence to spatially sorted boxes before Status review
 - **Next** on Status commits the complete canonical status map before entering Crop
 - **Next** on Crop commits the current local orange frame; oversized crops are scaled only when the output document is built
 - **Save Annotation** on Review commits either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image
-- **Save All** creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
-  - `text_annotations.json` for images committed with **Save Image**
+- **Download All** creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
+  - `text_annotations.json` for images committed with **Save Annotation**
   - `inscription_content.json` for images committed with **Save Content**
   - `source_mismatches.json` for images explicitly confirmed as source errors
   - `suspicious_details.json` for saved images containing suspicious Box IDs
@@ -458,7 +464,7 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 
 ### Gradio Output Format
 
-**Save All** writes and downloads one archive:
+**Download All** writes and downloads one archive:
 
 ```text
 annotations.zip
@@ -468,11 +474,11 @@ annotations.zip
 └── suspicious_details.json
 ```
 
-The three existing datasets are UTF-8 JSON arrays with one object per committed image. `suspicious_details.json` is an object keyed by inscription identifier. If a category has no committed data, its corresponding file is omitted from the ZIP.
+The three primary datasets are UTF-8 JSON arrays with one object per committed image. `suspicious_details.json` is an object keyed by inscription identifier. If a category has no committed data, its corresponding file is omitted from the ZIP.
 
 #### `text_annotations.json`
 
-This file contains only images committed with **Save Image** on the Review step. Box IDs are contiguous from `1` to `n`. Applying the Reading Order editor never moves box geometry or its manually reviewed status; it assigns the arranged text cards to boxes in the detection-stage spatial order.
+This file contains only images committed with **Save Annotation** on the Review step. Box IDs are contiguous from `1` to `n`. Applying the Reading Order editor never moves box geometry or its manually reviewed status; it assigns the arranged text cards to boxes in the detection-stage spatial order.
 
 When at least one box is suspicious, the record also contains `"issue_type": ["suspicious_content"]`; the affected Box IDs are stored only in `suspicious_details.json`.
 
@@ -613,7 +619,7 @@ annotations/
 ├── source_mismatches/
 │   └── 12306.json      # Source issue plus boxes/status; MISS annotations when applicable
 ├── suspicious_details.json # Suspicious Box IDs keyed by inscription identifier
-├── annotations.zip     # Save All archive, also downloaded by the browser
+├── annotations.zip     # Download All archive, also downloaded by the browser
 └── .state/
     ├── 12305.json      # Text/document fingerprints used to verify committed data
     ├── source_mismatches/
