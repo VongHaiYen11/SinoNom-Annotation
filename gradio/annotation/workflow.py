@@ -556,11 +556,11 @@ class Workflow:
             if step not in (4, 5):
                 raise ValueError('Edit status in the Status & Order step.')
             box_id = str(payload.get('id') or s['selected_box_id'])
-            update_status(s, s['region_uid_by_box_id'].get(box_id), payload['status'])
+            update_status(s, s['region_uid_by_box_id'].get(box_id), payload['status'], payload.get('unknown', False))
         elif action == 'statuses':
             if step not in (4, 5):
                 raise ValueError('Edit statuses in the Status & Order step.')
-            replace_statuses(s, payload.get('statuses'))
+            replace_statuses(s, payload.get('statuses'), payload.get('unknowns'))
         elif action == 'reorder_text':
             if step != 4:
                 raise ValueError('Edit character assignment in Step 4.')
