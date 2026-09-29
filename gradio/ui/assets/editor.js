@@ -204,24 +204,16 @@ const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => 
   const viewportBox = viewport.getBoundingClientRect();
   const availableWidth = Math.max(1, viewportBox.width
     - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
-  const board = viewport.closest('.workbench-board');
-  if (board) board.style.height = '';
-  viewport.style.height = '';
-  const previousWidth = svg.style.width;
-  const previousHeight = svg.style.height;
-  svg.style.width = '0px';
-  svg.style.height = '0px';
-  const measuredViewportBox = viewport.getBoundingClientRect();
-  svg.style.width = previousWidth;
-  svg.style.height = previousHeight;
-  const fittedHeight = Math.max(1, measuredViewportBox.height
+  const availableHeight = Math.max(1, viewportBox.height
     - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom));
-  const fit = Math.min(availableWidth / width, fittedHeight / height);
+  if (availableWidth <= 1 || availableHeight <= 1) return;
+  const fit = Math.min(availableWidth / width, availableHeight / height);
   const renderedWidth = width * fit * imageTransform.zoom / 100;
   const renderedHeight = height * fit * imageTransform.zoom / 100;
   svg.style.width = `${renderedWidth}px`;
   svg.style.height = `${renderedHeight}px`;
   svg.style.maxWidth = 'none';
+  svg.style.maxHeight = 'none';
   const label = element.querySelector('.zoom-label');
   if (label) label.textContent = `${imageTransform.zoom}%`;
 };
