@@ -215,8 +215,7 @@ class GradioCallbacks(unittest.TestCase):
         titles=['Nguyên văn chữ Hán Nôm','Phiên âm Hán Việt','Dịch nghĩa','Toát yếu','Chú thích']
         app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
         self.assertIn("field=gr.Dropdown(label='Section', filterable=False)",app_source)
-        self.assertIn('fn=None,inputs=[field,content_values],outputs=[field_value],queue=False,',app_source)
-        self.assertIn("js=\"\"\"(path, values) => values?.[path] ?? ''\"\"\"",app_source)
+        self.assertIn('choose_field,[session,field],[field_value],queue=False,',app_source)
         self.assertNotIn('field.input(choose_field',app_source)
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder).resolve()
@@ -247,6 +246,7 @@ class GradioCallbacks(unittest.TestCase):
             app=create_app(options)
             functions=[f.fn for f in app.fns.values() if f.fn]
             open_image=next(f for f in functions if f.__name__=='open_image')
+            choose=next(f for f in functions if f.__name__=='choose_field')
             edit=next(f for f in functions if f.__name__=='apply_content_field')
             save=next(f for f in functions if f.__name__=='<lambda>' and f.__defaults__==('save_content',))
             result=open_image(dict(active=new_state(),drafts={}),str(image))
@@ -261,9 +261,11 @@ class GradioCallbacks(unittest.TestCase):
             self.assertNotIn('ten_bia',result[6])
             choice_by_label=dict(choices)
             metadata_path=choice_by_label['Tên bia']
+            self.assertEqual(choose(ctx,metadata_path),'Giữ tên bia')
             edited=edit(ctx,metadata_path,'Tên bia đã sửa')
             ctx=edited[0]
             selected=choice_by_label['Dịch nghĩa']
+            self.assertEqual(choose(ctx,selected),'Dịch nghĩa gốc')
             edited=edit(ctx,selected,'Bản dịch\nđã sửa')
             self.assertIn('Bản dịch\\nđã sửa',edited[6])
             ctx=edited[0]

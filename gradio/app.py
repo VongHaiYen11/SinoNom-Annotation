@@ -313,9 +313,6 @@ def create_app(options):
                         # combobox only delays committing a click selection.
                         field=gr.Dropdown(label='Section', filterable=False)
                         field_value=gr.Textbox(label='Content',lines=8, elem_classes='han-nom-text')
-                        # Browser-side section values make switching as immediate
-                        # as the box-colour control; persistence still stays in Python.
-                        content_values=gr.State({})
                         with gr.Row(elem_classes='button-group'):
                             apply_field=gr.Button('Save change', variant='primary')
                         with gr.Accordion('Content JSON', open=False, elem_classes='section'):
@@ -339,7 +336,6 @@ def create_app(options):
         outputs.append(workflow_chrome)
         outputs.append(loading_modal)
         outputs.extend([image_start,control_panel,main_workspace,workflow_footer,current_image])
-        outputs.append(content_values)
         outputs.append(suspicious_toggle)
 
         def render(ctx, msg=''):
@@ -348,7 +344,6 @@ def create_app(options):
                 s['draft_content'],s['code'],engine.content_titles,engine.metadata_fields)
                 if has else [])
             choices=[(SECTION_LABELS.get(field['title'],field['title']),json.dumps(field['path'],ensure_ascii=False)) for field in fields]
-            field_values={choice[1]:field['value'] for choice,field in zip(choices,fields)}
             chosen=choices[0][1] if choices else None
             val=fields[0]['value'] if fields else ''
             draft_preview=json.dumps(
@@ -388,7 +383,6 @@ def create_app(options):
                     gr.update(visible=step==1),gr.update(visible=has and step>1),
                     gr.update(visible=has and step>1),gr.update(visible=has and step>1),
                     (f'`{s["image"]}`' if has else '—'),
-                    field_values,
                     gr.update(value=selected_box in suspicious_ids,
                               interactive=step==4 and selected_box is not None)]
 
@@ -421,7 +415,7 @@ def create_app(options):
                     'statuses': {0,2,8,17,30},
                     'reorder_text': {0,2,8,19} | suspicious_outputs,
                     'crop': {0,2,8,22},
-                    'field': {0,2,6,7,len(outputs)-2},
+                    'field': {0,2,6,7},
                 }.get(action)
                 if affected is not None:
                     always={1,25,37,38}
@@ -632,12 +626,22 @@ def create_app(options):
             [session,field,field_value,mismatch_type,mismatch_note,
              selection_bridge,status,x1,y1,x2,y2,crop_coords],
             **dict(event_args,js=snapshot_board_state_js(5))))
-        # This is deliberately frontend-only: no request/queue round trip is
-        # needed merely to show a value already loaded in the browser.
+        def choose_field(ctx,path):
+            if not path:return ''
+            s=ctx['active']
+            try:
+                selected=tuple(json.loads(path))
+                for entry in content_fields(
+                        s['draft_content'],s['code'],engine.content_titles,
+                        engine.metadata_fields):
+                    if entry['path']==selected:return entry['value']
+            except (ValueError,TypeError):
+                pass
+            raise gr.Error('This section does not belong to the selected image.')
+
         field.change(
-            fn=None,inputs=[field,content_values],outputs=[field_value],queue=False,
-            js="""(path, values) => values?.[path] ?? ''""",
-            show_progress='hidden')
+            choose_field,[session,field],[field_value],queue=False,
+            trigger_mode='always_last',show_progress='hidden')
         def apply_content_field(ctx,path,value):
             try:
                 parsed=json.loads(path)
