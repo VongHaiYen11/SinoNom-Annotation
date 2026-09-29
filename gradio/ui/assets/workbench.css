@@ -380,6 +380,12 @@ button#next-button::after { transform: rotate(180deg); }
   flex-direction: column;
   gap: var(--space-2);
 }
+#control-panel .sidebar-component .selection-guide {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
 #control-panel .selection-guide h3 { margin: 0; font-size: 12px; font-weight: 600; }
 #control-panel .selection-guide ul {
   display: flex;

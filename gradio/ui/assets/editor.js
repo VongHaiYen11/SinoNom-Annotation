@@ -196,20 +196,23 @@ const hydrateLocalState = () => {
   applyAnnotationColor();
 };
 
-const fitCanvas = (width=imageTransform.width, height=imageTransform.height) => {
+const fitCanvas = (width, height) => {
   const svg = element.querySelector('.annotation-canvas');
   const viewport = element.querySelector('.image-viewport');
   if (!svg || !viewport) return;
+  const viewBox = (svg.getAttribute('viewBox') || '').split(' ').map(Number);
+  const w = width || (viewBox.length === 4 && viewBox[2]) || imageTransform.width || props.value?.width || 1000;
+  const h = height || (viewBox.length === 4 && viewBox[3]) || imageTransform.height || props.value?.height || 1000;
+  if (!w || !h) return;
   const style = getComputedStyle(viewport);
-  const viewportBox = viewport.getBoundingClientRect();
-  const availableWidth = Math.max(1, viewportBox.width
-    - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
-  const availableHeight = Math.max(1, viewportBox.height
-    - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom));
-  if (availableWidth <= 1 || availableHeight <= 1) return;
-  const fit = Math.min(availableWidth / width, availableHeight / height);
-  const renderedWidth = width * fit * imageTransform.zoom / 100;
-  const renderedHeight = height * fit * imageTransform.zoom / 100;
+  const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+  const padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+  const availW = Math.max(100, (viewport.clientWidth || viewport.getBoundingClientRect().width || 400) - padX);
+  const availH = Math.max(100, (viewport.clientHeight || viewport.getBoundingClientRect().height || 400) - padY);
+  const fit = Math.min(availW / w, availH / h);
+  const zoomFactor = Math.max(25, Math.min(150, imageTransform.zoom || 100)) / 100;
+  const renderedWidth = Math.round(w * fit * zoomFactor);
+  const renderedHeight = Math.round(h * fit * zoomFactor);
   svg.style.width = `${renderedWidth}px`;
   svg.style.height = `${renderedHeight}px`;
   svg.style.maxWidth = 'none';
