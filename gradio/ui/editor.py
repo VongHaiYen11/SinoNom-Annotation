@@ -48,7 +48,7 @@ def snapshot(s):
         boxes=s['regions'];selected_id=None;selected_ids=set()
     else:
         boxes = s['bounding_boxes']
-        selected_id = s['selected_box_id'] if s['selected_box_id'] in boxes else next(iter(boxes), None)
+        selected_id = s['selected_box_id'] if (s['selected_box_id'] and s['selected_box_id'] in boxes) else None
         selected_ids = {selected_id} if selected_id else set()
     filename=html.escape(s['image'])
     dimensions = (f'{source_w} × {source_h} px · crop {canvas_w} × {canvas_h} px'

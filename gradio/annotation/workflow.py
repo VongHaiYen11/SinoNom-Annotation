@@ -577,6 +577,9 @@ class Workflow:
                     raise ValueError('Suspicious token selection is invalid.')
                 s['suspicious_token_ids'] = sorted(suspicious_ids, key=int)
         elif action == 'next':
+            s['selected_region_uid'] = None
+            s['selected_region_uids'] = []
+            s['selected_box_id'] = None
             if step == 1:
                 s['current_step'] = 2
             elif step == 2:

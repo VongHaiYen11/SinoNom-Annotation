@@ -295,6 +295,7 @@ def create_app(options):
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
                     unknown_status=gr.Radio(['False','True'],value='False',label='Unknown character (Damaged only)',interactive=True,elem_id='unknown-radio')
+                    suspicious_toggle=gr.Checkbox(value=False,label='Suspicious annotation',interactive=False,elem_id='suspicious-toggle')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','sidebar-component','box-color-control']) as box_color_group:
                     gr.Markdown('### Box color')
@@ -306,20 +307,11 @@ def create_app(options):
                 # Preserve the status-table callback slot without rendering the
                 # redundant region table.
                 status_table=gr.State([])
-                with gr.Group(visible=False,
-                              elem_classes=['section','sidebar-section','sidebar-component']) as order_group:
-                    gr.Markdown('### Reading order')
-                    gr.Markdown('Drag the text cards into sequence. Apply assigns them to boxes in detector-sorted spatial order.',
-                                elem_classes='sidebar-help')
-                    apply_order=gr.Button('Apply Changes',variant='primary',
-                                          elem_id='apply-reading-order')
-                    with gr.Row(elem_classes='suspicious-control'):
-                        suspicious_toggle=gr.Checkbox(
-                            value=False,label='Suspicious annotation',show_label=False,
-                            interactive=False,container=False,elem_id='suspicious-toggle')
                 source_text_group=gr.HTML(
                     value='', visible=False, elem_id='sidebar-source-text',
                     elem_classes=['section','sidebar-section','sidebar-component'])
+                apply_order=gr.Button('Apply Changes',variant='primary',visible=False,
+                                      elem_id='apply-reading-order')
                 order_text=gr.State('[]')
                 with gr.Group(visible=False, elem_classes=['section','sidebar-section','sidebar-component']) as crop_group:
                     gr.Markdown('### Crop')
@@ -373,7 +365,7 @@ def create_app(options):
             next_button=gr.Button('Next',variant='primary',interactive=False, scale=0, elem_id='next-button')
         # Preserve callback output slots while removing the normalized-text component.
         normalized=gr.State(None)
-        outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,order_group,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table,
+        outputs=[session,progress,message,content_group,field,field_value,content_preview,normalized,board,box_group,box_id,x1,y1,x2,y2,status_group,status_id,status,apply_order,order_text,preview,crop_group,crop_coords,save,heading,summary,footer_label,content_actions,back,next_button,status_table,
                  mismatch_group,mismatch_type,mismatch_note,confirm_mismatch,clear_mismatch]
         outputs.append(box_color_group)
         outputs.append(workflow_chrome)
@@ -858,15 +850,17 @@ def create_app(options):
             }
             frontend, frontend_unknowns = frontend_statuses(selection)
             for box_id,status_name in frontend.items():
-                region_uid=ctx['active']['region_uid_by_box_id'].get(str(box_id))
-                if region_uid:
+                region_uid=(ctx['active']['region_uid_by_box_id'].get(str(box_id)) or
+                            (str(box_id) if str(box_id) in ctx['active']['regions'] else None))
+                if region_uid and region_uid in statuses:
                     statuses[region_uid]=status_name
                     if box_id in frontend_unknowns:
                         unknowns_map[region_uid]=bool(frontend_unknowns[box_id]) if status_name == 'damaged' else False
             active,_=frontend_selection(selection)
             if active and str(active) not in frontend:
-                region_uid=ctx['active']['region_uid_by_box_id'].get(str(active))
-                if region_uid:
+                region_uid=(ctx['active']['region_uid_by_box_id'].get(str(active)) or
+                            (str(active) if str(active) in ctx['active']['regions'] else None))
+                if region_uid and region_uid in statuses:
                     statuses[region_uid]=status_value
             updated=engine.apply(ctx['active'],'statuses',{'statuses':statuses, 'unknowns':unknowns_map})
             return dict(ctx,active=updated)
