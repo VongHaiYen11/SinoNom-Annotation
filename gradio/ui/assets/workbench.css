@@ -1,8 +1,9 @@
 /* Shared application tokens and centered page shell. */
 :root,
+html,
 body,
 .gradio-container {
-  color-scheme: dark;
+  color-scheme: dark !important;
 }
 
 body,
@@ -534,33 +535,68 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   box-shadow: 0 0 0 1000px var(--color-page) inset !important;
   -webkit-text-fill-color: var(--color-text) !important;
 }
-/* Gradio dropdowns render a custom listbox outside the input surface. Chrome
-   light mode can otherwise recolor that popup independently of the app. */
+/* Gradio dropdowns render custom wrappers, inputs, and listboxes. Force dark mode overrides across Chrome light mode. */
+.gradio-container .dropdown,
+.gradio-container .wrap,
+.gradio-container .wrap-inner,
+.gradio-container .secondary-wrap,
+.gradio-container [data-testid="dropdown"] {
+  border-color: var(--color-border, #303237) !important;
+  background: var(--color-page, #0b0d0f) !important;
+  background-color: var(--color-page, #0b0d0f) !important;
+  color: var(--color-text, #f4f4f5) !important;
+  color-scheme: dark !important;
+}
+.gradio-container .dropdown input,
+.gradio-container .wrap input,
+.gradio-container input[readonly],
+.gradio-container .single-select,
+.gradio-container .secondary-wrap input {
+  border-color: transparent !important;
+  background: var(--color-page, #0b0d0f) !important;
+  background-color: var(--color-page, #0b0d0f) !important;
+  color: var(--color-text, #f4f4f5) !important;
+  caret-color: var(--color-text, #f4f4f5) !important;
+  -webkit-text-fill-color: var(--color-text, #f4f4f5) !important;
+  color-scheme: dark !important;
+}
+.gradio-container select,
 .gradio-container select option,
 .gradio-container [role="listbox"],
-.gradio-container ul.options {
-  border-color: var(--color-border) !important;
-  background: var(--color-page) !important;
-  color: var(--color-text) !important;
+.gradio-container ul.options,
+.gradio-container .options,
+.gradio-container .dropdown-options,
+.gradio-container .options-container {
+  border-color: var(--color-border, #303237) !important;
+  background: var(--color-page, #0b0d0f) !important;
+  background-color: var(--color-page, #0b0d0f) !important;
+  color: var(--color-text, #f4f4f5) !important;
   color-scheme: dark !important;
 }
 .gradio-container [role="option"],
-.gradio-container ul.options > li {
-  background: var(--color-page) !important;
-  color: var(--color-text) !important;
-  -webkit-text-fill-color: var(--color-text) !important;
+.gradio-container ul.options > li,
+.gradio-container .option,
+.gradio-container .item {
+  background: var(--color-page, #0b0d0f) !important;
+  background-color: var(--color-page, #0b0d0f) !important;
+  color: var(--color-text, #f4f4f5) !important;
+  -webkit-text-fill-color: var(--color-text, #f4f4f5) !important;
 }
 .gradio-container [role="option"]:hover,
 .gradio-container [role="option"][aria-selected="true"],
 .gradio-container ul.options > li:hover,
-.gradio-container ul.options > li.selected {
-  background: var(--color-panel-hover) !important;
-  color: var(--color-text) !important;
-  -webkit-text-fill-color: var(--color-text) !important;
+.gradio-container ul.options > li.selected,
+.gradio-container .option.selected,
+.gradio-container .option:hover {
+  background: var(--color-panel-hover, #282b30) !important;
+  background-color: var(--color-panel-hover, #282b30) !important;
+  color: var(--color-text, #f4f4f5) !important;
+  -webkit-text-fill-color: var(--color-text, #f4f4f5) !important;
 }
 .gradio-container .dropdown-arrow,
-.gradio-container .dropdown-arrow svg {
-  color: var(--color-text) !important;
+.gradio-container .dropdown-arrow svg,
+.gradio-container .icon-wrap {
+  color: var(--color-text, #f4f4f5) !important;
   fill: currentColor !important;
 }
 .gradio-container .block-label { padding-bottom: var(--space-2) !important; font-size: 12px; }
