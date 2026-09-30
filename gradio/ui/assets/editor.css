@@ -87,7 +87,7 @@
 
 .annotation-canvas [data-box-id] { cursor: pointer; }
 .annotation-canvas [data-region-uid] { cursor: move; }
-.annotation-canvas [data-corner] { display: none; cursor: nwse-resize; }
+.annotation-canvas [data-corner] { display: none; cursor: nwse-resize; fill: #000; opacity: 0; pointer-events: all; }
 .annotation-canvas .active-region [data-corner],
 .annotation-canvas [data-box-id="crop"] [data-corner] { display: block; }
 .annotation-canvas [data-corner="1"],

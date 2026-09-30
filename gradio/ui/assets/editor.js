@@ -334,8 +334,26 @@ const hydrateLocalState = () => {
     isDirty = true;
     Object.entries(localBoxes).forEach(([id, b]) => {
       const g = groupFor(id);
-      const text = g?.querySelector('text');
-      if (text) {
+      if (g) {
+        let text = g.querySelector('text');
+        if (!text) {
+          text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          text.setAttribute('pointer-events', 'none');
+          text.setAttribute('paint-order', 'stroke');
+          text.setAttribute('stroke', '#17191c');
+          g.appendChild(text);
+        }
+        const box = b.bbox;
+        const bw = Math.max(1, box[2] - box[0]);
+        const bh = Math.max(1, box[3] - box[1]);
+        const fontSize = Math.min(bw, bh) * 0.05;
+        const strokeWidth = Math.max(0.5, fontSize * 0.1);
+        const unit = Math.max(props.value.width, props.value.height) / 900;
+        text.setAttribute('x', box[0] + 2 * unit);
+        text.setAttribute('y', Math.max(fontSize, box[1] - 4 * unit));
+        text.setAttribute('font-size', fontSize);
+        text.setAttribute('stroke-width', strokeWidth);
+        text.setAttribute('fill', annotationColor);
         const publicBox = props.value.step !== 6;
         const labelText = publicBox ? String(b.order ?? id) : '';
         text.textContent = labelText;
@@ -409,11 +427,25 @@ const fitCanvas = (width, height) => {
   const label = element.querySelector('.zoom-label');
   if (label) label.textContent = `${imageTransform.zoom}%`;
 };
-const applyZoom = () => fitCanvas();
+const showSortingOverlay = () => {
+  const el = root.querySelector('#global-loading') || document.getElementById('global-loading');
+  if (el) {
+    const label = el.querySelector('span:not(.global-loading-spinner)');
+    if (label) label.textContent = 'Sorting…';
+    el.classList.add('is-visible');
+  }
+};
+const hideSortingOverlay = () => {
+  const el = root.querySelector('#global-loading') || document.getElementById('global-loading');
+  if (el) {
+    el.classList.remove('is-visible');
+  }
+};
 const send = (action, payload = {}) => {
   if (pending) return;
   pending = true;
   pendingAction = action;
+  if (action === 'sort_boxes_calc') showSortingOverlay();
   element.setAttribute('aria-busy', 'true');
   trigger('action', {
     action, payload: {
@@ -423,6 +455,7 @@ const send = (action, payload = {}) => {
 };
 watch('value', () => {
   pending = false; moving = null;
+  hideSortingOverlay();
   if (orderDrag?.ghost) orderDrag.ghost.remove();
   orderDrag = null;
   element.setAttribute('aria-busy', 'false');
@@ -958,9 +991,10 @@ element.addEventListener('pointerup', event => {
         handle.setAttribute('data-corner', n);
         handle.setAttribute('cx', cx); handle.setAttribute('cy', cy);
         handle.setAttribute('r', Math.max(10 * unit, 16));
-        handle.setAttribute('fill', 'none');
+        handle.setAttribute('fill', '#000');
         handle.setAttribute('stroke', 'none');
         handle.setAttribute('opacity', '0');
+        handle.setAttribute('pointer-events', 'all');
         group.appendChild(handle);
       });
 

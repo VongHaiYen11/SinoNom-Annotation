@@ -110,7 +110,7 @@ def snapshot(s):
         # them only on the browser-local active region.
         if step in (3, 6):
             for n, (cx, cy) in enumerate([(x1,y1),(x2,y1),(x2,y2),(x1,y2)]):
-                markup += f'<circle data-corner="{n}" cx="{cx}" cy="{cy}" r="{max(10*unit, 16)}" fill="none" stroke="none" opacity="0"/>'
+                markup += f'<circle data-corner="{n}" cx="{cx}" cy="{cy}" r="{max(10*unit, 16)}" fill="#000" stroke="none" opacity="0" pointer-events="all"/>'
         markup+='</g>'
     markup+='</svg></div>'
     if step in (4, 5) or (step == 7 and not other_mismatch):
