@@ -76,7 +76,7 @@ def snapshot(s):
         status_color = ('#f59e0b' if is_unknown else '#ef4444') if b['status'] == 'damaged' else '#22c55e'
         stroke_color=('#ff7a1a' if step==6 else '#f4f4f5' if not reveal_status
                       else status_color)
-        missing_annotation = (step == 4 and s.get('annotations', {}).get(str(key)) == MISSING_ANNOTATION)
+        missing_annotation = (step in (4, 5, 7) and s.get('annotations', {}).get(str(key)) == MISSING_ANNOTATION)
         fill_color = ('#ff7a1a' if step==6 else '#facc15' if suspicious
                       else '#e5e7eb' if missing_annotation else stroke_color)
         fill_opacity = ('.16' if multi_selected and step in (3,6) else

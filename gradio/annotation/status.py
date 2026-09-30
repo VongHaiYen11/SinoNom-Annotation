@@ -12,6 +12,8 @@ def synchronize_missing_statuses(state):
         current = state['regions'][region_uid]['status']
         status = 'intact' if current == UNKNOWN_STATUS else current
         is_unknown = bool(state['regions'][region_uid].get('unknown', False)) if status == 'damaged' else False
+        if state.get('annotations', {}).get(str(box_id)) == MISSING_ANNOTATION:
+            is_unknown = False
         state['regions'][region_uid]['status'] = status
         state['regions'][region_uid]['unknown'] = is_unknown
         state['bounding_boxes'][box_id]['status'] = status
