@@ -255,7 +255,7 @@ def create_app(options):
                     selection_bridge=gr.Textbox(value='{}',show_label=False,
                                                 elem_id='selection-bridge',
                                                 elem_classes='frontend-bridge')
-                    with gr.Group(visible=False, elem_classes=['section','sidebar-section','sidebar-component','selection-section']) as bbox_selection_group:
+                    with gr.Group(visible=True, elem_classes=['section','sidebar-section','sidebar-component','selection-section']) as bbox_selection_group:
                         gr.Markdown('### Selected region')
                         with gr.Row(elem_classes=['coordinate-row','field-group']):
                             x1=gr.Number(label='x1', min_width=0,elem_id='bbox-x1');y1=gr.Number(label='y1', min_width=0,elem_id='bbox-y1')
@@ -280,6 +280,8 @@ def create_app(options):
                     with gr.Row(elem_classes=['button-group','sidebar-action-row','bbox-action-row']):
                         sort_boxes=gr.Button('Sort Boxes', variant='primary', size='sm',
                                              min_width=0, elem_id='sort-boxes')
+                        clear_order=gr.Button('Clear Order', size='sm', min_width=0,
+                                              elem_id='clear-box-orders')
                         detect=gr.Button('Run Detection', variant='primary', size='sm',
                                          interactive=not skip_detection,elem_id='run-detection',
                                          min_width=0)
@@ -892,9 +894,7 @@ def create_app(options):
                 return run(ctx,'delete',dict(ids=selected))
             except Exception as exc:
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
-        clear_loading_when_done(delete.click(
-            delete_selected,[session,selection_bridge,x1,y1,x2,y2],
-            **dict(event_args,js=snapshot_board_state_js(1, 'Deleting…'))))
+        # Frontend draft state handles deletion instantly in editor.js
         def run_detection(ctx,confirmed):
             if ctx['active']['regions'] and not confirmed:
                 return render(ctx)
