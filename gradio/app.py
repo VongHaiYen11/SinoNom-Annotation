@@ -193,10 +193,11 @@ def parser():
 
 def create_app(options):
     options=resolve_app_paths(options)
-    # Expose only the requested font assets, regardless of the working directory.
-    gr.set_static_paths(paths=[path for path in FONT_FILES.values() if path.is_file()])
+    if hasattr(gr, 'set_static_paths'):
+        gr.set_static_paths(paths=[path for path in FONT_FILES.values() if path.is_file()])
     engine=Workflow(options)
-    gr.set_static_paths(paths=[engine.preview_dir])
+    if hasattr(gr, 'set_static_paths'):
+        gr.set_static_paths(paths=[engine.preview_dir])
     skip_detection=getattr(options,'skip_detection',False)
     startup=''
     try:

@@ -659,6 +659,13 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   overflow: hidden !important;
 }
 
+.workbench-board.status-order-board {
+  display: grid !important;
+  grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr) !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  align-items: stretch !important;
+}
+
 .image-viewport {
   display: flex !important;
   flex-direction: column !important;

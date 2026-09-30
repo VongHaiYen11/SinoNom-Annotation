@@ -113,7 +113,7 @@ def snapshot(s):
     if step in (4, 5) or (step == 7 and not other_mismatch):
         suspicious_legend=('<span class="suspicious">Suspicious content</span>'
                            if suspicious_boxes else '')
-        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown-damaged">Unknown</span><span class="unknown">MISS content</span>{suspicious_legend}</div>'
+        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown</span><span class="missing">MISS content</span>{suspicious_legend}</div>'
     if step in (4,7) and not (step==7 and other_mismatch):
         if step == 4:
             chips=[]

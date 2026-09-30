@@ -36,15 +36,15 @@ class GradioCallbacks(unittest.TestCase):
             'bounding_box_count':3,'issue_type':'missing_text','note':''}
         refresh_bbox_validation(state);confirm_status(state);initialize_alignment(state)
         missing_id=next(key for key,value in state['annotations'].items() if value=='MISS')
-        self.assertEqual(state['bounding_boxes'][missing_id]['status'],'unknown')
+        self.assertEqual(state['bounding_boxes'][missing_id]['status'],'intact')
         reading_markup=snapshot(state)['markup']
-        self.assertIn('stroke="#f4f4f5"',reading_markup)
-        self.assertNotIn('stroke="#f59e0b"',reading_markup)
+        self.assertIn('data-missing="1"',reading_markup)
+        self.assertIn('<g data-miss-mark="1"',reading_markup)
         state['current_step']=5
         markup=snapshot(state)['markup']
-        self.assertIn(f'<title>{missing_id} MISS · unknown</title>',markup)
-        self.assertIn('stroke="#f59e0b"',markup)
-        self.assertIn('Unknown / MISS',markup)
+        self.assertIn(f'<title>{missing_id} MISS · intact</title>',markup)
+        self.assertIn('data-missing="1"',markup)
+        self.assertIn('<span class="missing">MISS content</span>',markup)
         state['current_step']=7
         review=snapshot(state)['markup']
         self.assertIn('<span class="eyebrow">FINAL RESULT</span>',review)
