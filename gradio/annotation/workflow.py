@@ -478,26 +478,24 @@ class Workflow:
                 s['source_mismatch'] = None
         elif action == 'sort_boxes_calc':
             require(s, 'content_verified')
-            refresh_bbox_validation(s)
-            if not (s['workflow']['bbox_valid'] or source_mismatch_confirmed(s)):
-                character_count = count_annotation_characters(s['annotation_text'])
-                box_count = len(s['regions'])
-                diff = box_count - character_count
-                issue_type = 'extra_text' if diff > 0 else ('missing_text' if diff < 0 else 'other')
-                s['source_mismatch'] = {
-                    'source_text': s['annotation_text'],
-                    'source_character_count': character_count,
-                    'bounding_box_count': box_count,
-                    'issue_type': issue_type,
-                    'note': 'Confirmed via UI modal',
-                    'excluded_characters': [],
-                }
             input_boxes = payload.get('boxes', {})
+            if isinstance(input_boxes, list):
+                boxes_dict = {
+                    item['id']: item['bbox']
+                    for item in input_boxes
+                    if isinstance(item, dict) and 'id' in item and 'bbox' in item
+                }
+            elif isinstance(input_boxes, dict):
+                boxes_dict = input_boxes
+            else:
+                boxes_dict = {}
+
             from annotation.state import calculate_spatial_order
-            ordered_uids = calculate_spatial_order(input_boxes, s['image_size'])
-            res = self._render_state(s)
-            res['calc_sorted_box_ids'] = ordered_uids
-            return res
+            ordered_uids = calculate_spatial_order(boxes_dict, s['image_size'])
+            log.info('SORT PYTHON INPUT: count=%d, IDs=%s', len(boxes_dict), list(boxes_dict.keys()))
+            log.info('SORT RESPONSE: count=%d, ordered IDs=%s', len(ordered_uids), ordered_uids)
+            s['calc_sorted_box_ids'] = ordered_uids
+            return s
         elif action == 'sort_boxes':
             require(s, 'content_verified')
             if step != 3:

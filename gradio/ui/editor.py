@@ -109,19 +109,8 @@ def snapshot(s):
         # Handles are pre-rendered for local selection changes; CSS exposes
         # them only on the browser-local active region.
         if step in (3, 6):
-            bw = max(1, x2 - x1)
-            bh = max(1, y2 - y1)
-            arm = min(5 * unit, bw * 0.25, bh * 0.25)
-            corner_paths = [
-                f'M {x1 + arm} {y1} L {x1} {y1} L {x1} {y1 + arm}',
-                f'M {x2 - arm} {y1} L {x2} {y1} L {x2} {y1 + arm}',
-                f'M {x2 - arm} {y2} L {x2} {y2} L {x2} {y2 - arm}',
-                f'M {x1 + arm} {y2} L {x1} {y2} L {x1} {y2 - arm}',
-            ]
-            handle_color = '#ff7a1a' if step == 6 else '#38bdf8' if multi_selected else stroke_color
             for n, (cx, cy) in enumerate([(x1,y1),(x2,y1),(x2,y2),(x1,y2)]):
-                markup += f'<path data-corner-visual="{n}" d="{corner_paths[n]}" fill="none" stroke="{handle_color}" stroke-width="1.2" vector-effect="non-scaling-stroke" stroke-linecap="square" stroke-linejoin="miter" pointer-events="none"/>'
-                markup += f'<circle data-corner="{n}" cx="{cx}" cy="{cy}" r="{max(10*unit, 16)}" fill="transparent" stroke="none"/>'
+                markup += f'<circle data-corner="{n}" cx="{cx}" cy="{cy}" r="{max(10*unit, 16)}" fill="none" stroke="none" opacity="0"/>'
         markup+='</g>'
     markup+='</svg></div>'
     if step in (4, 5) or (step == 7 and not other_mismatch):

@@ -106,7 +106,6 @@ const applyAnnotationColor = () => {
     if (rect) { rect.setAttribute('fill', annotationColor); rect.setAttribute('stroke', annotationColor); }
     const label = group.querySelector('text');
     if (label) label.setAttribute('fill', annotationColor);
-    group.querySelectorAll('[data-corner]').forEach(handle => handle.setAttribute('fill', annotationColor));
   });
 };
 const readAnnotationColor = () => {
@@ -303,7 +302,11 @@ const hydrateLocalState = () => {
   const preserveSelection = context === localContext;
   const preserveOrder = preserveSelection && ['select', 'suspicious'].includes(pendingAction);
   const previousBoxes = localBoxes;
-  localBoxes = cloneBoxes(props.value.boxes);
+  if (pendingAction === 'sort_boxes_calc' && preserveSelection) {
+    localBoxes = previousBoxes;
+  } else {
+    localBoxes = cloneBoxes(props.value.boxes);
+  }
 
   Object.entries(localBoxes).forEach(([id, box]) => {
     if (props.value.readingOrder && Array.isArray(props.value.readingOrder)) {
@@ -337,6 +340,10 @@ const hydrateLocalState = () => {
         const labelText = publicBox ? String(b.order ?? id) : '';
         text.textContent = labelText;
       }
+    });
+    console.log('FRONTEND AFTER SORT', {
+      count: Object.keys(localBoxes).length,
+      IDs: Object.keys(localBoxes)
     });
   }
 
@@ -562,22 +569,7 @@ const drawPreview = (group, box) => {
     label.setAttribute('font-size', fontSize);
     label.setAttribute('stroke-width', strokeWidth);
   }
-  const unit = Math.max(props.value.width, props.value.height) / 900;
-  const bw = Math.max(1, box[2] - box[0]);
-  const bh = Math.max(1, box[3] - box[1]);
-  const arm = Math.min(5 * unit, bw * 0.25, bh * 0.25);
-  const cornerPaths = [
-    `M ${box[0] + arm} ${box[1]} L ${box[0]} ${box[1]} L ${box[0]} ${box[1] + arm}`,
-    `M ${box[2] - arm} ${box[1]} L ${box[2]} ${box[1]} L ${box[2]} ${box[1] + arm}`,
-    `M ${box[2] - arm} ${box[3]} L ${box[2]} ${box[3]} L ${box[2]} ${box[3] - arm}`,
-    `M ${box[0] + arm} ${box[3]} L ${box[0]} ${box[3]} L ${box[0]} ${box[3] - arm}`,
-  ];
   const corners = [[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]]];
-  group.querySelectorAll('[data-corner-visual]').forEach(handle => {
-    const attr = handle.getAttribute('data-corner-visual') ?? handle.dataset?.cornerVisual;
-    const n = Number(attr);
-    if (cornerPaths[n]) handle.setAttribute('d', cornerPaths[n]);
-  });
   group.querySelectorAll('[data-corner]').forEach(handle => {
     const attr = handle.getAttribute('data-corner') ?? handle.dataset?.corner;
     const n = Number(attr);
@@ -961,32 +953,14 @@ element.addEventListener('pointerup', event => {
       group.appendChild(text);
 
       const corners = [[bbox[0], bbox[1]], [bbox[2], bbox[1]], [bbox[2], bbox[3]], [bbox[0], bbox[3]]];
-      const arm = Math.min(5 * unit, bw * 0.25, bh * 0.25);
-      const cornerPaths = [
-        `M ${bbox[0] + arm} ${bbox[1]} L ${bbox[0]} ${bbox[1]} L ${bbox[0]} ${bbox[1] + arm}`,
-        `M ${bbox[2] - arm} ${bbox[1]} L ${bbox[2]} ${bbox[1]} L ${bbox[2]} ${bbox[1] + arm}`,
-        `M ${bbox[2] - arm} ${bbox[3]} L ${bbox[2]} ${bbox[3]} L ${bbox[2]} ${bbox[3] - arm}`,
-        `M ${bbox[0] + arm} ${bbox[3]} L ${bbox[0]} ${bbox[3]} L ${bbox[0]} ${bbox[3] - arm}`,
-      ];
       corners.forEach(([cx, cy], n) => {
-        const visual = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        visual.setAttribute('data-corner-visual', n);
-        visual.setAttribute('d', cornerPaths[n]);
-        visual.setAttribute('fill', 'none');
-        visual.setAttribute('stroke', annotationColor);
-        visual.setAttribute('stroke-width', '1.2');
-        visual.setAttribute('vector-effect', 'non-scaling-stroke');
-        visual.setAttribute('stroke-linecap', 'square');
-        visual.setAttribute('stroke-linejoin', 'miter');
-        visual.setAttribute('pointer-events', 'none');
-        group.appendChild(visual);
-
         const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         handle.setAttribute('data-corner', n);
         handle.setAttribute('cx', cx); handle.setAttribute('cy', cy);
         handle.setAttribute('r', Math.max(10 * unit, 16));
-        handle.setAttribute('fill', 'transparent');
+        handle.setAttribute('fill', 'none');
         handle.setAttribute('stroke', 'none');
+        handle.setAttribute('opacity', '0');
         group.appendChild(handle);
       });
 
@@ -1217,6 +1191,10 @@ root.addEventListener('click', event => {
       return;
     }
     if (!selectedIds.size) {
+      console.log('SORT REQUEST', {
+        frontendCount: Object.keys(localBoxes).length,
+        frontendIDs: Object.keys(localBoxes)
+      });
       send('sort_boxes_calc', {
         boxes: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.bbox]))
       });
@@ -1254,6 +1232,10 @@ root.addEventListener('click', event => {
     const modal = root.querySelector('#sort-selected-modal');
     if (modal) modal.style.display = 'none';
     pendingSortSelectedRange = [start, selectedIds.size];
+    console.log('SORT REQUEST (SELECTED)', {
+      frontendCount: selectedIds.size,
+      frontendIDs: [...selectedIds]
+    });
     send('sort_boxes_calc', {
       boxes: Object.fromEntries([...selectedIds].map(id => [id, localBoxes[id].bbox])),
       selectedIds: [...selectedIds]
