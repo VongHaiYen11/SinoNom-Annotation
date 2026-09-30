@@ -235,7 +235,7 @@ body,
   height: auto;
   gap: var(--panel-gap);
   width: 100%;
-  min-height: 0;
+  min-height: min(700px, calc(100vh - 180px));
   margin: 0;
   padding: 0;
   overflow: visible;
@@ -276,7 +276,7 @@ body,
   box-sizing: border-box;
 }
 #control-panel .sidebar-step-stack > * > button { width: 100% !important; }
-#main-workspace { display: flex !important; flex-direction: column !important; gap: 0 !important; min-width: 0 !important; min-height: 700px; padding: 0; }
+#main-workspace { display: flex !important; flex-direction: column !important; gap: 0 !important; min-width: 0 !important; min-height: 0 !important; height: 100% !important; padding: 0; }
 #workspace-body { display: flex; flex: 1 1 auto !important; flex-direction: column; gap: var(--section-gap); min-width: 0; min-height: 0; padding: 0; }
 
 /* Footer is a sibling after the complete two-column workspace. */
