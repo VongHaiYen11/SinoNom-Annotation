@@ -47,7 +47,7 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('<span class="missing">MISS content</span>',markup)
         state['current_step']=7
         review=snapshot(state)['markup']
-        self.assertIn('<span class="eyebrow">FINAL RESULT</span>',review)
+        self.assertIn('<span class="eyebrow">REVIEW & VERIFICATION</span>',review)
         self.assertNotIn('<span class="eyebrow">SOURCE MISMATCH</span>',review)
 
     def test_canvas_script_keeps_selection_and_geometry_local_until_next(self):
