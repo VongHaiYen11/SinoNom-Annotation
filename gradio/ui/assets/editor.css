@@ -123,7 +123,8 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
   align-items: stretch;
 }
-.status-order-board .order-editor {
+.status-order-board .order-editor,
+.status-order-board .review-editor {
   grid-column: 1;
   grid-row: 1 / -1;
   height: 100%;
@@ -133,6 +134,41 @@
   border-top: 0;
   border-right: 1px solid var(--color-border, #303237);
   box-sizing: border-box;
+}
+.review-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+  padding: var(--space-6, 24px);
+}
+.review-editor .source-preview {
+  padding: 0;
+  border: 0;
+}
+.review-editor .review-detail {
+  padding: 0;
+  border: 0;
+}
+.review-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding: var(--space-4, 16px);
+  border: 1px solid var(--color-border, #303237);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-page, #0b0d0f);
+}
+.review-text p {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.review-text.source-mismatch-review {
+  border-color: #7f1d1d;
+  background: #291719;
+  color: #fca5a5;
 }
 .status-order-board .workspace-toolbar,
 .status-order-board .image-viewport,

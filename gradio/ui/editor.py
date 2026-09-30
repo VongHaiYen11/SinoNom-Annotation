@@ -12,7 +12,7 @@ CSS = (Path(__file__).parent / 'assets/editor.css').read_text()
 
 def source_text(s):
     """Render the Status & Order reference text for the sidebar."""
-    if not s.get('image') or s.get('current_step') != 4:
+    if not s.get('image') or s.get('current_step') not in (4, 7):
         return ''
     source_mismatch = source_mismatch_confirmed(s)
     label = ('Source text' if source_mismatch else
@@ -56,7 +56,7 @@ def snapshot(s):
                   f'{source_w} × {source_h} px → {w} × {h} px'
                   if step == 6 and [w,h] != [source_w,source_h]
                   else f'{w} × {h} px')
-    board_class = ' status-order-board' if step == 4 else ''
+    board_class = ' status-order-board review-board' if step == 7 else ' status-order-board' if step == 4 else ''
     markup=f'''<div class="workbench-board{board_class}"><div class="workspace-toolbar">
         <div class="workspace-context"><span class="file-icon">{DOCUMENT}</span><strong>{filename}</strong><span class="dimensions">{dimensions}</span></div>
         <div class="toolbar-tools"><span class="zoom-label" aria-live="polite">100%</span>
@@ -150,7 +150,6 @@ def snapshot(s):
             source_label=('Source text' if source_mismatch else
                           'Verified annotation text' if s['workflow']['content_verified']
                           else 'Unverified annotation text')
-            markup+=f'<section class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></section>'
             if source_mismatch:
                 issue=s['source_mismatch']
                 note=(f'<small>Note: {html.escape(issue["note"])}</small>'
@@ -166,8 +165,10 @@ def snapshot(s):
                     <small>{html.escape(issue['issue_type'])} · {issue['source_character_count']} characters · {issue['bounding_box_count']} boxes</small>
                     {note}</div>'''
             else:
-                review='<div class="review-text"><span class="eyebrow">FINAL TEXT</span><p>'+html.escape(build_text_sequence(s))+'</p></div>'
-            markup+='<section class="review-detail">'+review+'</section>'
+                review='<div class="review-text"><span class="eyebrow">FINAL RESULT</span><p>'+html.escape(build_text_sequence(s))+'</p></div>'
+            markup+=f'''<section class="review-editor"><div class="order-heading"><div><span class="eyebrow">REVIEW & VERIFICATION</span><h2>Final Result</h2></div></div>
+                <div class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></div>
+                <div class="review-detail">{review}</div></section>'''
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=canvas_w,height=canvas_h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),

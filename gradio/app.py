@@ -450,7 +450,7 @@ def create_app(options):
                     browser_draft,
                     gr.update(value=selected_box in suspicious_ids,
                               interactive=step==4 and selected_box is not None),
-                    gr.update(value=source_text(s), visible=step==4 and has),
+                    gr.update(value=source_text(s), visible=(step in (4, 7) and has)),
                     gr.update(visible=step==7),
                     gr.update(value=suspicious_json),
                     gr.update(visible=step==7 and bool(suspicious_json)),
