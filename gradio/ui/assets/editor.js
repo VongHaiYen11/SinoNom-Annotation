@@ -315,10 +315,12 @@ const updateCanvasLabels = () => {
       const bw = Math.max(1, box[2] - box[0]);
       const bh = Math.max(1, box[3] - box[1]);
       const unit = Math.max(props.value.width, props.value.height) / 900;
-      const fontSize = Math.max(14 * unit, Math.min(bw, bh) * 0.45);
+      const fontSize = Math.max(10 * unit, Math.min(bw, bh) * 0.30);
       const strokeWidth = Math.max(0.5, fontSize * 0.1);
-      text.setAttribute('x', box[0] + 2 * unit);
-      text.setAttribute('y', box[1] + fontSize);
+      const centerX = (box[0] + box[2]) / 2;
+      text.setAttribute('x', centerX);
+      text.setAttribute('y', Math.max(fontSize, box[1] - 3 * unit));
+      text.setAttribute('text-anchor', 'middle');
       text.setAttribute('font-size', fontSize);
       text.setAttribute('stroke-width', strokeWidth);
       text.setAttribute('fill', annotationColor || '#ffffff');
@@ -399,7 +401,7 @@ const hydrateLocalState = () => {
   applyAnnotationColor();
 };
 
-const fitCanvas = (width, height) => {
+const fitCanvas = (width, height, focalPoint = null) => {
   const svg = element.querySelector('.annotation-canvas');
   const viewport = element.querySelector('.image-viewport');
   if (!svg || !viewport) return;
@@ -417,24 +419,60 @@ const fitCanvas = (width, height) => {
   const baselineWidth = availW;
   const baselineHeight = h * (baselineWidth / w);
 
-  const zoomFactor = Math.max(25, Math.min(300, imageTransform.zoom || 100)) / 100;
-  const renderedWidth = Math.round(baselineWidth * zoomFactor);
-  const renderedHeight = Math.round(baselineHeight * zoomFactor);
+  const prevZoomFactor = imageTransform.currentZoomFactor || (Math.max(25, Math.min(500, imageTransform.zoom || 100)) / 100);
+  const newZoomFactor = Math.max(0.25, Math.min(5.0, (imageTransform.zoom || 100) / 100));
+  imageTransform.currentZoomFactor = newZoomFactor;
+
+  const renderedWidth = Math.round(baselineWidth * newZoomFactor);
+  const renderedHeight = Math.round(baselineHeight * newZoomFactor);
+
+  let targetScrollLeft = null, targetScrollTop = null;
+  if (focalPoint) {
+    const vRect = viewport.getBoundingClientRect();
+    const cursorX = focalPoint.clientX - vRect.left;
+    const cursorY = focalPoint.clientY - vRect.top;
+    const contentX = viewport.scrollLeft + cursorX;
+    const contentY = viewport.scrollTop + cursorY;
+    const ratio = newZoomFactor / prevZoomFactor;
+    targetScrollLeft = contentX * ratio - cursorX;
+    targetScrollTop = contentY * ratio - cursorY;
+  }
 
   svg.style.width = `${renderedWidth}px`;
   svg.style.height = `${renderedHeight}px`;
   svg.style.maxWidth = 'none';
   svg.style.maxHeight = 'none';
 
+  if (targetScrollLeft !== null && targetScrollTop !== null) {
+    viewport.scrollLeft = targetScrollLeft;
+    viewport.scrollTop = targetScrollTop;
+  }
+
   const label = element.querySelector('.zoom-label');
-  if (label) label.textContent = `${imageTransform.zoom}%`;
+  if (label) label.textContent = `${Math.round(imageTransform.zoom)}%`;
 };
+let spacePressed = false;
+window.addEventListener('keydown', event => {
+  if (event.code === 'Space' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+    spacePressed = true;
+    element.querySelector('.image-viewport')?.classList.add('is-panning');
+  }
+});
+window.addEventListener('keyup', event => {
+  if (event.code === 'Space') {
+    spacePressed = false;
+    element.querySelector('.image-viewport')?.classList.remove('is-panning');
+  }
+});
 element.addEventListener('wheel', event => {
-  if (event.ctrlKey || event.metaKey) {
+  if (event.ctrlKey || event.metaKey || event.altKey) {
     event.preventDefault();
     const delta = event.deltaY < 0 ? 15 : -15;
-    imageTransform.zoom = Math.max(25, Math.min(300, imageTransform.zoom + delta));
-    applyZoom();
+    const nextZoom = Math.max(25, Math.min(500, imageTransform.zoom + delta));
+    if (nextZoom !== imageTransform.zoom) {
+      imageTransform.zoom = nextZoom;
+      fitCanvas(undefined, undefined, { clientX: event.clientX, clientY: event.clientY });
+    }
   }
 }, { passive: false });
 const showSortingOverlay = () => {
@@ -453,6 +491,9 @@ const hideSortingOverlay = () => {
 };
 const send = (action, payload = {}) => {
   if (pending) return;
+  if (action === 'next') {
+    setSelection([], null);
+  }
   pending = true;
   pendingAction = action;
   if (action === 'sort_boxes_calc') showSortingOverlay();
@@ -601,10 +642,12 @@ const drawPreview = (group, box) => {
     const bw = box[2] - box[0];
     const bh = box[3] - box[1];
     const unit = Math.max(props.value.width, props.value.height) / 900;
-    const fontSize = Math.max(14 * unit, Math.min(bw, bh) * 0.45);
+    const fontSize = Math.max(10 * unit, Math.min(bw, bh) * 0.30);
     const strokeWidth = Math.max(0.5, fontSize * 0.1);
-    label.setAttribute('x', box[0] + 2 * unit);
-    label.setAttribute('y', box[1] + fontSize);
+    const centerX = (box[0] + box[2]) / 2;
+    label.setAttribute('x', centerX);
+    label.setAttribute('y', Math.max(fontSize, box[1] - 3 * unit));
+    label.setAttribute('text-anchor', 'middle');
     label.setAttribute('font-size', fontSize);
     label.setAttribute('stroke-width', strokeWidth);
   }
@@ -801,7 +844,22 @@ const finishOrderDrag = (commit = true) => {
 };
 
 element.addEventListener('pointerdown', event => {
-  if (pending || event.button !== 0) return;
+  if (pending) return;
+  const isPan = event.button === 1 || (event.button === 0 && (spacePressed || (event.shiftKey && !event.target.closest('[data-box-id]'))));
+  if (isPan) {
+    const viewport = element.querySelector('.image-viewport');
+    if (viewport) {
+      moving = {
+        kind: 'pan', viewport,
+        startX: event.clientX, startY: event.clientY,
+        scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop
+      };
+      element.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+  }
+  if (event.button !== 0) return;
   const chip = event.target.closest('[data-order-chip]');
   if (chip && props.value.step === 4) {
     orderDrag = {
@@ -885,6 +943,14 @@ element.addEventListener('pointermove', event => {
     event.preventDefault(); return;
   }
   if (!moving) return;
+  if (moving.kind === 'pan') {
+    const dx = event.clientX - moving.startX;
+    const dy = event.clientY - moving.startY;
+    moving.viewport.scrollLeft = moving.scrollLeft - dx;
+    moving.viewport.scrollTop = moving.scrollTop - dy;
+    event.preventDefault();
+    return;
+  }
   if (moving.kind === 'image') {
     const width = Math.max(1, Math.round(moving.size[0] + (event.clientX - moving.start[0]) * moving.units[0]));
     const height = Math.max(1, Math.round(moving.size[1] + (event.clientY - moving.start[1]) * moving.units[1]));
@@ -979,10 +1045,12 @@ element.addEventListener('pointerup', event => {
       const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       const bw = bbox[2] - bbox[0], bh = bbox[3] - bbox[1];
       const unit = Math.max(props.value.width, props.value.height) / 900;
-      const fontSize = Math.max(14 * unit, Math.min(bw, bh) * 0.45);
+      const fontSize = Math.max(10 * unit, Math.min(bw, bh) * 0.30);
       const strokeWidth = Math.max(0.5, fontSize * 0.1);
-      text.setAttribute('x', bbox[0] + 2 * unit);
-      text.setAttribute('y', bbox[1] + fontSize);
+      const centerX = (bbox[0] + bbox[2]) / 2;
+      text.setAttribute('x', centerX);
+      text.setAttribute('y', Math.max(fontSize, bbox[1] - 3 * unit));
+      text.setAttribute('text-anchor', 'middle');
       text.setAttribute('fill', annotationColor);
       text.setAttribute('font-size', fontSize);
       text.setAttribute('stroke', '#17191c');
@@ -1175,6 +1243,10 @@ const commitDraftState = (navigateNext = false) => {
 };
 
 root.addEventListener('click', event => {
+  const nextBtn = event.target.closest('#next-button, #next-step, .next-button, [elem_id="next-button"]');
+  if (nextBtn) {
+    setSelection([], null);
+  }
   const control = event.target.closest('[data-zoom]');
   if (control) {
     imageTransform.zoom = control.dataset.zoom === 'fit' ? 100 : Math.max(25, Math.min(300,

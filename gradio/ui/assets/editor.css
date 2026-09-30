@@ -70,6 +70,8 @@
   background-size: 12px 12px;
   box-sizing: border-box;
 }
+.image-viewport.is-panning { cursor: grab !important; }
+.image-viewport.is-panning:active { cursor: grabbing !important; }
 
 .annotation-canvas {
   display: block;

@@ -71,7 +71,7 @@ def snapshot(s):
     for key,b in boxes.items():
         x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6; multi_selected=key in selected_ids
         bw = x2 - x1; bh = y2 - y1
-        font_size = min(bw, bh) * 0.65
+        font_size = max(10 * unit, min(bw, bh) * 0.30)
         stroke_width = max(0.5, font_size * 0.1)
         suspicious = key in suspicious_boxes
         reveal_status = step >= 4 and not other_mismatch
@@ -105,7 +105,7 @@ def snapshot(s):
         markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}{' · unknown' if is_unknown else ''}{' · suspicious' if suspicious else ''}</title>
             <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{fill_color}" fill-opacity="{fill_opacity}" stroke="{stroke_color}" stroke-width="{'3' if suspicious and multi_selected else '2' if suspicious else '2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{missing_attr}{dashed}/>
             {f'<g data-miss-mark="1" stroke="#ef4444" stroke-width="{max(2*unit, 2)}" vector-effect="non-scaling-stroke" pointer-events="none"><line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}"/><line x1="{x2}" y1="{y1}" x2="{x1}" y2="{y2}"/></g>' if missing_annotation else ''}
-            {f'<text x="{x1+2*unit}" y="{y1+font_size}" fill="{stroke_color}" font-size="{font_size}" font-family="var(--han-nom-font, &quot;Vietnamica NomNaTong&quot;, &quot;Vietnamica DengXian&quot;, &quot;Vietnamica PMingLiU&quot;, &quot;Vietnamica PMingLiU ExtB&quot;, sans-serif)" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{stroke_width}">{label}</text>' if label else ''}'''
+            {f'<text x="{(x1+x2)/2}" y="{max(font_size, y1-3*unit)}" text-anchor="middle" fill="{stroke_color}" font-size="{font_size}" font-family="var(--han-nom-font, &quot;Vietnamica NomNaTong&quot;, &quot;Vietnamica DengXian&quot;, &quot;Vietnamica PMingLiU&quot;, &quot;Vietnamica PMingLiU ExtB&quot;, sans-serif)" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{stroke_width}">{label}</text>' if label else ''}'''
         # Handles are pre-rendered for local selection changes; CSS exposes
         # them only on the browser-local active region.
         if step in (3, 6):
