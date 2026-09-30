@@ -103,16 +103,26 @@ const syncExternalControls = () => {
       suspicious.checked = Boolean(chip && !isMissing && !isExcluded && localSuspiciousTokenIds.has(activeTokenId));
     }
   }
-  if (!active) return;
   if (props.value.step === 3) {
-    syncingCoordinateControls = true;
-    try {
-      ['#bbox-x1', '#bbox-y1', '#bbox-x2', '#bbox-y2'].forEach(
-        (selector, index) => setInputValue(selector, active.bbox[index])
-      );
-      setInputValue('#manual-box-order', active.order ?? '');
-    } finally {
-      syncingCoordinateControls = false;
+    const manualOrderInput = root.querySelector('#manual-box-order input');
+    const isSingleSelection = selectedIds.size === 1 && activeBoxId && localBoxes[activeBoxId];
+    if (manualOrderInput) {
+      if (isSingleSelection) {
+        manualOrderInput.disabled = false;
+        manualOrderInput.placeholder = 'Enter order number';
+        syncingCoordinateControls = true;
+        try {
+          setInputValue('#manual-box-order', localBoxes[activeBoxId].order ?? '');
+        } finally {
+          syncingCoordinateControls = false;
+        }
+      } else {
+        manualOrderInput.disabled = true;
+        manualOrderInput.value = '';
+        manualOrderInput.placeholder = selectedIds.size > 1 ? 'Select 1 box to edit order' : 'Select a box to edit order';
+        const errorEl = root.querySelector('#manual-box-order-error');
+        if (errorEl) errorEl.textContent = '';
+      }
     }
   }
   if (props.value.step === 4) {
@@ -374,7 +384,11 @@ root.addEventListener('change', event => {
 root.addEventListener('input', event => {
   if (handleAnnotationColor(event.target)) return;
   const manualOrderInput = event.target.closest('#manual-box-order input');
-  if (manualOrderInput && activeBoxId && localBoxes[activeBoxId]) {
+  if (manualOrderInput) {
+    if (selectedIds.size !== 1 || !activeBoxId || !localBoxes[activeBoxId]) {
+      event.preventDefault();
+      return;
+    }
     const val = manualOrderInput.value.trim();
     const errorEl = root.querySelector('#manual-box-order-error');
     if (!val) {
@@ -1008,7 +1022,7 @@ const commitDraftState = (navigateNext = false) => {
   return true;
 };
 
-element.addEventListener('click', event => {
+root.addEventListener('click', event => {
   const control = event.target.closest('[data-zoom]');
   if (control) {
     imageTransform.zoom = control.dataset.zoom === 'fit' ? 100 : Math.max(25, Math.min(150,

@@ -255,16 +255,21 @@ def create_app(options):
                     selection_bridge=gr.Textbox(value='{}',show_label=False,
                                                 elem_id='selection-bridge',
                                                 elem_classes='frontend-bridge')
-                    with gr.Group(visible=True, elem_classes=['section','sidebar-section','sidebar-component','selection-section']) as bbox_selection_group:
-                        gr.Markdown('### Selected region')
-                        with gr.Row(elem_classes=['coordinate-row','field-group']):
-                            x1=gr.Number(label='x1', min_width=0,elem_id='bbox-x1');y1=gr.Number(label='y1', min_width=0,elem_id='bbox-y1')
-                        with gr.Row(elem_classes=['coordinate-row','field-group']):
-                            x2=gr.Number(label='x2', min_width=0,elem_id='bbox-x2');y2=gr.Number(label='y2', min_width=0,elem_id='bbox-y2')
-                        with gr.Row(elem_classes=['coordinate-row','field-group']):
-                            manual_order=gr.Number(label='Reading Order #', min_width=0, elem_id='manual-box-order', precision=0)
+                    x1=gr.Number(visible=False, elem_id='bbox-x1')
+                    y1=gr.Number(visible=False, elem_id='bbox-y1')
+                    x2=gr.Number(visible=False, elem_id='bbox-x2')
+                    y2=gr.Number(visible=False, elem_id='bbox-y2')
+                    update=gr.Button(visible=False)
+                    with gr.Group(visible=True, elem_classes=['section','sidebar-section','sidebar-component','sort-widget-section']) as bbox_selection_group:
+                        gr.Markdown('### Sort & Reading Order')
+                        with gr.Row(elem_classes=['field-group']):
+                            manual_order=gr.Number(label='Bounding Box Order #', min_width=0, elem_id='manual-box-order', precision=0)
                         manual_order_error=gr.HTML('', elem_id='manual-box-order-error')
-                        update=gr.Button('Update coordinates',variant='primary')
+                        with gr.Row(elem_classes=['button-group','sidebar-action-row','bbox-action-row']):
+                            sort_boxes=gr.Button('Sort Boxes', variant='primary', size='sm',
+                                                 min_width=0, elem_id='sort-boxes')
+                            clear_order=gr.Button('Clear Order', size='sm', min_width=0,
+                                                  elem_id='clear-box-orders')
                     gr.HTML('''<section class="selection-guide" aria-label="Selection Guide">
                         <h3>Selection Guide</h3>
                         <ul>
@@ -277,11 +282,7 @@ def create_app(options):
                     delete=gr.Button('Delete Selected', size='sm', min_width=0,
                                      elem_id='delete-box')
                     detect_confirm=gr.Checkbox(value=False,visible=False)
-                    with gr.Row(elem_classes=['button-group','sidebar-action-row','bbox-action-row']):
-                        sort_boxes=gr.Button('Sort Boxes', variant='primary', size='sm',
-                                             min_width=0, elem_id='sort-boxes')
-                        clear_order=gr.Button('Clear Order', size='sm', min_width=0,
-                                              elem_id='clear-box-orders')
+                    with gr.Row(elem_classes=['button-group','sidebar-action-row','run-detection-row']):
                         detect=gr.Button('Run Detection', variant='primary', size='sm',
                                          interactive=not skip_detection,elem_id='run-detection',
                                          min_width=0)
