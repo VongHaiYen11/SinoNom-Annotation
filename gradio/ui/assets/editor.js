@@ -369,9 +369,15 @@ const drawPreview = (group, box) => {
   }
   const label=group.querySelector('text');
   if(label){
-    const unit=Math.max(props.value.width,props.value.height)/900;
-    label.setAttribute('x',box[0]+2*unit);
-    label.setAttribute('y',Math.max(15*unit,box[1]-4*unit));
+    const bw = box[2] - box[0];
+    const bh = box[3] - box[1];
+    const fontSize = Math.min(bw, bh) * 0.65;
+    const strokeWidth = Math.max(0.5, fontSize * 0.1);
+    const unit = Math.max(props.value.width, props.value.height) / 900;
+    label.setAttribute('x', box[0] + 2 * unit);
+    label.setAttribute('y', Math.max(fontSize, box[1] - 4 * unit));
+    label.setAttribute('font-size', fontSize);
+    label.setAttribute('stroke-width', strokeWidth);
   }
   const corners = [[box[0],box[1]], [box[2],box[1]], [box[2],box[3]], [box[0],box[3]]];
   group.querySelectorAll('[data-corner]').forEach(handle => {
