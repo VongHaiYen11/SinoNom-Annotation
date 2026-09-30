@@ -106,8 +106,9 @@ const syncExternalControls = () => {
   if (props.value.step === 3) {
     const manualOrderInput = root.querySelector('#manual-box-order input');
     const isSingleSelection = selectedIds.size === 1 && activeBoxId && localBoxes[activeBoxId];
+    const allowed = canEditReadingOrder();
     if (manualOrderInput) {
-      if (isSingleSelection) {
+      if (isSingleSelection && allowed) {
         manualOrderInput.disabled = false;
         manualOrderInput.placeholder = 'Enter order number';
         syncingCoordinateControls = true;
@@ -118,8 +119,19 @@ const syncExternalControls = () => {
         }
       } else {
         manualOrderInput.disabled = true;
-        manualOrderInput.value = '';
-        manualOrderInput.placeholder = selectedIds.size > 1 ? 'Select 1 box to edit order' : 'Select a box to edit order';
+        syncingCoordinateControls = true;
+        try {
+          setInputValue('#manual-box-order', isSingleSelection ? (localBoxes[activeBoxId].order ?? '') : '');
+        } finally {
+          syncingCoordinateControls = false;
+        }
+        if (!allowed) {
+          manualOrderInput.placeholder = 'Confirm source mismatch to edit order';
+        } else if (selectedIds.size > 1) {
+          manualOrderInput.placeholder = 'Select 1 box to edit order';
+        } else {
+          manualOrderInput.placeholder = 'Select a box to edit order';
+        }
         const errorEl = root.querySelector('#manual-box-order-error');
         if (errorEl) errorEl.textContent = '';
       }
@@ -382,10 +394,11 @@ root.addEventListener('change', event => {
 });
 
 root.addEventListener('input', event => {
+  if (syncingCoordinateControls) return;
   if (handleAnnotationColor(event.target)) return;
   const manualOrderInput = event.target.closest('#manual-box-order input');
   if (manualOrderInput) {
-    if (selectedIds.size !== 1 || !activeBoxId || !localBoxes[activeBoxId]) {
+    if (!canEditReadingOrder() || selectedIds.size !== 1 || !activeBoxId || !localBoxes[activeBoxId]) {
       event.preventDefault();
       return;
     }
@@ -1039,10 +1052,29 @@ root.addEventListener('click', event => {
       groupFor(id)?.remove();
     });
     selectedIds.clear();
-    activeBoxId = Object.keys(localBoxes)[0] || null;
-    if (activeBoxId) selectedIds.add(activeBoxId);
+    activeBoxId = null;
     isDirty = true;
     renderSelection();
+    return;
+  }
+  const clearOrderBtn = event.target.closest('#clear-box-orders');
+  if (clearOrderBtn) {
+    if (!canEditReadingOrder()) {
+      alert('Confirm the source mismatch before editing reading order.');
+      event.preventDefault();
+      return;
+    }
+    const modal = root.querySelector('#clear-order-modal');
+    const msg = modal?.querySelector('#clear-modal-message');
+    if (modal && msg) {
+      if (selectedIds.size > 0) {
+        msg.textContent = `Are you sure you want to clear the reading order for the ${selectedIds.size} selected box(es)?`;
+      } else {
+        msg.textContent = 'Are you sure you want to clear the reading order for ALL bounding boxes?';
+      }
+      modal.style.display = 'flex';
+    }
+    event.preventDefault();
     return;
   }
   const sortBtn = event.target.closest('#sort-boxes');
@@ -1096,6 +1128,35 @@ root.addEventListener('click', event => {
     event.preventDefault();
     return;
   }
+  const cancelClearModal = event.target.closest('#clear-modal-cancel');
+  if (cancelClearModal) {
+    const modal = root.querySelector('#clear-order-modal');
+    if (modal) modal.style.display = 'none';
+    event.preventDefault();
+    return;
+  }
+  const confirmClearModal = event.target.closest('#clear-modal-confirm');
+  if (confirmClearModal) {
+    const modal = root.querySelector('#clear-order-modal');
+    if (modal) modal.style.display = 'none';
+    const targetIds = selectedIds.size > 0 ? [...selectedIds] : Object.keys(localBoxes);
+    targetIds.forEach(id => {
+      if (localBoxes[id]) {
+        localBoxes[id].order = null;
+        const group = groupFor(id);
+        const text = group?.querySelector('text');
+        if (text) text.textContent = '';
+      }
+    });
+    const manualOrderInput = root.querySelector('#manual-box-order input');
+    if (manualOrderInput) manualOrderInput.value = '';
+    const errorEl = root.querySelector('#manual-box-order-error');
+    if (errorEl) errorEl.textContent = '';
+    isDirty = true;
+    renderSelection();
+    event.preventDefault();
+    return;
+  }
 });
 
 window.addEventListener('keydown', event => {
@@ -1110,8 +1171,7 @@ window.addEventListener('keydown', event => {
       groupFor(id)?.remove();
     });
     selectedIds.clear();
-    activeBoxId = Object.keys(localBoxes)[0] || null;
-    if (activeBoxId) selectedIds.add(activeBoxId);
+    activeBoxId = null;
     isDirty = true;
     renderSelection();
     event.preventDefault();

@@ -474,10 +474,8 @@ class Workflow:
                 s['selected_region_uids'] = [uid for uid in s.get('selected_region_uids', []) if uid in s['regions']]
                 s['selected_region_uid'] = s['selected_region_uids'][-1] if s['selected_region_uids'] else next(iter(s['regions']), None)
             refresh_bbox_validation(s)
-            if s['workflow']['bbox_valid']:
+            if action in ('add', 'delete', 'detect', 'commit_boxes'):
                 s['source_mismatch'] = None
-            elif action in ('add', 'delete', 'detect'):
-                _carry_source_mismatch_if_same_case(s)
         elif action == 'sort_boxes_calc':
             require(s, 'content_verified')
             refresh_bbox_validation(s)

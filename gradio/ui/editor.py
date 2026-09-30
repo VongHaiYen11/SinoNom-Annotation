@@ -188,6 +188,16 @@ def snapshot(s):
         </div>
       </div>
     </div>
+    <div id="clear-order-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="clear-modal-title">
+      <div class="modal-card">
+        <h3 id="clear-modal-title">Clear Reading Order</h3>
+        <p id="clear-modal-message" class="modal-subtitle">Are you sure you want to clear the reading order for all boxes?</p>
+        <div class="modal-actions">
+          <button type="button" id="clear-modal-cancel" class="btn btn-secondary">Cancel</button>
+          <button type="button" id="clear-modal-confirm" class="btn btn-primary">Confirm</button>
+        </div>
+      </div>
+    </div>
     <div id="order-validation-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="order-alert-title">
       <div class="modal-card modal-card-error">
         <h3 id="order-alert-title">Reading Order Invalid</h3>
