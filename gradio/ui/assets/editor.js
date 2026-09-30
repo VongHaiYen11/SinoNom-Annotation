@@ -2,6 +2,7 @@
 let pending = false, pendingAction = null, moving = null, orderDrag = null;
 let syncingStatusControl = false;
 let syncingCoordinateControls = false;
+let isDirty = false, pendingSortSelectedRange = null;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId = null;
 let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
@@ -13,8 +14,15 @@ const annotationColors = {
 const chipReflowAnimations = new WeakMap();
 const imageTransform = {zoom: 100, width: props.value.width, height: props.value.height};
 
+const canEditReadingOrder = () => {
+  const step = props.value?.step || 1;
+  const bboxValid = Boolean(props.value?.bboxValid);
+  const mismatchConfirmed = Boolean(props.value?.mismatchConfirmed);
+  return step >= 3 && (bboxValid || mismatchConfirmed);
+};
+
 const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map(
-  ([id, box]) => [id, {...box, bbox: [...box.bbox], unknown: Boolean(box.unknown)}]
+  ([id, box]) => [id, {...box, bbox: [...box.bbox], unknown: Boolean(box.unknown), order: box.order ?? null}]
 ));
 const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-box-id]')].find(
   group => group.dataset.boxId === String(id)
@@ -70,6 +78,9 @@ const syncExternalControls = () => {
     boxes: Object.fromEntries(Object.entries(localBoxes).map(
       ([id, box]) => [id, [...box.bbox]]
     )),
+    orders: Object.fromEntries(Object.entries(localBoxes).map(
+      ([id, box]) => [id, box.order ?? null]
+    )),
     crop: localBoxes.crop?.bbox || null,
     textSequence: [...localTextSequence],
     tokenOrder: [...(element.querySelectorAll('.order-chips [data-order-chip]') || [])]
@@ -99,6 +110,7 @@ const syncExternalControls = () => {
       ['#bbox-x1','#bbox-y1','#bbox-x2','#bbox-y2'].forEach(
         (selector, index) => setInputValue(selector, active.bbox[index])
       );
+      setInputValue('#manual-box-order', active.order ?? '');
     } finally {
       syncingCoordinateControls = false;
     }
@@ -177,8 +189,6 @@ const renderSelection = (sync=true) => {
     const selected = selectedIds.has(id);
     const active = id === activeBoxId;
     group.classList.toggle('selected-region', selected);
-    // Keep an active item for sidebar values and group dragging, but expose
-    // resize handles only when exactly one box is selected.
     group.classList.toggle('active-region', active && showResizeHandles);
     const rect = group.querySelector('rect:not([data-image-resize-handle])');
     if (rect) {
@@ -201,14 +211,42 @@ const hydrateLocalState = () => {
   const preserveOrder = preserveSelection && ['select','suspicious'].includes(pendingAction);
   const previousBoxes = localBoxes;
   localBoxes = cloneBoxes(props.value.boxes);
-  // Selecting another box causes a Python render. Preserve the uncommitted
-  // status working set across that render until Apply Changes or Next.
-  if (preserveOrder && props.value.step === 4) {
-    Object.entries(localBoxes).forEach(([id, box]) => {
-      if (previousBoxes[id]?.status) box.status = previousBoxes[id].status;
-      if (previousBoxes[id]?.unknown !== undefined) box.unknown = previousBoxes[id].unknown;
+
+  Object.entries(localBoxes).forEach(([id, box]) => {
+    if (props.value.readingOrder && Array.isArray(props.value.readingOrder)) {
+      const idx = props.value.readingOrder.indexOf(Number(id));
+      if (idx !== -1) box.order = idx + 1;
+    }
+    if (previousBoxes[id]?.order !== undefined && preserveSelection) {
+      box.order = previousBoxes[id].order;
+    }
+  });
+
+  if (props.value.calcSortedBoxIds && Array.isArray(props.value.calcSortedBoxIds)) {
+    const sortedIds = props.value.calcSortedBoxIds;
+    if (pendingSortSelectedRange) {
+      const [start, count] = pendingSortSelectedRange;
+      pendingSortSelectedRange = null;
+      sortedIds.forEach((id, idx) => {
+        if (localBoxes[id]) localBoxes[id].order = start + idx;
+      });
+    } else {
+      sortedIds.forEach((id, idx) => {
+        if (localBoxes[id]) localBoxes[id].order = idx + 1;
+      });
+    }
+    isDirty = true;
+    Object.entries(localBoxes).forEach(([id, b]) => {
+      const g = groupFor(id);
+      const text = g?.querySelector('text');
+      if (text) {
+        const publicBox = props.value.step !== 6;
+        const labelText = publicBox ? String(b.order ?? id) : '';
+        text.textContent = labelText;
+      }
     });
   }
+
   if (props.value.step !== 4) {
     element.querySelectorAll('[data-miss-mark]').forEach(mark => mark.remove());
   }
@@ -333,6 +371,42 @@ root.addEventListener('change', event => {
 
 root.addEventListener('input', event => {
   if(handleAnnotationColor(event.target))return;
+  const manualOrderInput = event.target.closest('#manual-box-order input');
+  if (manualOrderInput && activeBoxId && localBoxes[activeBoxId]) {
+    const val = manualOrderInput.value.trim();
+    const errorEl = root.querySelector('#manual-box-order-error');
+    if (!val) {
+      localBoxes[activeBoxId].order = null;
+      if (errorEl) errorEl.textContent = '';
+      isDirty = true;
+      const group = groupFor(activeBoxId);
+      const text = group?.querySelector('text');
+      if (text) text.textContent = activeBoxId;
+      return;
+    }
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num < 1) {
+      if (errorEl) errorEl.textContent = 'Order must be a positive integer.';
+      return;
+    }
+    const conflict = Object.entries(localBoxes).find(([id, box]) => id !== activeBoxId && box.order === num);
+    if (conflict) {
+      if (errorEl) errorEl.textContent = `Order ${num} is used by box ${conflict[0]}.`;
+      return;
+    }
+    if (errorEl) errorEl.textContent = '';
+    localBoxes[activeBoxId].order = num;
+    isDirty = true;
+    const group = groupFor(activeBoxId);
+    const text = group?.querySelector('text');
+    if (text) text.textContent = String(num);
+    return;
+  }
+  const modalStartInput = event.target.closest('#sort-modal-start');
+  if (modalStartInput) {
+    updateSortModalPreview();
+    return;
+  }
   if (syncingCoordinateControls || props.value.step !== 3 || !activeBoxId
       || !event.target.closest('#bbox-x1 input, #bbox-y1 input, #bbox-x2 input, #bbox-y2 input')) return;
   const rawValues=['#bbox-x1','#bbox-y1','#bbox-x2','#bbox-y2'].map(selector =>
@@ -343,6 +417,7 @@ root.addEventListener('input', event => {
   if (!values.every(Number.isFinite) || x1<0 || y1<0 || x1>=x2 || y1>=y2
       || x2>props.value.width || y2>props.value.height) return;
   localBoxes[activeBoxId].bbox=[x1,y1,x2,y2];
+  isDirty = true;
   drawLocalBox(activeBoxId,localBoxes[activeBoxId].bbox);
 });
 
@@ -371,7 +446,7 @@ const drawPreview = (group, box) => {
   if(label){
     const bw = box[2] - box[0];
     const bh = box[3] - box[1];
-    const fontSize = Math.min(bw, bh) * 0.65;
+    const fontSize = Math.min(bw, bh) * 0.30;
     const strokeWidth = Math.max(0.5, fontSize * 0.1);
     const unit = Math.max(props.value.width, props.value.height) / 900;
     label.setAttribute('x', box[0] + 2 * unit);
@@ -499,8 +574,6 @@ const insertionReference = (container, x, y) => {
 const captureChipRects = container => {
   const first=new Map();
   container.querySelectorAll('[data-order-chip]').forEach(chip=>{
-    // getBoundingClientRect includes the current animated transform. Capture
-    // that visual position, then cancel so Last measures the true new layout.
     first.set(chip,chip.getBoundingClientRect());
     chipReflowAnimations.get(chip)?.cancel();
     chipReflowAnimations.delete(chip);
@@ -514,8 +587,6 @@ const animateChipReflow = (container, first) => {
     if(!old)return;
     const dx=old.left-now.left,dy=old.top-now.top;
     if(Math.abs(dx)<.5 && Math.abs(dy)<.5)return;
-    // FLIP: invert the layout delta, then play only the surrounding chip back
-    // to its natural position. Wrapped-row moves naturally include both axes.
     const animation=chip.animate(
       [{transform:`translate3d(${dx}px, ${dy}px, 0)`},
        {transform:'translate3d(0, 0, 0)'}],
@@ -542,8 +613,6 @@ const beginOrderDrag = event => {
 };
 const moveOrderGhost = event => {
   const x=event.clientX-orderDrag.offsetX,y=event.clientY-orderDrag.offsetY;
-  // The active chip follows the pointer directly; it never receives FLIP or a
-  // transition, so there is no perceived lag behind surrounding-chip motion.
   orderDrag.ghost.style.transform=`translate3d(${x}px, ${y}px, 0) rotate(1deg) scale(1.03)`;
 };
 const arrangeOrder = (container, order) => order.forEach(tokenId=>{
@@ -679,6 +748,7 @@ element.addEventListener('pointermove', event => {
     state.ids.forEach(id=>{
       const b=state.boxes[id];
       state.result[id]=[b[0]+tx,b[1]+ty,b[2]+tx,b[3]+ty];
+      isDirty = true;
       drawLocalBox(id,state.result[id]);
     });
     return;
@@ -706,7 +776,10 @@ element.addEventListener('pointermove', event => {
     if(corner===0||corner===1)box[1]=Math.min(box[1],box[3]-1);else box[3]=Math.max(box[3],box[1]+1);
   }
   state.result=box;
-  if(state.kind==='resize') drawLocalBox(state.id,box); else drawPreview(groupFor('crop'),box);
+  if(state.kind==='resize') {
+    isDirty = true;
+    drawLocalBox(state.id,box);
+  } else drawPreview(groupFor('crop'),box);
 });
 
 element.addEventListener('pointerup', event => {
@@ -719,13 +792,44 @@ element.addEventListener('pointerup', event => {
   if(state.kind==='add'){
     state.rect.remove();
     if(state.result && state.result[2]>state.result[0] && state.result[3]>state.result[1]){
-      send('add',{
-        bbox:state.result,
-        boxes:Object.fromEntries(Object.entries(localBoxes).map(
-          ([id,box])=>[id,[...box.bbox]])),
-        active:activeBoxId,
-        selected:[...selectedIds],
-      });
+      const bbox = state.result;
+      const newId = 'box_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+      localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, order: null };
+      
+      const svg = state.svg;
+      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      group.setAttribute('data-box-id', newId);
+      group.setAttribute('data-region-uid', newId);
+      group.setAttribute('data-status', 'intact');
+      group.setAttribute('data-unknown', 'false');
+      
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', bbox[0]); rect.setAttribute('y', bbox[1]);
+      rect.setAttribute('width', bbox[2] - bbox[0]); rect.setAttribute('height', bbox[3] - bbox[1]);
+      rect.setAttribute('fill', annotationColor); rect.setAttribute('stroke', annotationColor);
+      rect.setAttribute('fill-opacity', '.04'); rect.setAttribute('stroke-width', '1.5');
+      rect.setAttribute('vector-effect', 'non-scaling-stroke');
+      group.appendChild(rect);
+
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      const bw = bbox[2] - bbox[0], bh = bbox[3] - bbox[1];
+      const fontSize = Math.min(bw, bh) * 0.30;
+      const strokeWidth = Math.max(0.5, fontSize * 0.1);
+      const unit = Math.max(props.value.width, props.value.height) / 900;
+      text.setAttribute('x', bbox[0] + 2 * unit);
+      text.setAttribute('y', Math.max(fontSize, bbox[1] - 4 * unit));
+      text.setAttribute('fill', annotationColor);
+      text.setAttribute('font-size', fontSize);
+      text.setAttribute('stroke', '#17191c');
+      text.setAttribute('stroke-width', strokeWidth);
+      text.setAttribute('pointer-events', 'none');
+      text.setAttribute('paint-order', 'stroke');
+      group.appendChild(text);
+
+      svg.appendChild(group);
+
+      isDirty = true;
+      setSelection([newId], newId);
     }
     return;
   }
@@ -733,10 +837,12 @@ element.addEventListener('pointerup', event => {
     Object.entries(state.result).forEach(([id,box]) => {
       localBoxes[id].bbox=[...box];
     });
+    isDirty = true;
     syncExternalControls(); return;
   }
   if(state.kind==='resize' && state.result && state.result[2]>state.result[0] && state.result[3]>state.result[1]){
     localBoxes[state.id].bbox=[...state.result];
+    isDirty = true;
     syncExternalControls();
     return;
   }
@@ -766,12 +872,202 @@ element.addEventListener('pointercancel',()=>{
   if(state.kind==='marquee') setSelection([...state.baseline],[...state.baseline].at(-1));
 });
 
+const openSortSelectedModal = () => {
+  const modal = root.querySelector('#sort-selected-modal');
+  if (!modal) return;
+  const count = selectedIds.size;
+  const countEl = modal.querySelector('#sort-modal-count');
+  if (countEl) countEl.textContent = count;
+  const startInput = modal.querySelector('#sort-modal-start');
+  if (startInput) startInput.value = '1';
+  modal.style.display = 'flex';
+  updateSortModalPreview();
+};
+
+const updateSortModalPreview = () => {
+  const modal = root.querySelector('#sort-selected-modal');
+  if (!modal) return;
+  const count = selectedIds.size;
+  const startInput = modal.querySelector('#sort-modal-start');
+  const start = parseInt(startInput?.value || '1', 10);
+  const rangeEl = modal.querySelector('#sort-modal-range');
+  const errorEl = modal.querySelector('#sort-modal-error');
+  const confirmBtn = modal.querySelector('#sort-modal-confirm');
+
+  if (isNaN(start) || start < 1) {
+    if (rangeEl) rangeEl.textContent = 'Invalid start number';
+    if (errorEl) { errorEl.textContent = 'Start number must be a positive integer.'; errorEl.style.display = 'block'; }
+    if (confirmBtn) confirmBtn.disabled = true;
+    return;
+  }
+
+  const end = start + count - 1;
+  if (rangeEl) rangeEl.textContent = `${start} – ${end}`;
+
+  const rangeSet = new Set();
+  for (let i = start; i <= end; i++) rangeSet.add(i);
+
+  const conflicts = Object.entries(localBoxes)
+    .filter(([id]) => !selectedIds.has(id))
+    .filter(([, box]) => box.order !== null && box.order !== undefined && rangeSet.has(box.order));
+
+  if (conflicts.length) {
+    const conflictOrders = conflicts.map(([, b]) => b.order).sort((a, b) => a - b);
+    if (errorEl) {
+      errorEl.textContent = `Orders ${conflictOrders.join(', ')} are already used by boxes outside this selection. Choose another starting number.`;
+      errorEl.style.display = 'block';
+    }
+    if (confirmBtn) confirmBtn.disabled = true;
+  } else {
+    if (errorEl) errorEl.style.display = 'none';
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+};
+
+const validateDraftState = (strictReadingOrder = false) => {
+  const boxes = Object.entries(localBoxes);
+  if (!boxes.length) return { valid: true };
+
+  for (const [id, box] of boxes) {
+    if (!box.bbox || box.bbox.length !== 4 || box.bbox[0] >= box.bbox[2] || box.bbox[1] >= box.bbox[3]) {
+      return { valid: false, error: `Box ${id} has invalid coordinates.` };
+    }
+  }
+
+  if (!strictReadingOrder) return { valid: true };
+
+  const N = boxes.length;
+  const missing = [];
+  const duplicates = [];
+  const counts = {};
+
+  for (let i = 1; i <= N; i++) counts[i] = 0;
+
+  for (const [id, box] of boxes) {
+    if (box.order === null || box.order === undefined || isNaN(box.order) || box.order < 1) {
+      missing.push(`Box ${id}`);
+    } else {
+      counts[box.order] = (counts[box.order] || 0) + 1;
+    }
+  }
+
+  for (let i = 1; i <= N; i++) {
+    if (!counts[i] || counts[i] === 0) {
+      missing.push(`Order ${i}`);
+    } else if (counts[i] > 1) {
+      duplicates.push(`Order ${i}`);
+    }
+  }
+
+  if (missing.length || duplicates.length) {
+    const parts = ['Reading order is invalid for Step 4.'];
+    parts.push(`Expected continuous sequence: 1–${N}.`);
+    if (missing.length) parts.push(`Missing / unassigned: ${missing.join(', ')}.`);
+    if (duplicates.length) parts.push(`Duplicates: ${duplicates.join(', ')}.`);
+    parts.push('Please review reading order before continuing.');
+    return { valid: false, error: parts.join('<br>') };
+  }
+
+  return { valid: true };
+};
+
+const commitDraftState = (navigateNext = false) => {
+  const res = validateDraftState(navigateNext);
+  if (!res.valid) {
+    const modal = root.querySelector('#order-validation-modal');
+    const body = root.querySelector('#order-alert-body');
+    if (modal && body) {
+      body.innerHTML = res.error;
+      modal.style.display = 'flex';
+    } else {
+      alert(res.error.replace(/<br>/g, '\n'));
+    }
+    return false;
+  }
+  isDirty = false;
+  send(navigateNext ? 'next' : 'commit_boxes', {
+    boxes: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.bbox])),
+    orders: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.order])),
+    statuses: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.status])),
+    unknowns: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, Boolean(b.unknown)])),
+    active: activeBoxId,
+    selected: [...selectedIds],
+  });
+  return true;
+};
+
 element.addEventListener('click', event => {
   const control=event.target.closest('[data-zoom]');
   if(control){
     imageTransform.zoom=control.dataset.zoom==='fit'?100:Math.max(25,Math.min(150,
       imageTransform.zoom+(control.dataset.zoom==='in'?25:-25)));
     applyZoom();return;
+  }
+  const deleteBtn = event.target.closest('#delete-box');
+  if (deleteBtn) {
+    if (!selectedIds.size) return;
+    selectedIds.forEach(id => {
+      delete localBoxes[id];
+      groupFor(id)?.remove();
+    });
+    selectedIds.clear();
+    activeBoxId = Object.keys(localBoxes)[0] || null;
+    if (activeBoxId) selectedIds.add(activeBoxId);
+    isDirty = true;
+    renderSelection();
+    event.preventDefault();
+    return;
+  }
+  const sortBtn = event.target.closest('#sort-boxes');
+  if (sortBtn) {
+    if (!canEditReadingOrder()) {
+      alert('Confirm the source mismatch before editing reading order.');
+      event.preventDefault();
+      return;
+    }
+    if (!selectedIds.size) {
+      send('sort_boxes_calc', {
+        boxes: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.bbox]))
+      });
+    } else {
+      openSortSelectedModal();
+    }
+    event.preventDefault();
+    return;
+  }
+  const applyBtn = event.target.closest('#apply-bbox-changes');
+  if (applyBtn) {
+    commitDraftState(false);
+    event.preventDefault();
+    return;
+  }
+  const cancelSortModal = event.target.closest('#sort-modal-cancel');
+  if (cancelSortModal) {
+    const modal = root.querySelector('#sort-selected-modal');
+    if (modal) modal.style.display = 'none';
+    event.preventDefault();
+    return;
+  }
+  const confirmSortModal = event.target.closest('#sort-modal-confirm');
+  if (confirmSortModal) {
+    const startInput = root.querySelector('#sort-modal-start');
+    const start = parseInt(startInput?.value || '1', 10);
+    const modal = root.querySelector('#sort-selected-modal');
+    if (modal) modal.style.display = 'none';
+    pendingSortSelectedRange = [start, selectedIds.size];
+    send('sort_boxes_calc', {
+      boxes: Object.fromEntries([...selectedIds].map(id => [id, localBoxes[id].bbox])),
+      selectedIds: [...selectedIds]
+    });
+    event.preventDefault();
+    return;
+  }
+  const closeAlertModal = event.target.closest('#order-alert-close');
+  if (closeAlertModal) {
+    const modal = root.querySelector('#order-validation-modal');
+    if (modal) modal.style.display = 'none';
+    event.preventDefault();
+    return;
   }
 });
 

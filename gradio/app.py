@@ -261,6 +261,9 @@ def create_app(options):
                             x1=gr.Number(label='x1', min_width=0,elem_id='bbox-x1');y1=gr.Number(label='y1', min_width=0,elem_id='bbox-y1')
                         with gr.Row(elem_classes=['coordinate-row','field-group']):
                             x2=gr.Number(label='x2', min_width=0,elem_id='bbox-x2');y2=gr.Number(label='y2', min_width=0,elem_id='bbox-y2')
+                        with gr.Row(elem_classes=['coordinate-row','field-group']):
+                            manual_order=gr.Number(label='Reading Order #', min_width=0, elem_id='manual-box-order', precision=0)
+                        manual_order_error=gr.HTML('', elem_id='manual-box-order-error')
                         update=gr.Button('Update coordinates',variant='primary')
                     gr.HTML('''<section class="selection-guide" aria-label="Selection Guide">
                         <h3>Selection Guide</h3>

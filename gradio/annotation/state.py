@@ -87,6 +87,35 @@ def _spatial_region_order(state):
     return ordered_uids
 
 
+def calculate_spatial_order(boxes_dict, image_size):
+    """Calculate spatial reading order for a dictionary of {id: [x1, y1, x2, y2]}."""
+    from text_detection.reading_order import sort_recognized_boxes
+
+    remaining = [(uid, list(bbox)) for uid, bbox in boxes_dict.items()]
+    if not remaining:
+        return []
+    boxes = [bbox for _, bbox in remaining]
+    img_h = image_size[1] if image_size and len(image_size) >= 2 else 1000
+    img_w = image_size[0] if image_size and len(image_size) >= 2 else 1000
+    try:
+        ordered_boxes = sort_recognized_boxes(boxes, img_h, img_w)
+    except ModuleNotFoundError as exc:
+        if exc.name not in {'cv2', 'numpy', 'shapely'}:
+            raise
+        ordered_boxes = sorted(
+            boxes,
+            key=lambda box: (-((box[0] + box[2]) / 2), (box[1] + box[3]) / 2),
+        )
+    ordered_ids = []
+    for ordered_box in ordered_boxes:
+        for position, (uid, bbox) in enumerate(remaining):
+            if bbox == list(ordered_box):
+                ordered_ids.append(uid)
+                remaining.pop(position)
+                break
+    return ordered_ids
+
+
 def spatial_box_order(state):
     """Return public Box IDs in the detector's canonical spatial order."""
     ordered_uids = _spatial_region_order(state)

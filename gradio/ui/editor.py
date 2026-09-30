@@ -171,9 +171,40 @@ def snapshot(s):
                 review='<div class="review-text"><p>'+html.escape(build_text_sequence(s))+'</p></div>'
             markup+=f'''<section class="review-editor"><div class="order-heading"><div><span class="eyebrow">REVIEW & VERIFICATION</span><h2>Final Result</h2></div></div>
                 <div class="review-detail">{review}</div></section>'''
+    markup += '''
+    <div id="sort-selected-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="sort-modal-title">
+      <div class="modal-card">
+        <h3 id="sort-modal-title">Sort Selected Boxes</h3>
+        <p class="modal-subtitle">Selected boxes: <strong id="sort-modal-count">0</strong></p>
+        <div class="modal-form-group">
+          <label for="sort-modal-start">Sort from (start number):</label>
+          <input type="number" id="sort-modal-start" min="1" value="1" step="1" />
+          <p class="modal-range-preview">Will assign: <span id="sort-modal-range">1 – 1</span></p>
+        </div>
+        <div id="sort-modal-error" class="modal-error-alert" style="display:none;"></div>
+        <div class="modal-actions">
+          <button type="button" id="sort-modal-cancel" class="btn btn-secondary">Cancel</button>
+          <button type="button" id="sort-modal-confirm" class="btn btn-primary">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div id="order-validation-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="order-alert-title">
+      <div class="modal-card modal-card-error">
+        <h3 id="order-alert-title">Reading Order Invalid</h3>
+        <div id="order-alert-body" class="modal-error-body"></div>
+        <div class="modal-actions">
+          <button type="button" id="order-alert-close" class="btn btn-primary">Close & Review</button>
+        </div>
+      </div>
+    </div>
+    '''
     markup+='</div>'
+    calc_sorted = s.pop('calc_sorted_box_ids', None)
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
                 width=canvas_w,height=canvas_h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
+                calcSortedBoxIds=calc_sorted,
+                bboxValid=s['workflow'].get('bbox_valid', False),
+                mismatchConfirmed=source_mismatch_confirmed(s),
                 readingOrder=list(s['reading_order']),
                 spatialBoxOrder=(list(s.get('reading_order', [])) if s.get('bounding_boxes') else []),
                 suspiciousTokenIds=list(map(str,s.get('suspicious_token_ids',[]))),

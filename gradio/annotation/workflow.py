@@ -478,6 +478,17 @@ class Workflow:
                 s['source_mismatch'] = None
             elif action in ('add', 'delete', 'detect'):
                 _carry_source_mismatch_if_same_case(s)
+        elif action == 'sort_boxes_calc':
+            require(s, 'content_verified')
+            refresh_bbox_validation(s)
+            if not (s['workflow']['bbox_valid'] or source_mismatch_confirmed(s)):
+                raise ValueError('Confirm the source mismatch before editing reading order.')
+            input_boxes = payload.get('boxes', {})
+            from annotation.state import calculate_spatial_order
+            ordered_uids = calculate_spatial_order(input_boxes, s['image_size'])
+            res = self._render_state(s)
+            res['calc_sorted_box_ids'] = ordered_uids
+            return res
         elif action == 'sort_boxes':
             require(s, 'content_verified')
             if step != 3:
