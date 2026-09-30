@@ -53,12 +53,15 @@
 .toolbar-tools button:hover { border-color: #4a4d53; background: var(--color-panel-hover, #282b30); }
 
 .image-viewport {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
   flex: 1 1 auto;
   min-height: 0;
   overflow-x: auto;
-  overflow-y: auto;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
   padding: var(--space-6, 24px);
   background-color: var(--color-page, #0b0d0f);
   background-image: radial-gradient(#303237 0.65px, transparent 0.65px);
@@ -68,9 +71,11 @@
 
 .annotation-canvas {
   display: block;
+  flex: 0 0 auto;
   width: auto;
-  max-width: 100%;
-  max-height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0 auto;
   overflow: visible;
   background: var(--color-panel, #17191c);
   box-shadow: 0 4px 24px #0007;

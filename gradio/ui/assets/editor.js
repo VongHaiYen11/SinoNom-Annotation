@@ -231,9 +231,6 @@ const fitCanvas = (width, height) => {
   const svg = element.querySelector('.annotation-canvas');
   const viewport = element.querySelector('.image-viewport');
   if (!svg || !viewport) return;
-  const board = viewport.closest('.workbench-board') || viewport.parentElement;
-  const toolbar = board?.querySelector('.workspace-toolbar');
-  const legend = board?.querySelector('.status-legend');
 
   const viewBox = (svg.getAttribute('viewBox') || '').split(' ').map(Number);
   const w = width || (viewBox.length === 4 && viewBox[2]) || imageTransform.width || props.value?.width || 1000;
@@ -242,22 +239,15 @@ const fitCanvas = (width, height) => {
 
   const style = getComputedStyle(viewport);
   const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-  const padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
 
-  const boardH = board?.clientHeight || viewport.clientHeight || 500;
-  const toolbarH = toolbar?.offsetHeight || 0;
-  const legendH = legend?.offsetHeight || 0;
+  const availW = Math.max(100, (viewport.clientWidth || 400) - padX);
 
-  const availW = Math.max(100, (board?.clientWidth || viewport.clientWidth || 400) - padX);
-  const availH = Math.max(100, (boardH - toolbarH - legendH) - padY);
-
-  const fitScale = Math.min(availW / w, availH / h);
-  const fittedWidth = w * fitScale;
-  const fittedHeight = h * fitScale;
+  const baselineWidth = availW;
+  const baselineHeight = h * (baselineWidth / w);
 
   const zoomFactor = Math.max(25, Math.min(150, imageTransform.zoom || 100)) / 100;
-  const renderedWidth = Math.round(fittedWidth * zoomFactor);
-  const renderedHeight = Math.round(fittedHeight * zoomFactor);
+  const renderedWidth = Math.round(baselineWidth * zoomFactor);
+  const renderedHeight = Math.round(baselineHeight * zoomFactor);
 
   svg.style.width = `${renderedWidth}px`;
   svg.style.height = `${renderedHeight}px`;
