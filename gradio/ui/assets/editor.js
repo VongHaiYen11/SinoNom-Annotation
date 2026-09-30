@@ -297,6 +297,38 @@ const renderSelection = (sync = true) => {
   });
   if (sync) syncExternalControls();
 };
+const updateCanvasLabels = () => {
+  Object.entries(localBoxes).forEach(([id, b]) => {
+    const g = groupFor(id);
+    if (!g) return;
+    let text = g.querySelector('text');
+    const hasOrder = b.order !== null && b.order !== undefined && b.order !== '';
+    if (hasOrder || text) {
+      if (!text) {
+        text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('pointer-events', 'none');
+        text.setAttribute('paint-order', 'stroke');
+        text.setAttribute('stroke', '#17191c');
+        g.appendChild(text);
+      }
+      const box = b.bbox;
+      const bw = Math.max(1, box[2] - box[0]);
+      const bh = Math.max(1, box[3] - box[1]);
+      const unit = Math.max(props.value.width, props.value.height) / 900;
+      const fontSize = Math.max(14 * unit, Math.min(bw, bh) * 0.45);
+      const strokeWidth = Math.max(0.5, fontSize * 0.1);
+      text.setAttribute('x', box[0] + 2 * unit);
+      text.setAttribute('y', box[1] + fontSize);
+      text.setAttribute('font-size', fontSize);
+      text.setAttribute('stroke-width', strokeWidth);
+      text.setAttribute('fill', annotationColor || '#ffffff');
+      const publicBox = props.value.step !== 6;
+      const labelText = publicBox ? (hasOrder ? String(b.order) : '') : '';
+      text.textContent = labelText;
+    }
+  });
+};
+
 const hydrateLocalState = () => {
   const context = `${props.value.image || ''}:${props.value.step}`;
   const preserveSelection = context === localContext;
@@ -332,38 +364,8 @@ const hydrateLocalState = () => {
       });
     }
     isDirty = true;
-    Object.entries(localBoxes).forEach(([id, b]) => {
-      const g = groupFor(id);
-      if (g) {
-        let text = g.querySelector('text');
-        if (!text) {
-          text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-          text.setAttribute('pointer-events', 'none');
-          text.setAttribute('paint-order', 'stroke');
-          text.setAttribute('stroke', '#17191c');
-          g.appendChild(text);
-        }
-        const box = b.bbox;
-        const bw = Math.max(1, box[2] - box[0]);
-        const bh = Math.max(1, box[3] - box[1]);
-        const fontSize = Math.min(bw, bh) * 0.05;
-        const strokeWidth = Math.max(0.5, fontSize * 0.1);
-        const unit = Math.max(props.value.width, props.value.height) / 900;
-        text.setAttribute('x', box[0] + 2 * unit);
-        text.setAttribute('y', Math.max(fontSize, box[1] - 4 * unit));
-        text.setAttribute('font-size', fontSize);
-        text.setAttribute('stroke-width', strokeWidth);
-        text.setAttribute('fill', annotationColor);
-        const publicBox = props.value.step !== 6;
-        const labelText = publicBox ? String(b.order ?? id) : '';
-        text.textContent = labelText;
-      }
-    });
-    console.log('FRONTEND AFTER SORT', {
-      count: Object.keys(localBoxes).length,
-      IDs: Object.keys(localBoxes)
-    });
   }
+  updateCanvasLabels();
 
   if (props.value.step !== 4) {
     element.querySelectorAll('[data-miss-mark]').forEach(mark => mark.remove());
@@ -415,7 +417,7 @@ const fitCanvas = (width, height) => {
   const baselineWidth = availW;
   const baselineHeight = h * (baselineWidth / w);
 
-  const zoomFactor = Math.max(25, Math.min(150, imageTransform.zoom || 100)) / 100;
+  const zoomFactor = Math.max(25, Math.min(300, imageTransform.zoom || 100)) / 100;
   const renderedWidth = Math.round(baselineWidth * zoomFactor);
   const renderedHeight = Math.round(baselineHeight * zoomFactor);
 
@@ -427,6 +429,14 @@ const fitCanvas = (width, height) => {
   const label = element.querySelector('.zoom-label');
   if (label) label.textContent = `${imageTransform.zoom}%`;
 };
+element.addEventListener('wheel', event => {
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 15 : -15;
+    imageTransform.zoom = Math.max(25, Math.min(300, imageTransform.zoom + delta));
+    applyZoom();
+  }
+}, { passive: false });
 const showSortingOverlay = () => {
   const el = root.querySelector('#global-loading') || document.getElementById('global-loading');
   if (el) {
@@ -519,33 +529,29 @@ root.addEventListener('input', event => {
       localBoxes[activeBoxId].order = null;
       if (errorEl) errorEl.textContent = '';
       isDirty = true;
-      const group = groupFor(activeBoxId);
-      const text = group?.querySelector('text');
-      if (text) text.textContent = activeBoxId;
+      updateCanvasLabels();
       return;
     }
     const num = parseInt(val, 10);
-    const group = groupFor(activeBoxId);
-    const text = group?.querySelector('text');
     if (isNaN(num) || num < 1) {
       if (errorEl) errorEl.textContent = 'Order must be a positive integer.';
       localBoxes[activeBoxId].order = null;
-      if (text) text.textContent = '';
       isDirty = true;
+      updateCanvasLabels();
       return;
     }
     const conflict = Object.entries(localBoxes).find(([id, box]) => id !== activeBoxId && box.order === num);
     if (conflict) {
       if (errorEl) errorEl.textContent = `Order ${num} is already used by box ${conflict[0]}.`;
       localBoxes[activeBoxId].order = null;
-      if (text) text.textContent = '';
       isDirty = true;
+      updateCanvasLabels();
       return;
     }
     if (errorEl) errorEl.textContent = '';
     localBoxes[activeBoxId].order = num;
     isDirty = true;
-    if (text) text.textContent = String(num);
+    updateCanvasLabels();
     return;
   }
   const modalStartInput = event.target.closest('#sort-modal-start');
@@ -594,11 +600,11 @@ const drawPreview = (group, box) => {
   if (label) {
     const bw = box[2] - box[0];
     const bh = box[3] - box[1];
-    const fontSize = Math.min(bw, bh) * 0.05;
-    const strokeWidth = Math.max(0.5, fontSize * 0.1);
     const unit = Math.max(props.value.width, props.value.height) / 900;
+    const fontSize = Math.max(14 * unit, Math.min(bw, bh) * 0.45);
+    const strokeWidth = Math.max(0.5, fontSize * 0.1);
     label.setAttribute('x', box[0] + 2 * unit);
-    label.setAttribute('y', Math.max(fontSize, box[1] - 4 * unit));
+    label.setAttribute('y', box[1] + fontSize);
     label.setAttribute('font-size', fontSize);
     label.setAttribute('stroke-width', strokeWidth);
   }
@@ -972,11 +978,11 @@ element.addEventListener('pointerup', event => {
 
       const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       const bw = bbox[2] - bbox[0], bh = bbox[3] - bbox[1];
-      const fontSize = Math.min(bw, bh) * 0.05;
-      const strokeWidth = Math.max(0.5, fontSize * 0.1);
       const unit = Math.max(props.value.width, props.value.height) / 900;
+      const fontSize = Math.max(14 * unit, Math.min(bw, bh) * 0.45);
+      const strokeWidth = Math.max(0.5, fontSize * 0.1);
       text.setAttribute('x', bbox[0] + 2 * unit);
-      text.setAttribute('y', Math.max(fontSize, bbox[1] - 4 * unit));
+      text.setAttribute('y', bbox[1] + fontSize);
       text.setAttribute('fill', annotationColor);
       text.setAttribute('font-size', fontSize);
       text.setAttribute('stroke', '#17191c');
@@ -1171,7 +1177,7 @@ const commitDraftState = (navigateNext = false) => {
 root.addEventListener('click', event => {
   const control = event.target.closest('[data-zoom]');
   if (control) {
-    imageTransform.zoom = control.dataset.zoom === 'fit' ? 100 : Math.max(25, Math.min(150,
+    imageTransform.zoom = control.dataset.zoom === 'fit' ? 100 : Math.max(25, Math.min(300,
       imageTransform.zoom + (control.dataset.zoom === 'in' ? 25 : -25)));
     applyZoom(); return;
   }
@@ -1299,9 +1305,6 @@ root.addEventListener('click', event => {
     targetIds.forEach(id => {
       if (localBoxes[id]) {
         localBoxes[id].order = null;
-        const group = groupFor(id);
-        const text = group?.querySelector('text');
-        if (text) text.textContent = '';
       }
     });
     const manualOrderInput = root.querySelector('#manual-box-order input');
@@ -1309,6 +1312,7 @@ root.addEventListener('click', event => {
     const errorEl = root.querySelector('#manual-box-order-error');
     if (errorEl) errorEl.textContent = '';
     isDirty = true;
+    updateCanvasLabels();
     renderSelection();
     event.preventDefault();
     return;
