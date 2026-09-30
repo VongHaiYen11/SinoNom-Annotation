@@ -111,7 +111,7 @@ def snapshot(s):
         if step in (3, 6):
             bw = max(1, x2 - x1)
             bh = max(1, y2 - y1)
-            arm = min(10 * unit, bw * 0.35, bh * 0.35)
+            arm = min(5 * unit, bw * 0.25, bh * 0.25)
             corner_paths = [
                 f'M {x1 + arm} {y1} L {x1} {y1} L {x1} {y1 + arm}',
                 f'M {x2 - arm} {y1} L {x2} {y1} L {x2} {y1 + arm}',
@@ -120,8 +120,8 @@ def snapshot(s):
             ]
             handle_color = '#ff7a1a' if step == 6 else '#38bdf8' if multi_selected else stroke_color
             for n, (cx, cy) in enumerate([(x1,y1),(x2,y1),(x2,y2),(x1,y2)]):
-                markup += f'<path data-corner-visual="{n}" d="{corner_paths[n]}" fill="none" stroke="{handle_color}" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linecap="square" stroke-linejoin="miter" pointer-events="none"/>'
-                markup += f'<circle data-corner="{n}" cx="{cx}" cy="{cy}" r="{max(12*unit, 12)}" fill="transparent" stroke="none"/>'
+                markup += f'<path data-corner-visual="{n}" d="{corner_paths[n]}" fill="none" stroke="{handle_color}" stroke-width="1.2" vector-effect="non-scaling-stroke" stroke-linecap="square" stroke-linejoin="miter" pointer-events="none"/>'
+                markup += f'<circle data-corner="{n}" cx="{cx}" cy="{cy}" r="{max(10*unit, 16)}" fill="transparent" stroke="none"/>'
         markup+='</g>'
     markup+='</svg></div>'
     if step in (4, 5) or (step == 7 and not other_mismatch):
@@ -211,11 +211,10 @@ def snapshot(s):
     </div>
     <div id="mismatch-confirm-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="mismatch-modal-title">
       <div class="modal-card">
-        <h3 id="mismatch-modal-title">Confirm Source Mismatch</h3>
-        <p id="mismatch-modal-message" class="modal-subtitle">Bounding-box count and character count do not match. Do you want to confirm this source mismatch to edit the reading order?</p>
+        <h3 id="mismatch-modal-title">Confirm Source Mismatch First</h3>
+        <p id="mismatch-modal-message" class="modal-subtitle">Bounding-box count and character count do not match. Please confirm the source mismatch before editing reading order.</p>
         <div class="modal-actions">
           <button type="button" id="mismatch-modal-cancel" class="btn btn-secondary">Cancel</button>
-          <button type="button" id="mismatch-modal-confirm" class="btn btn-primary">Confirm</button>
         </div>
       </div>
     </div>

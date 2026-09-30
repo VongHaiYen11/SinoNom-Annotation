@@ -95,7 +95,7 @@ const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map(
   ([id, box]) => [id, { ...box, bbox: [...box.bbox], unknown: Boolean(box.unknown), order: box.order ?? null }]
 ));
 const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-box-id]')].find(
-  group => group.dataset.boxId === String(id)
+  group => (group.dataset?.boxId || group.getAttribute('data-box-id')) === String(id)
 );
 const root = element.closest('.gradio-container') || document;
 const statusColor = (status, unknown = false) => status === 'damaged' ? (unknown ? '#f59e0b' : '#ef4444') : '#22c55e';
@@ -565,7 +565,7 @@ const drawPreview = (group, box) => {
   const unit = Math.max(props.value.width, props.value.height) / 900;
   const bw = Math.max(1, box[2] - box[0]);
   const bh = Math.max(1, box[3] - box[1]);
-  const arm = Math.min(10 * unit, bw * 0.35, bh * 0.35);
+  const arm = Math.min(5 * unit, bw * 0.25, bh * 0.25);
   const cornerPaths = [
     `M ${box[0] + arm} ${box[1]} L ${box[0]} ${box[1]} L ${box[0]} ${box[1] + arm}`,
     `M ${box[2] - arm} ${box[1]} L ${box[2]} ${box[1]} L ${box[2]} ${box[1] + arm}`,
@@ -574,11 +574,13 @@ const drawPreview = (group, box) => {
   ];
   const corners = [[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]]];
   group.querySelectorAll('[data-corner-visual]').forEach(handle => {
-    const n = Number(handle.dataset.cornerVisual);
+    const attr = handle.getAttribute('data-corner-visual') ?? handle.dataset?.cornerVisual;
+    const n = Number(attr);
     if (cornerPaths[n]) handle.setAttribute('d', cornerPaths[n]);
   });
   group.querySelectorAll('[data-corner]').forEach(handle => {
-    const n = Number(handle.dataset.corner);
+    const attr = handle.getAttribute('data-corner') ?? handle.dataset?.corner;
+    const n = Number(attr);
     const [x, y] = corners[n];
     handle.setAttribute('cx', x); handle.setAttribute('cy', y);
   });
@@ -780,7 +782,7 @@ element.addEventListener('pointerdown', event => {
   const svg = event.target.closest('.annotation-canvas'); if (!svg) return;
   const mode = props.value.step;
   const group = event.target.closest('[data-box-id]');
-  const id = group?.dataset.boxId;
+  const id = group?.dataset?.boxId || group?.getAttribute('data-box-id');
   const toggle = event.ctrlKey || event.metaKey;
   if ([3, 4, 5, 7].includes(mode)) {
     if (group) {
@@ -796,9 +798,9 @@ element.addEventListener('pointerdown', event => {
         event.preventDefault(); return;
       }
       const p = point(event, svg);
-      const corner = event.target.dataset.corner;
-      if (corner !== undefined) {
-        moving = { kind: 'resize', svg, id, corner: Number(corner), p, box: [...localBoxes[id].bbox] };
+      const cornerAttr = event.target.getAttribute('data-corner') ?? event.target.dataset?.corner;
+      if (cornerAttr !== null && cornerAttr !== undefined && cornerAttr !== '') {
+        moving = { kind: 'resize', svg, id, corner: Number(cornerAttr), p, box: [...localBoxes[id].bbox] };
       } else {
         const ids = [...selectedIds];
         moving = {
@@ -828,7 +830,7 @@ element.addEventListener('pointerdown', event => {
   if (group) {
     moving = {
       kind: 'crop', svg, id: 'crop', p, box: [...localBoxes.crop.bbox],
-      corner: event.target.dataset.corner
+      corner: event.target.getAttribute('data-corner') ?? event.target.dataset?.corner
     };
   } else {
     moving = { kind: 'crop-new', svg, p, rect: createOverlayRect(svg, 'selection-marquee') };
@@ -959,7 +961,7 @@ element.addEventListener('pointerup', event => {
       group.appendChild(text);
 
       const corners = [[bbox[0], bbox[1]], [bbox[2], bbox[1]], [bbox[2], bbox[3]], [bbox[0], bbox[3]]];
-      const arm = Math.min(10 * unit, bw * 0.35, bh * 0.35);
+      const arm = Math.min(5 * unit, bw * 0.25, bh * 0.25);
       const cornerPaths = [
         `M ${bbox[0] + arm} ${bbox[1]} L ${bbox[0]} ${bbox[1]} L ${bbox[0]} ${bbox[1] + arm}`,
         `M ${bbox[2] - arm} ${bbox[1]} L ${bbox[2]} ${bbox[1]} L ${bbox[2]} ${bbox[1] + arm}`,
@@ -972,7 +974,7 @@ element.addEventListener('pointerup', event => {
         visual.setAttribute('d', cornerPaths[n]);
         visual.setAttribute('fill', 'none');
         visual.setAttribute('stroke', annotationColor);
-        visual.setAttribute('stroke-width', '2.5');
+        visual.setAttribute('stroke-width', '1.2');
         visual.setAttribute('vector-effect', 'non-scaling-stroke');
         visual.setAttribute('stroke-linecap', 'square');
         visual.setAttribute('stroke-linejoin', 'miter');
@@ -982,7 +984,7 @@ element.addEventListener('pointerup', event => {
         const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         handle.setAttribute('data-corner', n);
         handle.setAttribute('cx', cx); handle.setAttribute('cy', cy);
-        handle.setAttribute('r', Math.max(12 * unit, 12));
+        handle.setAttribute('r', Math.max(10 * unit, 16));
         handle.setAttribute('fill', 'transparent');
         handle.setAttribute('stroke', 'none');
         group.appendChild(handle);
@@ -1235,42 +1237,6 @@ root.addEventListener('click', event => {
     const modal = root.querySelector('#mismatch-confirm-modal');
     if (modal) modal.style.display = 'none';
     pendingMismatchAction = null;
-    event.preventDefault();
-    return;
-  }
-  const confirmMismatchModal = event.target.closest('#mismatch-modal-confirm');
-  if (confirmMismatchModal) {
-    const modal = root.querySelector('#mismatch-confirm-modal');
-    if (modal) modal.style.display = 'none';
-    localMismatchConfirmed = true;
-    updateValidationSummary();
-    send('confirm_source_mismatch', { issue_type: 'other', note: 'Confirmed via UI modal' });
-    const action = pendingMismatchAction;
-    pendingMismatchAction = null;
-    renderSelection();
-    if (action === 'sort') {
-      if (!selectedIds.size) {
-        send('sort_boxes_calc', {
-          boxes: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.bbox]))
-        });
-      } else {
-        openSortSelectedModal();
-      }
-    } else if (action === 'clear') {
-      const clearModal = root.querySelector('#clear-order-modal');
-      const msg = clearModal?.querySelector('#clear-modal-message');
-      if (clearModal && msg) {
-        if (selectedIds.size > 0) {
-          msg.textContent = `Are you sure you want to clear the reading order for the ${selectedIds.size} selected box(es)?`;
-        } else {
-          msg.textContent = 'Are you sure you want to clear the reading order for ALL bounding boxes?';
-        }
-        clearModal.style.display = 'flex';
-      }
-    } else if (action === 'input') {
-      const manualOrderInput = root.querySelector('#manual-box-order input');
-      if (manualOrderInput) manualOrderInput.focus();
-    }
     event.preventDefault();
     return;
   }
