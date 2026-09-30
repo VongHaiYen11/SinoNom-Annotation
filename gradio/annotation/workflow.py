@@ -17,7 +17,7 @@ from .text_extraction import (annotation_text, edit_content_field,
                               normalize_content_titles, normalize_metadata_fields,
                               extract_source_content)
 from .text_alignment import count_annotation_characters
-from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
+from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox, sync_draft_boxes
 from .status import (update_status, replace_statuses, confirm_status,
                      synchronize_missing_statuses)
 from .reading_order import (update_text_sequence,
@@ -463,7 +463,7 @@ class Workflow:
             elif action == 'update':
                 update_bbox(s, payload.get('uid') or payload.get('id') or s['selected_region_uid'], payload['bbox'])
             elif action == 'commit_boxes':
-                update_bboxes(s, payload.get('boxes'), payload.get('active'), payload.get('selected'))
+                sync_draft_boxes(s, payload)
             else:
                 selected = payload.get('ids') or [payload.get('uid') or payload.get('id') or s['selected_region_uid']]
                 selected = list(dict.fromkeys(selected))
@@ -591,6 +591,8 @@ class Workflow:
                     raise ValueError('Suspicious token selection is invalid.')
                 s['suspicious_token_ids'] = sorted(suspicious_ids, key=int)
         elif action == 'next':
+            if payload and payload.get('boxes'):
+                sync_draft_boxes(s, payload)
             s['selected_region_uid'] = None
             s['selected_region_uids'] = []
             s['selected_box_id'] = None
