@@ -87,9 +87,12 @@
 
 .annotation-canvas [data-box-id] { cursor: pointer; }
 .annotation-canvas [data-region-uid] { cursor: move; }
-.annotation-canvas [data-corner] { display: none; cursor: nwse-resize; }
+.annotation-canvas [data-corner],
+.annotation-canvas [data-corner-visual] { display: none; cursor: nwse-resize; }
 .annotation-canvas .active-region [data-corner],
-.annotation-canvas [data-box-id="crop"] [data-corner] { display: block; }
+.annotation-canvas .active-region [data-corner-visual],
+.annotation-canvas [data-box-id="crop"] [data-corner],
+.annotation-canvas [data-box-id="crop"] [data-corner-visual] { display: block; }
 .annotation-canvas [data-corner="1"],
 .annotation-canvas [data-corner="3"] { cursor: nesw-resize; }
 .selection-marquee { fill: rgb(255 122 26 / 10%); stroke: var(--color-accent, #ff7a1a); stroke-width: 1.5; stroke-dasharray: 6 4; pointer-events: none; }

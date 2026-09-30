@@ -282,10 +282,8 @@ def create_app(options):
                     delete=gr.Button('Delete Selected', size='sm', min_width=0,
                                      elem_id='delete-box')
                     detect_confirm=gr.Checkbox(value=False,visible=False)
-                    with gr.Row(elem_classes=['button-group','sidebar-action-row','run-detection-row']):
-                        detect=gr.Button('Run Detection', variant='primary', size='sm',
-                                         interactive=not skip_detection,elem_id='run-detection',
-                                         min_width=0)
+                    detect=gr.Button('Run Detection', variant='primary',
+                                     interactive=not skip_detection,elem_id='run-detection')
                     apply_bbox_changes=gr.Button('Apply Changes', variant='primary',
                                                 elem_id='apply-bbox-changes')
                     with gr.Group(visible=False,

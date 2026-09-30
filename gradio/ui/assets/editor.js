@@ -16,9 +16,72 @@ const imageTransform = { zoom: 100, width: props.value.width, height: props.valu
 
 const canEditReadingOrder = () => {
   const step = props.value?.step || 1;
-  const bboxValid = Boolean(props.value?.bboxValid);
+  const dds = root.querySelectorAll('#validation-summary-host dl dd');
+  const boxCount = Object.keys(localBoxes).length;
+  const charCount = dds.length >= 2 ? (parseInt(dds[1].textContent.trim(), 10) || 0) : 0;
+  const bboxValid = boxCount === charCount && boxCount > 0;
   const mismatchConfirmed = Boolean(props.value?.mismatchConfirmed);
   return step >= 3 && (bboxValid || mismatchConfirmed);
+};
+
+const updateValidationSummary = () => {
+  const summaryHost = root.querySelector('#validation-summary-host');
+  if (!summaryHost) return;
+  const dds = summaryHost.querySelectorAll('dl dd');
+  if (dds.length < 2) return;
+
+  const boxCount = Object.keys(localBoxes).length;
+  const charCount = parseInt(dds[1].textContent.trim(), 10) || 0;
+  const diff = boxCount - charCount;
+
+  dds[0].textContent = String(boxCount);
+  if (dds.length >= 3) {
+    dds[2].textContent = (diff > 0 ? '+' : '') + diff;
+  }
+
+  const contentVerified = Boolean(props.value.contentVerified ?? true);
+  const mismatchConfirmed = Boolean(props.value.mismatchConfirmed);
+  const matched = contentVerified && boxCount === charCount && charCount > 0;
+
+  if (!matched && !mismatchConfirmed) {
+    let hasOrder = false;
+    Object.values(localBoxes).forEach(box => {
+      if (box.order !== null && box.order !== undefined) {
+        box.order = null;
+        hasOrder = true;
+      }
+    });
+    if (hasOrder) {
+      element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
+        const text = group.querySelector('text');
+        if (text) text.textContent = '';
+      });
+      isDirty = true;
+    }
+  }
+
+  const badge = summaryHost.querySelector('.validation-badge');
+  if (badge) {
+    const label = mismatchConfirmed ? 'Source mismatch confirmed'
+      : matched ? 'Counts match'
+      : !contentVerified ? 'Content not verified'
+      : 'Count mismatch';
+    const span = badge.querySelector('span');
+    if (span) span.textContent = label;
+
+    const svgCheck = '<svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 3 3 7-7"/></svg>';
+    const svgAlert = '<svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><path d="M8 4.75v4M8 11.25h.01"/></svg>';
+
+    const svgContainer = badge.querySelector('svg');
+    if (svgContainer) {
+      svgContainer.outerHTML = (matched || mismatchConfirmed) ? svgCheck : svgAlert;
+    }
+  }
+
+  const mismatchGroup = root.querySelector('.mismatch-panel') || root.querySelector('#mismatch_group');
+  if (mismatchGroup && props.value.step === 3) {
+    mismatchGroup.style.display = matched ? 'none' : 'block';
+  }
 };
 
 const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map(
@@ -66,6 +129,7 @@ const setInputValue = (selector, value) => {
   input.dispatchEvent(new Event('change', { bubbles: true }));
 };
 const syncExternalControls = () => {
+  updateValidationSummary();
   setInputValue('#selection-bridge', JSON.stringify({
     active: activeBoxId,
     selected: [...selectedIds],
@@ -485,9 +549,24 @@ const drawPreview = (group, box) => {
     label.setAttribute('font-size', fontSize);
     label.setAttribute('stroke-width', strokeWidth);
   }
+  const unit = Math.max(props.value.width, props.value.height) / 900;
+  const bw = Math.max(1, box[2] - box[0]);
+  const bh = Math.max(1, box[3] - box[1]);
+  const arm = Math.min(10 * unit, bw * 0.35, bh * 0.35);
+  const cornerPaths = [
+    `M ${box[0] + arm} ${box[1]} L ${box[0]} ${box[1]} L ${box[0]} ${box[1] + arm}`,
+    `M ${box[2] - arm} ${box[1]} L ${box[2]} ${box[1]} L ${box[2]} ${box[1] + arm}`,
+    `M ${box[2] - arm} ${box[3]} L ${box[2]} ${box[3]} L ${box[2]} ${box[3] - arm}`,
+    `M ${box[0] + arm} ${box[3]} L ${box[0]} ${box[3]} L ${box[0]} ${box[3] - arm}`,
+  ];
   const corners = [[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]]];
+  group.querySelectorAll('[data-corner-visual]').forEach(handle => {
+    const n = Number(handle.dataset.cornerVisual);
+    if (cornerPaths[n]) handle.setAttribute('d', cornerPaths[n]);
+  });
   group.querySelectorAll('[data-corner]').forEach(handle => {
-    const [x, y] = corners[Number(handle.dataset.corner)];
+    const n = Number(handle.dataset.corner);
+    const [x, y] = corners[n];
     handle.setAttribute('cx', x); handle.setAttribute('cy', y);
   });
 };
@@ -864,6 +943,36 @@ element.addEventListener('pointerup', event => {
       text.setAttribute('pointer-events', 'none');
       text.setAttribute('paint-order', 'stroke');
       group.appendChild(text);
+
+      const corners = [[bbox[0], bbox[1]], [bbox[2], bbox[1]], [bbox[2], bbox[3]], [bbox[0], bbox[3]]];
+      const arm = Math.min(10 * unit, bw * 0.35, bh * 0.35);
+      const cornerPaths = [
+        `M ${bbox[0] + arm} ${bbox[1]} L ${bbox[0]} ${bbox[1]} L ${bbox[0]} ${bbox[1] + arm}`,
+        `M ${bbox[2] - arm} ${bbox[1]} L ${bbox[2]} ${bbox[1]} L ${bbox[2]} ${bbox[1] + arm}`,
+        `M ${bbox[2] - arm} ${bbox[3]} L ${bbox[2]} ${bbox[3]} L ${bbox[2]} ${bbox[3] - arm}`,
+        `M ${bbox[0] + arm} ${bbox[3]} L ${bbox[0]} ${bbox[3]} L ${bbox[0]} ${bbox[3] - arm}`,
+      ];
+      corners.forEach(([cx, cy], n) => {
+        const visual = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        visual.setAttribute('data-corner-visual', n);
+        visual.setAttribute('d', cornerPaths[n]);
+        visual.setAttribute('fill', 'none');
+        visual.setAttribute('stroke', annotationColor);
+        visual.setAttribute('stroke-width', '2.5');
+        visual.setAttribute('vector-effect', 'non-scaling-stroke');
+        visual.setAttribute('stroke-linecap', 'square');
+        visual.setAttribute('stroke-linejoin', 'miter');
+        visual.setAttribute('pointer-events', 'none');
+        group.appendChild(visual);
+
+        const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        handle.setAttribute('data-corner', n);
+        handle.setAttribute('cx', cx); handle.setAttribute('cy', cy);
+        handle.setAttribute('r', Math.max(12 * unit, 12));
+        handle.setAttribute('fill', 'transparent');
+        handle.setAttribute('stroke', 'none');
+        group.appendChild(handle);
+      });
 
       svg.appendChild(group);
 
