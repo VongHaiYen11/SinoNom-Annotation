@@ -127,10 +127,11 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config(args.config.resolve())
         records, warnings, issues = extract_document_with_issues(config)
         issue_path = default_issues_path(config.output_json)
-        # Issue records are retained separately so the primary corpus remains
-        # strict by default while manual review still has complete context.
+        # Only records with critical errors are excluded from the primary output.
+        # Records with non-fatal warnings (such as containing '□') remain in output.json.
         flagged_numbers = {
-            item["so_van_bia"] for item in issues if item["so_van_bia"] is not None
+            item["so_van_bia"] for item in issues
+            if item["so_van_bia"] is not None and item.get("loi")
         }
         output_records = [
             record for record in records

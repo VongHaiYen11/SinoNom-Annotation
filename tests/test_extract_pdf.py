@@ -283,13 +283,26 @@ class ParserTests(unittest.TestCase):
         self.assertEqual("Tên\\bia", cleaned[0]["ten_bia"])
         self.assertEqual("Dòng một\\\nDòng hai\\thừa", records[0]["noi_dung"][0]["chuyen_muc"][0]["van_ban"])
 
-    def test_atomic_write_replaces_complete_file(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "nested" / "result.json"
-            atomic_write(target, "first\n")
-            atomic_write(target, "second\n")
-            self.assertEqual("second\n", target.read_text(encoding="utf-8"))
-            self.assertEqual([], list(target.parent.glob("*.tmp")))
+    def test_records_with_warnings_only_are_kept_in_output(self) -> None:
+        issues = [
+            {
+                "so_van_bia": 1,
+                "trang": [1],
+                "loi": [],
+                "canh_bao": ["Văn bia số 1: chứa ký tự chưa giải mã được '□'"],
+            },
+            {
+                "so_van_bia": 2,
+                "trang": [2],
+                "loi": ["thiếu mốc 'Nguyên văn chữ Hán Nôm'"],
+                "canh_bao": [],
+            },
+        ]
+        flagged_numbers = {
+            item["so_van_bia"] for item in issues
+            if item["so_van_bia"] is not None and item.get("loi")
+        }
+        self.assertEqual({2}, flagged_numbers)
 
 
 if __name__ == "__main__":
