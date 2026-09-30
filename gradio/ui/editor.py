@@ -209,6 +209,16 @@ def snapshot(s):
         </div>
       </div>
     </div>
+    <div id="mismatch-confirm-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="mismatch-modal-title">
+      <div class="modal-card">
+        <h3 id="mismatch-modal-title">Confirm Source Mismatch</h3>
+        <p id="mismatch-modal-message" class="modal-subtitle">Bounding-box count and character count do not match. Do you want to confirm this source mismatch to edit the reading order?</p>
+        <div class="modal-actions">
+          <button type="button" id="mismatch-modal-cancel" class="btn btn-secondary">Cancel</button>
+          <button type="button" id="mismatch-modal-confirm" class="btn btn-primary">Confirm</button>
+        </div>
+      </div>
+    </div>
     <div id="order-validation-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="order-alert-title">
       <div class="modal-card modal-card-error">
         <h3 id="order-alert-title">Reading Order Invalid</h3>

@@ -6,6 +6,7 @@ let isDirty = false, pendingSortSelectedRange = null;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId = null;
 let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
+let localMismatchConfirmed = false, pendingMismatchAction = null;
 let annotationColor = '#f4f4f5';
 const annotationColors = {
   White: '#f4f4f5', Cyan: '#22d3ee', Amber: '#f59e0b',
@@ -20,8 +21,14 @@ const canEditReadingOrder = () => {
   const boxCount = Object.keys(localBoxes).length;
   const charCount = dds.length >= 2 ? (parseInt(dds[1].textContent.trim(), 10) || 0) : 0;
   const bboxValid = boxCount === charCount && boxCount > 0;
-  const mismatchConfirmed = Boolean(props.value?.mismatchConfirmed);
+  const mismatchConfirmed = Boolean(props.value?.mismatchConfirmed) || localMismatchConfirmed;
   return step >= 3 && (bboxValid || mismatchConfirmed);
+};
+
+const openMismatchConfirmModal = (action) => {
+  pendingMismatchAction = action;
+  const modal = root.querySelector('#mismatch-confirm-modal');
+  if (modal) modal.style.display = 'flex';
 };
 
 const updateValidationSummary = () => {
@@ -40,7 +47,7 @@ const updateValidationSummary = () => {
   }
 
   const contentVerified = Boolean(props.value.contentVerified ?? true);
-  const mismatchConfirmed = Boolean(props.value.mismatchConfirmed);
+  const mismatchConfirmed = Boolean(props.value.mismatchConfirmed) || localMismatchConfirmed;
   const matched = contentVerified && boxCount === charCount && charCount > 0;
 
   if (!matched && !mismatchConfirmed) {
@@ -919,6 +926,7 @@ element.addEventListener('pointerup', event => {
       const bbox = state.result;
       const newId = 'box_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
       localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, order: null };
+      localMismatchConfirmed = false;
 
       const svg = state.svg;
       const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -1168,14 +1176,21 @@ root.addEventListener('click', event => {
     });
     selectedIds.clear();
     activeBoxId = null;
+    localMismatchConfirmed = false;
     isDirty = true;
     renderSelection();
+    return;
+  }
+  const manualOrderContainer = event.target.closest('#manual-box-order');
+  if (manualOrderContainer && !canEditReadingOrder()) {
+    openMismatchConfirmModal('input');
+    event.preventDefault();
     return;
   }
   const clearOrderBtn = event.target.closest('#clear-box-orders');
   if (clearOrderBtn) {
     if (!canEditReadingOrder()) {
-      alert('Confirm the source mismatch before editing reading order.');
+      openMismatchConfirmModal('clear');
       event.preventDefault();
       return;
     }
@@ -1195,7 +1210,7 @@ root.addEventListener('click', event => {
   const sortBtn = event.target.closest('#sort-boxes');
   if (sortBtn) {
     if (!canEditReadingOrder()) {
-      alert('Confirm the source mismatch before editing reading order.');
+      openMismatchConfirmModal('sort');
       event.preventDefault();
       return;
     }
@@ -1212,6 +1227,50 @@ root.addEventListener('click', event => {
   const applyBtn = event.target.closest('#apply-bbox-changes');
   if (applyBtn) {
     commitDraftState(false);
+    event.preventDefault();
+    return;
+  }
+  const cancelMismatchModal = event.target.closest('#mismatch-modal-cancel');
+  if (cancelMismatchModal) {
+    const modal = root.querySelector('#mismatch-confirm-modal');
+    if (modal) modal.style.display = 'none';
+    pendingMismatchAction = null;
+    event.preventDefault();
+    return;
+  }
+  const confirmMismatchModal = event.target.closest('#mismatch-modal-confirm');
+  if (confirmMismatchModal) {
+    const modal = root.querySelector('#mismatch-confirm-modal');
+    if (modal) modal.style.display = 'none';
+    localMismatchConfirmed = true;
+    updateValidationSummary();
+    send('confirm_source_mismatch', { issue_type: 'other', note: 'Confirmed via UI modal' });
+    const action = pendingMismatchAction;
+    pendingMismatchAction = null;
+    renderSelection();
+    if (action === 'sort') {
+      if (!selectedIds.size) {
+        send('sort_boxes_calc', {
+          boxes: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.bbox]))
+        });
+      } else {
+        openSortSelectedModal();
+      }
+    } else if (action === 'clear') {
+      const clearModal = root.querySelector('#clear-order-modal');
+      const msg = clearModal?.querySelector('#clear-modal-message');
+      if (clearModal && msg) {
+        if (selectedIds.size > 0) {
+          msg.textContent = `Are you sure you want to clear the reading order for the ${selectedIds.size} selected box(es)?`;
+        } else {
+          msg.textContent = 'Are you sure you want to clear the reading order for ALL bounding boxes?';
+        }
+        clearModal.style.display = 'flex';
+      }
+    } else if (action === 'input') {
+      const manualOrderInput = root.querySelector('#manual-box-order input');
+      if (manualOrderInput) manualOrderInput.focus();
+    }
     event.preventDefault();
     return;
   }

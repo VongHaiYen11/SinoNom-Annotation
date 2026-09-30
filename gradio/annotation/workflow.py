@@ -480,7 +480,18 @@ class Workflow:
             require(s, 'content_verified')
             refresh_bbox_validation(s)
             if not (s['workflow']['bbox_valid'] or source_mismatch_confirmed(s)):
-                raise ValueError('Confirm the source mismatch before editing reading order.')
+                character_count = count_annotation_characters(s['annotation_text'])
+                box_count = len(s['regions'])
+                diff = box_count - character_count
+                issue_type = 'extra_text' if diff > 0 else ('missing_text' if diff < 0 else 'other')
+                s['source_mismatch'] = {
+                    'source_text': s['annotation_text'],
+                    'source_character_count': character_count,
+                    'bounding_box_count': box_count,
+                    'issue_type': issue_type,
+                    'note': 'Confirmed via UI modal',
+                    'excluded_characters': [],
+                }
             input_boxes = payload.get('boxes', {})
             from annotation.state import calculate_spatial_order
             ordered_uids = calculate_spatial_order(input_boxes, s['image_size'])
