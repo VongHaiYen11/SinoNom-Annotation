@@ -270,6 +270,8 @@ def create_app(options):
                         detect=gr.Button('Run Detection', variant='primary', size='sm',
                                          interactive=not skip_detection,elem_id='run-detection',
                                          min_width=0)
+                    apply_bbox_changes=gr.Button('Apply Changes', variant='primary',
+                                                elem_id='apply-bbox-changes')
                     with gr.Group(visible=False,
                                   elem_classes=['section','sidebar-section','sidebar-component','mismatch-panel']) as mismatch_group:
                         gr.Markdown('### Box-Content Mismatch')
@@ -888,7 +890,16 @@ def create_app(options):
             run_detection,[session,detect_confirm],
             **dict(event_args,js="""(ctx, confirmed) => {
                 const hasBoxes=Object.keys(ctx?.active?.regions || {}).length > 0;
-                return [ctx, !hasBoxes || window.confirm('Run detection again and replace all existing boxes?')];
+                const ok = !hasBoxes || window.confirm('Run detection again and replace all existing boxes?');
+                if (ok) {
+                    const el = document.getElementById('global-loading');
+                    if (el) {
+                        const label = el.querySelector('span:not(.global-loading-spinner)');
+                        if (label) label.textContent = 'Running detection…';
+                        el.classList.add('is-visible');
+                    }
+                }
+                return [ctx, ok];
             }""")))
         def sort_current_boxes(ctx,selection,a,b,d,e):
             try:
@@ -898,6 +909,16 @@ def create_app(options):
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
         clear_loading_when_done(sort_boxes.click(
             sort_current_boxes,[session,selection_bridge,x1,y1,x2,y2],
+            **dict(event_args,js=snapshot_board_state_js(1))))
+        def apply_bbox_edits(ctx,selection,a,b,d,e):
+            try:
+                ctx,_,_=commit_frontend_boxes(ctx,selection,(a,b,d,e))
+                gr.Info('Saved.')
+                return render(ctx)
+            except Exception as exc:
+                return render(ctx,WARNING+' '+html.escape(str(exc)))
+        clear_loading_when_done(apply_bbox_changes.click(
+            apply_bbox_edits,[session,selection_bridge,x1,y1,x2,y2],
             **dict(event_args,js=snapshot_board_state_js(1))))
         def confirm_source_mismatch(ctx,issue_type,note):
             return run(ctx,'confirm_source_mismatch',dict(issue_type=issue_type,note=note))

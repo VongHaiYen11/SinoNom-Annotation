@@ -160,14 +160,13 @@ def snapshot(s):
                                  'No character annotations will be generated for this image.')
                 review_label='FINAL RESULT' if final_result else 'SOURCE MISMATCH'
                 review_class='review-text' if final_result else 'review-text source-mismatch-review'
-                review=f'''<div class="{review_class}"><span class="eyebrow">{review_label}</span>
+                review=f'''<div class="{review_class}">
                     <p>{mismatch_text}</p>
                     <small>{html.escape(issue['issue_type'])} · {issue['source_character_count']} characters · {issue['bounding_box_count']} boxes</small>
                     {note}</div>'''
             else:
-                review='<div class="review-text"><span class="eyebrow">FINAL RESULT</span><p>'+html.escape(build_text_sequence(s))+'</p></div>'
+                review='<div class="review-text"><p>'+html.escape(build_text_sequence(s))+'</p></div>'
             markup+=f'''<section class="review-editor"><div class="order-heading"><div><span class="eyebrow">REVIEW & VERIFICATION</span><h2>Final Result</h2></div></div>
-                <div class="source-preview"><span class="eyebrow">{source_label}</span><p>{source}</p></div>
                 <div class="review-detail">{review}</div></section>'''
     markup+='</div>'
     return dict(markup=markup,revision=s['revision'], image=s['image'], step=step,
