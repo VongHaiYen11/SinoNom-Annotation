@@ -478,20 +478,26 @@ root.addEventListener('input', event => {
       return;
     }
     const num = parseInt(val, 10);
+    const group = groupFor(activeBoxId);
+    const text = group?.querySelector('text');
     if (isNaN(num) || num < 1) {
       if (errorEl) errorEl.textContent = 'Order must be a positive integer.';
+      localBoxes[activeBoxId].order = null;
+      if (text) text.textContent = '';
+      isDirty = true;
       return;
     }
     const conflict = Object.entries(localBoxes).find(([id, box]) => id !== activeBoxId && box.order === num);
     if (conflict) {
-      if (errorEl) errorEl.textContent = `Order ${num} is used by box ${conflict[0]}.`;
+      if (errorEl) errorEl.textContent = `Order ${num} is already used by box ${conflict[0]}.`;
+      localBoxes[activeBoxId].order = null;
+      if (text) text.textContent = '';
+      isDirty = true;
       return;
     }
     if (errorEl) errorEl.textContent = '';
     localBoxes[activeBoxId].order = num;
     isDirty = true;
-    const group = groupFor(activeBoxId);
-    const text = group?.querySelector('text');
     if (text) text.textContent = String(num);
     return;
   }

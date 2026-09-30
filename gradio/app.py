@@ -919,9 +919,7 @@ def create_app(options):
                 return run(ctx,'sort_boxes')
             except Exception as exc:
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
-        clear_loading_when_done(sort_boxes.click(
-            sort_current_boxes,[session,selection_bridge,x1,y1,x2,y2],
-            **dict(event_args,js=snapshot_board_state_js(1))))
+        # Frontend draft state & modal handle sort_boxes cleanly via sort_boxes_calc bridge
         def apply_bbox_edits(ctx,selection,a,b,d,e):
             try:
                 ctx,_,_=commit_frontend_boxes(ctx,selection,(a,b,d,e))
