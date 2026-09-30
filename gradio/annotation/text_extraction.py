@@ -44,6 +44,10 @@ def content_fields(record, code, titles=None, metadata_fields=()):
     """
     faces = [(index, face) for index, face in enumerate(record.get('noi_dung', []))
              if str(face.get('ky_hieu')) == str(code)]
+    if not faces and str(code).isdigit():
+        norm_code = str(int(code))
+        faces = [(index, face) for index, face in enumerate(record.get('noi_dung', []))
+                 if str(face.get('ky_hieu')) == norm_code]
     if len(faces) != 1:
         raise ValueError('Exactly one inscription face must match the selected image.')
     face_index, face = faces[0]
@@ -156,6 +160,10 @@ def extract_source_content(image_name, source_json, annotation_title):
     code = Path(image_name).stem
     matches = [(ri, fi) for ri, r in enumerate(records)
                for fi, face in enumerate(r.get('noi_dung', [])) if str(face.get('ky_hieu')) == code]
+    if not matches and code.isdigit():
+        norm_code = str(int(code))
+        matches = [(ri, fi) for ri, r in enumerate(records)
+                   for fi, face in enumerate(r.get('noi_dung', [])) if str(face.get('ky_hieu')) == norm_code]
     if len(matches) != 1:
         raise ValueError(f'Image code {code}: found {len(matches)} inscription faces; expected exactly one.')
     ri, fi = matches[0]
@@ -165,7 +173,10 @@ def extract_source_content(image_name, source_json, annotation_title):
 
 
 def annotation_text(record, code, title):
-    faces = [f for f in record.get('noi_dung', []) if str(f.get('ky_hieu')) == code]
+    faces = [f for f in record.get('noi_dung', []) if str(f.get('ky_hieu')) == str(code)]
+    if not faces and str(code).isdigit():
+        norm_code = str(int(code))
+        faces = [f for f in record.get('noi_dung', []) if str(f.get('ky_hieu')) == norm_code]
     if len(faces) != 1:
         raise ValueError('The selected image code must exist exactly once.')
     sections = [s for s in faces[0].get('chuyen_muc', []) if s.get('tieu_de') == title]

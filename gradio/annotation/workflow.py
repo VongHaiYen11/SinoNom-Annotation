@@ -221,6 +221,9 @@ class Workflow:
         records = self._cached_source_records()
         code = Path(image_name).stem
         matches = self._source_locations.get(code, [])
+        if not matches and code.isdigit():
+            norm_code = str(int(code))
+            matches = self._source_locations.get(norm_code, [])
         if len(matches) != 1:
             raise ValueError(f'Image code {code}: found {len(matches)} inscription faces; expected exactly one.')
         record_index, face_index = matches[0]

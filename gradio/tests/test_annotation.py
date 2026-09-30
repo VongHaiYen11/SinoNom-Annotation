@@ -308,6 +308,24 @@ class Integration(unittest.TestCase):
             save_source_content(
                 self.source,self.image.name,self.record,updated,'Nguyên văn chữ Hán Nôm')
 
+    def test_leading_zero_code_matching(self):
+        source_lz = self.root / 'source_lz.json'
+        rec = {'so_van_bia': 10, 'noi_dung': [{'ky_hieu': '400', 'chuyen_muc': [{'tieu_de': 'Nguyên văn chữ Hán Nôm', 'van_ban': '測試'}]}]}
+        atomic_write(source_lz, [rec])
+        located = extract_source_content('0400.jpg', source_lz, 'Nguyên văn chữ Hán Nôm')
+        self.assertEqual(located['code'], '0400')
+        self.assertEqual(located['record'], rec)
+        lz_image = self.root / '0400.png'
+        Image.new('RGB', (100, 100), 'white').save(lz_image)
+        engine = Workflow(SimpleNamespace(
+            output_dir=self.root / 'out_lz', source_json=source_lz,
+            content_titles=('Nguyên văn chữ Hán Nôm',),
+            annotation_title='Nguyên văn chữ Hán Nôm'))
+        state = engine.open_image(lz_image)
+        state = engine.apply(state, 'save_content')
+        self.assertEqual(state['code'], '0400')
+        self.assertEqual(state['annotation_text'], '測試')
+
     def test_full_workflow_roundtrip_and_edit(self):
         e=self.engine;s=e.open_image(self.image);s=e.apply(s,'save_content');s=e.apply(s,'next')
         self.assertTrue(s['image_url'].startswith('gradio_api/file='))

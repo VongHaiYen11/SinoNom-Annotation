@@ -48,15 +48,25 @@ def loading_markup(label='Loading…', visible=False):
 
 LOADING_HIDDEN = loading_markup()
 SHOW_LOADING_JS = """(...args) => {
-    document.getElementById('global-loading')?.classList.add('is-visible');
+    const el = document.getElementById('global-loading');
+    if (el) {
+        const label = el.querySelector('span:not(.global-loading-spinner)');
+        if (label) label.textContent = 'Loading…';
+        el.classList.add('is-visible');
+    }
     return args;
 }"""
 
 
-def snapshot_board_state_js(selection_index):
+def snapshot_board_state_js(selection_index, label_text='Loading…'):
     """Submit the live board state instead of a potentially stale bridge."""
     return f"""(...args) => {{
-        document.getElementById('global-loading')?.classList.add('is-visible');
+        const el = document.getElementById('global-loading');
+        if (el) {{
+            const label = el.querySelector('span:not(.global-loading-spinner)');
+            if (label) label.textContent = {json.dumps(label_text)};
+            el.classList.add('is-visible');
+        }}
         // The editor owns the canvas; there is no #annotation-board wrapper.
         // Read the live SVG so drag/resize changes are committed before the
         // Gradio event sends the selection bridge to Python.
@@ -881,7 +891,7 @@ def create_app(options):
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
         clear_loading_when_done(delete.click(
             delete_selected,[session,selection_bridge,x1,y1,x2,y2],
-            **dict(event_args,js=snapshot_board_state_js(1))))
+            **dict(event_args,js=snapshot_board_state_js(1, 'Deleting…'))))
         def run_detection(ctx,confirmed):
             if ctx['active']['regions'] and not confirmed:
                 return render(ctx)
