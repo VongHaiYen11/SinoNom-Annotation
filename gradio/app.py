@@ -944,7 +944,9 @@ def create_app(options):
                 # Clearing mismatch metadata must not reload the older backend
                 # box collection. Persist the exact localBoxes draft first.
                 ctx,_,_=commit_frontend_boxes(ctx,selection)
-                return run(ctx,'clear_source_mismatch')
+                result=run(ctx,'clear_source_mismatch')
+                result[8]['value']['clearMismatchConfirmed'] = True
+                return result
             except Exception as exc:
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
         clear_loading_when_done(confirm_mismatch.click(

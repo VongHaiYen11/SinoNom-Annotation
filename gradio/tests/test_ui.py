@@ -121,6 +121,20 @@ class GradioCallbacks(unittest.TestCase):
         self.assertNotIn('data-zoom="fit"',editor_source)
         self.assertNotIn('Fit image to view',editor_source)
 
+    def test_character_chip_drag_has_pointer_scoped_central_cleanup(self):
+        script=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
+        self.assertIn('const cleanupOrderDrag = (reason, commit = false) =>',script)
+        self.assertIn('if (!state?.active || event.pointerId !== state.pointerId) return;',script)
+        self.assertIn("document.addEventListener('pointerup', handleOrderPointerUp, true)",script)
+        self.assertIn("document.addEventListener('pointercancel', handleOrderPointerCancel, true)",script)
+        self.assertIn("removeEventListener('pointermove', handleOrderPointerMove, true)",script)
+        self.assertIn("removeEventListener('pointerup', handleOrderPointerUp, true)",script)
+        self.assertIn("removeEventListener('pointercancel', handleOrderPointerCancel, true)",script)
+        self.assertIn("addEventListener('lostpointercapture', handleOrderLostPointerCapture)",script)
+        self.assertIn("state.ghost.dataset.orderDragGhost = 'true'",script)
+        self.assertIn("if (orderDrag) cleanupOrderDrag('rerender', false)",script)
+        self.assertIn('captureTarget: element',script)
+
     def test_status_order_uses_sidebar_source_and_dominant_image_grid(self):
         state=new_state();state.update(image='12305.png',image_size=[100,100],
                                       image_url='image.jpg',current_step=4)
@@ -206,6 +220,21 @@ class GradioCallbacks(unittest.TestCase):
         editor_js=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
         self.assertIn("mismatchGroup.style.display = matched ? 'none' : 'block'",editor_js)
         self.assertNotIn("matched && !props.value.mismatchRecorded",editor_js)
+
+    def test_clearing_mismatch_resets_frontend_confirmation(self):
+        editor_js=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
+        app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
+        self.assertIn('props.value.clearMismatchConfirmed',editor_js)
+        self.assertIn('localMismatchConfirmed = false',editor_js)
+        self.assertIn("result[8]['value']['clearMismatchConfirmed'] = True",app_source)
+
+    def test_sort_selected_conflict_display_groups_consecutive_orders(self):
+        editor_js=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
+        self.assertIn('const formatConflictOrderGroups = orders =>',editor_js)
+        self.assertIn("groups.length > 4",editor_js)
+        self.assertIn("groups.slice(0, 2), null, ...groups.slice(-2)",editor_js)
+        self.assertIn('Conflicting orders: ${formatConflictOrderGroups(conflictOrders)}',editor_js)
+        self.assertNotIn('Choose another starting number.',editor_js)
 
     def test_sidebar_has_bounded_scroll_and_aligned_action_controls(self):
         css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()

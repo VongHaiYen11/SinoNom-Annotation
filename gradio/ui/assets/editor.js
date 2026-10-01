@@ -385,6 +385,12 @@ const hydrateLocalState = () => {
   if (props.value.mismatchConfirmed && !['sort_boxes_calc'].includes(pendingAction)) {
     localMismatchConfirmed = true;
     mismatchConfirmationInvalidated = false;
+  } else if (props.value.clearMismatchConfirmed) {
+    // Clearing is an explicit backend transition. Drop the browser-local
+    // confirmation too, otherwise this stale flag keeps the badge and sorting enabled.
+    localMismatchConfirmed = false;
+    mismatchConfirmationInvalidated = true;
+    props.value.clearMismatchConfirmed = false;
   }
 
   Object.entries(localBoxes).forEach(([id, box]) => {
@@ -552,10 +558,11 @@ const send = (action, payload = {}) => {
   });
 };
 watch('value', () => {
+  // A Gradio value update can replace the chip DOM while a pointer session is
+  // active (including leaving Character Alignment). Finish before hydration.
+  if (orderDrag) cleanupOrderDrag('rerender', false);
   pending = false; moving = null;
   hideSortingOverlay();
-  if (orderDrag?.ghost) orderDrag.ghost.remove();
-  orderDrag = null;
   element.setAttribute('aria-busy', 'false');
   if (image !== props.value.image) {
     imageTransform.zoom = 100;
@@ -799,6 +806,7 @@ const orderRows = chips => {
   return rows;
 };
 const insertionReference = (container, x, y) => {
+  if (!orderDrag?.active || !container || container !== orderDrag.container) return null;
   const chips = [...container.querySelectorAll('[data-order-chip]')]
     .filter(chip => chip !== orderDrag.chip);
   if (!chips.length) return null;
@@ -844,47 +852,90 @@ const animateChipReflow = (container, first) => {
   });
 };
 const beginOrderDrag = event => {
-  const state = orderDrag, rect = state.chip.getBoundingClientRect();
+  const state = orderDrag;
+  if (!state?.active || event.pointerId !== state.pointerId) return;
+  const rect = state.chip.getBoundingClientRect();
   state.started = true; state.offsetX = event.clientX - rect.left; state.offsetY = event.clientY - rect.top;
   state.originalOrder = tokenOrderFromDOM(state.container);
   state.ghost = state.chip.cloneNode(true);
   state.ghost.classList.remove('active'); state.ghost.classList.add('order-chip-ghost');
+  state.ghost.dataset.orderDragGhost = 'true';
   state.ghost.removeAttribute('data-order-chip'); state.ghost.removeAttribute('id');
+  state.ghost.removeAttribute('data-order-drag-active');
   state.ghost.style.width = `${rect.width}px`; state.ghost.style.height = `${rect.height}px`;
   document.body.appendChild(state.ghost);
   state.container.classList.add('is-sorting'); state.chip.classList.add('dragging');
 };
 const moveOrderGhost = event => {
-  const x = event.clientX - orderDrag.offsetX, y = event.clientY - orderDrag.offsetY;
-  orderDrag.ghost.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(1deg) scale(1.03)`;
+  const state = orderDrag;
+  if (!state?.active || event.pointerId !== state.pointerId || !state.ghost) return;
+  const x = event.clientX - state.offsetX, y = event.clientY - state.offsetY;
+  state.ghost.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(1deg) scale(1.03)`;
 };
 const arrangeOrder = (container, order) => order.forEach(tokenId => {
   const chip = [...container.querySelectorAll('[data-order-chip]')].find(
     item => item.dataset.tokenId === String(tokenId));
   if (chip) container.appendChild(chip);
 });
-const finishOrderDrag = (commit = true) => {
-  if (!orderDrag) return;
+const cleanupOrderDrag = (reason, commit = false) => {
   const state = orderDrag;
+  if (!state || state.cleaning) return;
+  state.cleaning = true;
+  orderDrag = null;
   if (state.started) {
-    if (!commit) {
+    if (!commit && state.container?.isConnected) {
       const first = captureChipRects(state.container);
       arrangeOrder(state.container, state.originalOrder);
       updateExcludedChips(state.container);
       animateChipReflow(state.container, first);
     }
-    state.ghost?.remove(); state.chip.classList.remove('dragging');
-    state.container.classList.remove('is-sorting');
+    state.ghost?.remove();
+    state.chip.classList.remove('dragging');
+    state.container?.classList.remove('is-sorting');
     if (commit) {
       updateExcludedChips(state.container);
       localTextSequence = textSequenceFromDOM(state.container);
       localTokenOrder = tokenOrderFromDOM(state.container);
       renderSelection();
     }
-  } else if (commit) {
-    renderSelection();
   }
-  orderDrag = null;
+  if (state.captureTarget?.hasPointerCapture?.(state.pointerId)) {
+    try { state.captureTarget.releasePointerCapture(state.pointerId); } catch (_) {}
+  }
+  document.removeEventListener('pointermove', handleOrderPointerMove, true);
+  document.removeEventListener('pointerup', handleOrderPointerUp, true);
+  document.removeEventListener('pointercancel', handleOrderPointerCancel, true);
+  state.captureTarget?.removeEventListener('lostpointercapture', handleOrderLostPointerCapture);
+  if (state.chip?.isConnected) state.chip.removeAttribute('data-order-drag-active');
+};
+const finishOrderDrag = (commit = true) => cleanupOrderDrag(commit ? 'pointerup' : 'cancel', commit);
+const handleOrderPointerMove = event => {
+  const state = orderDrag;
+  if (!state?.active || event.pointerId !== state.pointerId) return;
+  if (!state.started && Math.hypot(event.clientX - state.startX, event.clientY - state.startY) < 4) return;
+  if (!state.started) beginOrderDrag(event);
+  moveOrderGhost(event);
+  const reference = insertionReference(state.container, event.clientX, event.clientY);
+  if (reference !== state.chip.nextElementSibling) {
+    const first = captureChipRects(state.container);
+    if (reference) state.container.insertBefore(state.chip, reference);
+    else state.container.appendChild(state.chip);
+    updateExcludedChips(state.container);
+    animateChipReflow(state.container, first);
+  }
+  event.preventDefault();
+};
+const handleOrderPointerUp = event => {
+  if (!orderDrag?.active || event.pointerId !== orderDrag.pointerId) return;
+  finishOrderDrag(true);
+};
+const handleOrderPointerCancel = event => {
+  if (!orderDrag?.active || event.pointerId !== orderDrag.pointerId) return;
+  finishOrderDrag(false);
+};
+const handleOrderLostPointerCapture = event => {
+  if (!orderDrag?.active || event.pointerId !== orderDrag.pointerId) return;
+  finishOrderDrag(false);
 };
 
 element.addEventListener('pointerdown', event => {
@@ -906,11 +957,19 @@ element.addEventListener('pointerdown', event => {
   if (event.button !== 0) return;
   const chip = event.target.closest('[data-order-chip]');
   if (chip && props.value.step === 4) {
+    if (orderDrag) cleanupOrderDrag('superseded', false);
     orderDrag = {
-      chip, container: chip.closest('.order-chips'), pointerId: event.pointerId,
-      startX: event.clientX, startY: event.clientY, started: false
+      active: true, chip, container: chip.closest('.order-chips'), pointerId: event.pointerId,
+      captureTarget: element, startX: event.clientX, startY: event.clientY,
+      started: false, ghost: null
     };
-    chip.setPointerCapture(event.pointerId); event.preventDefault(); return;
+    chip.dataset.orderDragActive = 'true';
+    element.addEventListener('lostpointercapture', handleOrderLostPointerCapture);
+    document.addEventListener('pointermove', handleOrderPointerMove, true);
+    document.addEventListener('pointerup', handleOrderPointerUp, true);
+    document.addEventListener('pointercancel', handleOrderPointerCancel, true);
+    try { element.setPointerCapture(event.pointerId); } catch (_) {}
+    event.preventDefault(); return;
   }
   const svg = event.target.closest('.annotation-canvas'); if (!svg) return;
   const mode = props.value.step;
@@ -972,20 +1031,6 @@ element.addEventListener('pointerdown', event => {
 });
 
 element.addEventListener('pointermove', event => {
-  if (orderDrag && event.pointerId === orderDrag.pointerId) {
-    if (!orderDrag.started && Math.hypot(event.clientX - orderDrag.startX, event.clientY - orderDrag.startY) < 4) return;
-    if (!orderDrag.started) beginOrderDrag(event);
-    moveOrderGhost(event);
-    const container = orderDrag.container;
-    const reference = insertionReference(container, event.clientX, event.clientY);
-    if (reference !== orderDrag.chip.nextElementSibling) {
-      const first = captureChipRects(container);
-      if (reference) container.insertBefore(orderDrag.chip, reference); else container.appendChild(orderDrag.chip);
-      updateExcludedChips(container);
-      animateChipReflow(container, first);
-    }
-    event.preventDefault(); return;
-  }
   if (!moving) return;
   if (moving.kind === 'pan') {
     const dx = event.clientX - moving.startX;
@@ -1057,7 +1102,6 @@ element.addEventListener('pointermove', event => {
 });
 
 element.addEventListener('pointerup', event => {
-  if (orderDrag && event.pointerId === orderDrag.pointerId) { finishOrderDrag(true); return; }
   if (!moving) return;
   const state = moving; moving = null;
   if (state.kind === 'marquee') {
@@ -1159,7 +1203,6 @@ element.addEventListener('pointerup', event => {
 });
 
 element.addEventListener('pointercancel', () => {
-  if (orderDrag) { finishOrderDrag(false); return; }
   if (!moving) return;
   const state = moving; moving = null;
   if (state.kind === 'drag') Object.entries(state.boxes).forEach(([id, box]) => drawLocalBox(id, box));
@@ -1179,6 +1222,20 @@ const openSortSelectedModal = () => {
   if (startInput) startInput.value = '1';
   modal.style.display = 'flex';
   updateSortModalPreview();
+};
+
+const formatConflictOrderGroups = orders => {
+  const groups = [];
+  [...new Set(orders)].sort((a, b) => a - b).forEach(order => {
+    const last = groups.at(-1);
+    if (last && order === last[1] + 1) last[1] = order;
+    else groups.push([order, order]);
+  });
+  const format = ([start, end]) => start === end ? String(start) : `${start}–${end}`;
+  const visibleGroups = groups.length > 4
+    ? [...groups.slice(0, 2), null, ...groups.slice(-2)]
+    : groups;
+  return visibleGroups.map(group => group ? format(group) : '…').join(', ');
 };
 
 const updateSortModalPreview = () => {
@@ -1211,7 +1268,7 @@ const updateSortModalPreview = () => {
   if (conflicts.length) {
     const conflictOrders = conflicts.map(([, b]) => b.order).sort((a, b) => a - b);
     if (errorEl) {
-      errorEl.textContent = `Orders ${conflictOrders.join(', ')} are already used by boxes outside this selection. Choose another starting number.`;
+      errorEl.textContent = `Conflicting orders: ${formatConflictOrderGroups(conflictOrders)}`;
       errorEl.style.display = 'block';
     }
     if (confirmBtn) confirmBtn.disabled = true;

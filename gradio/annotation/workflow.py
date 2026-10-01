@@ -518,6 +518,8 @@ class Workflow:
                 raise ValueError('Clear a source mismatch in Step 3.')
             s['source_mismatch'] = None
             invalidate(s, clear=True)
+            # Do not leave a previously materialized mismatch alignment usable.
+            s['workflow']['bbox_valid'] = False
         elif action == 'select':
             if step == 3:
                 uid = payload.get('uid') or payload.get('id')

@@ -141,6 +141,23 @@ class Invariants(unittest.TestCase):
         self.assertIsNotNone(s['source_mismatch'])
         self.assertFalse(source_mismatch_confirmed(s))
 
+    def test_clear_source_mismatch_disables_sort_until_counts_match_or_reconfirm(self):
+        s=state('永寺樂文',n=3)
+        s['current_step']=3
+        s['source_mismatch']={
+            'source_text':s['annotation_text'],
+            'source_character_count':4,
+            'bounding_box_count':3,
+            'issue_type':'missing_text',
+            'note':'',
+        }
+        self.assertTrue(source_mismatch_confirmed(s))
+        cleared=self.engine.apply(s,'clear_source_mismatch')
+        self.assertFalse(source_mismatch_confirmed(cleared))
+        self.assertFalse(cleared['workflow']['bbox_valid'])
+        with self.assertRaisesRegex(ValueError,'confirm a source mismatch'):
+            self.engine.apply(cleared,'sort_boxes')
+
     def test_complete_mismatch_order_materializes_character_tokens(self):
         s=state('永寺',n=3)
         s['source_mismatch']={
