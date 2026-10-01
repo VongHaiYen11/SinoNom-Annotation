@@ -199,6 +199,7 @@
   background: var(--color-page, #0b0d0f);
   box-sizing: border-box;
 }
+.order-chips[data-alignment-ready="false"] { pointer-events: none; }
 
 .order-chip {
   display: inline-flex;

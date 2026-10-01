@@ -146,7 +146,7 @@ def snapshot(s):
             markup+=f'''<section class="order-editor"><div class="order-heading"><div><span class="eyebrow">CHARACTER ANNOTATION</span><h2>{title}</h2></div>
 </div>
                 <p class="order-help">{help_text}</p>
-                <div class="order-chips" data-excluded-count="{excluded_count}" role="list" aria-label="Sortable character assignment">{''.join(chips)}</div>
+                <div class="order-chips" data-excluded-count="{excluded_count}" data-alignment-ready="false" aria-busy="true" role="list" aria-label="Sortable character assignment">{''.join(chips)}</div>
                 <p class="order-sync-note" aria-live="polite">Order changes stay local until you apply them or continue.</p></section>'''
         if step==7:
             source=html.escape(s['annotation_text'])
@@ -223,4 +223,5 @@ def snapshot(s):
                 orderedAnnotations=([s['annotations'][str(box_id)]
                                      for box_id in s['reading_order']]
                                     if s['annotations'] else []),
+                alignmentTokenIds=list(map(str,s.get('text_token_ids',[]))) if step==4 else [],
                 max_crop_side=max(w,h), image_handle_inset=0)

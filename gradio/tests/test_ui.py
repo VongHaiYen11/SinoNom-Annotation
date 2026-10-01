@@ -143,8 +143,11 @@ class GradioCallbacks(unittest.TestCase):
         set_verified_content(state,{},'永寺永')
         for x in (0,20,40):add_bbox(state,[x,0,x+10,10])
         refresh_bbox_validation(state);initialize_alignment(state)
-        markup=snapshot(state)['markup']
+        rendered=snapshot(state)
+        markup=rendered['markup']
         self.assertEqual(markup.count('data-order-chip="1"'),3)
+        self.assertIn('data-alignment-ready="false" aria-busy="true"',markup)
+        self.assertEqual(rendered['alignmentTokenIds'],['1','2','3'])
         self.assertEqual(markup.count('data-token-id="1"'),1)
         self.assertEqual(markup.count('data-token-id="2"'),1)
         self.assertEqual(markup.count('data-token-id="3"'),1)
@@ -209,7 +212,21 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('data-box-order-label="1"',editor_source)
         self.assertIn("g.querySelector(':scope > [data-box-order-label]')",editor_js)
         self.assertIn('text.textContent = labelText',editor_js)
+        self.assertIn('assignedCharacter ? ` ${assignedCharacter}`',editor_js)
+        self.assertIn('characterByBoxId.get(String(id))',editor_js)
+        self.assertIn('alignmentTokenIds=list(map(str,s.get(\'text_token_ids\',[]))) if step==4 else []',editor_source)
         self.assertIn("if (localBoxes[id]) localBoxes[id].order = idx + 1",editor_js)
+
+    def test_alignment_is_ready_before_chip_pointer_events(self):
+        editor_source=(Path(__file__).resolve().parents[1]/'ui/editor.py').read_text()
+        editor_js=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
+        editor_css=(Path(__file__).resolve().parents[1]/'ui/assets/editor.css').read_text()
+        self.assertIn('data-alignment-ready="false" aria-busy="true"',editor_source)
+        self.assertIn('alignmentStateReady = true',editor_js)
+        self.assertIn('expectedIds.every(id => tokenIds.includes(id))',editor_js)
+        self.assertIn('container?.dataset.alignmentReady !== \'true\'',editor_js)
+        self.assertIn('new MutationObserver(() => {',editor_js)
+        self.assertIn('.order-chips[data-alignment-ready="false"] { pointer-events: none; }',editor_css)
 
     def test_box_count_changes_invalidate_mismatch_confirmation(self):
         app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()

@@ -6,6 +6,7 @@ let isDirty = false, pendingSortSelectedRange = null;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId = null;
 let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
+let alignmentStateReady = false, alignmentContainer = null;
 let localMismatchConfirmed = false, mismatchConfirmationInvalidated = false;
 let pendingMismatchAction = null;
 let nextTemporaryBoxId = 1;
@@ -331,6 +332,9 @@ const renderSelection = (sync = true) => {
   if (sync) syncExternalControls();
 };
 const updateCanvasLabels = () => {
+  const characterByBoxId = new Map(
+    [...element.querySelectorAll('.order-chips [data-order-chip][data-assigned-box-id]')]
+      .map(chip => [chip.dataset.assignedBoxId, chip.dataset.character]));
   Object.entries(localBoxes).forEach(([id, b]) => {
     const g = groupFor(id);
     if (!g) return;
@@ -349,7 +353,7 @@ const updateCanvasLabels = () => {
       const bw = Math.max(1, box[2] - box[0]);
       const bh = Math.max(1, box[3] - box[1]);
       const unit = Math.max(props.value.width, props.value.height) / 900;
-      const fontSize = Math.max(10 * unit, Math.min(bw, bh) * 0.30);
+      const fontSize = Math.max(10 * unit, Math.min(bw, bh) * (props.value.step === 4 ? 0.25 : 0.30));
       const strokeWidth = Math.max(0.5, fontSize * 0.1);
       const centerX = (box[0] + box[2]) / 2;
       text.setAttribute('x', centerX);
@@ -359,7 +363,9 @@ const updateCanvasLabels = () => {
       text.setAttribute('stroke-width', strokeWidth);
       text.setAttribute('fill', annotationColor || '#ffffff');
       const publicBox = props.value.step !== 6;
-      const labelText = publicBox ? (hasOrder ? String(b.order) : '') : '';
+      const assignedCharacter = props.value.step === 4 ? characterByBoxId.get(String(id)) : null;
+      const labelText = publicBox ? (hasOrder
+        ? `${b.order}${assignedCharacter ? ` ${assignedCharacter}` : ''}` : '') : '';
       text.textContent = labelText;
       g.dataset.order = hasOrder ? String(b.order) : '';
       const title = g.querySelector(':scope > title');
@@ -372,6 +378,8 @@ const updateCanvasLabels = () => {
 
 const hydrateLocalState = () => {
   const context = `${props.value.image || ''}:${props.value.step}`;
+  alignmentStateReady = false;
+  alignmentContainer = null;
   const preserveSelection = context === localContext;
   const preserveOrder = preserveSelection && ['select', 'suspicious'].includes(pendingAction);
   const previousBoxes = localBoxes;
@@ -444,6 +452,7 @@ const hydrateLocalState = () => {
     if (preserveOrder && localTokenOrder.length) arrangeOrder(container, localTokenOrder);
     updateExcludedChips(container);
   });
+  if (props.value.step === 4) initializeAlignmentStateFromDOM();
   if (props.value.step === 4) {
     Object.entries(localBoxes).forEach(([id, box]) => renderLocalStatus(id, box.status, box.unknown));
   }
@@ -759,6 +768,35 @@ const tokenOrderFromDOM = container => [...container.querySelectorAll('[data-ord
   .map(chip => chip.dataset.tokenId);
 const textSequenceFromDOM = container => [...container.querySelectorAll('[data-order-chip]')]
   .map(chip => chip.dataset.character);
+function initializeAlignmentStateFromDOM() {
+  const container = element.querySelector('.order-chips');
+  if (!container || props.value.step !== 4) return false;
+  const chips = [...container.querySelectorAll('[data-order-chip]')];
+  const tokenIds = chips.map(chip => chip.dataset.tokenId || '');
+  const expectedIds = (props.value.alignmentTokenIds || []).map(String);
+  const valid = tokenIds.length > 0
+    && tokenIds.every(Boolean)
+    && new Set(tokenIds).size === tokenIds.length
+    && expectedIds.length === tokenIds.length
+    && new Set(expectedIds).size === expectedIds.length
+    && expectedIds.every(id => tokenIds.includes(id));
+  if (!valid) {
+    container.dataset.alignmentReady = 'false';
+    container.setAttribute('aria-busy', 'true');
+    alignmentStateReady = false;
+    alignmentContainer = null;
+    return false;
+  }
+  localTokenOrder = tokenIds;
+  localTextSequence = textSequenceFromDOM(container);
+  alignmentContainer = container;
+  alignmentStateReady = true;
+  container.dataset.alignmentReady = 'true';
+  container.setAttribute('aria-busy', 'false');
+  updateExcludedChips(container);
+  updateCanvasLabels();
+  return true;
+}
 const updateExcludedChips = container => {
   const chips = [...container.querySelectorAll('[data-order-chip]')];
   const count = Number(container.dataset.excludedCount || 0);
@@ -771,6 +809,7 @@ const updateExcludedChips = container => {
     chip.classList.toggle('suspicious', localSuspiciousTokenIds.has(chip.dataset.tokenId));
   });
   renderSuspiciousPreview();
+  updateCanvasLabels();
 };
 
 function renderSuspiciousPreview() {
@@ -941,9 +980,12 @@ element.addEventListener('pointerdown', event => {
   if (event.button !== 0) return;
   const chip = event.target.closest('[data-order-chip]');
   if (chip && props.value.step === 4) {
+    const container = chip.closest('.order-chips');
+    if (!alignmentStateReady || container !== alignmentContainer
+        || container?.dataset.alignmentReady !== 'true') return;
     if (orderDrag) cleanupOrderDrag('superseded', false);
     orderDrag = {
-      active: true, chip, container: chip.closest('.order-chips'), pointerId: event.pointerId,
+      active: true, chip, container, pointerId: event.pointerId,
       captureTarget: element, startX: event.clientX, startY: event.clientY,
       started: false
     };
@@ -1430,4 +1472,12 @@ window.addEventListener('keydown', event => {
   }
 });
 
+const alignmentObserver = new MutationObserver(() => {
+  if (props.value.step !== 4) return;
+  const container = element.querySelector('.order-chips');
+  if (container && (!alignmentStateReady || container !== alignmentContainer)) {
+    initializeAlignmentStateFromDOM();
+  }
+});
+alignmentObserver.observe(element, { childList: true, subtree: true });
 hydrateLocalState();
