@@ -83,7 +83,6 @@ body,
 .gradio-container .main {
   display: grid;
   grid-template-rows: auto auto auto;
-  gap: var(--section-gap);
   width: 100%;
   max-width: var(--page-max-width);
   height: auto;
@@ -241,12 +240,11 @@ body,
   padding: 0;
   overflow: visible;
 }
-/* Keep the desktop workspace bounded by the larger of its sidebar content and
-   the browser space available below the app chrome. The page itself still
-   scrolls normally when the sidebar needs more room. */
+/* Give the image workspace a definite height so its canvas viewport can scroll
+   instead of contributing its full zoomed canvas height to the layout. */
 #workspace:has(#control-panel[style*="display: flex"]) {
-  height: max(min(700px, calc(100dvh - 180px)), max-content);
-  min-height: min(700px, calc(100dvh - 180px));
+  height: max(320px, min(700px, calc(100dvh - 180px)));
+  min-height: 0;
 }
 #control-panel { grid-column: 1; }
 #main-workspace { grid-column: 2 / 5; }
@@ -263,7 +261,7 @@ body,
 
 .panel { align-self: stretch; min-width: 0; height: auto; overflow: visible; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-panel); }
 #workspace:has(#control-panel[style*="display: flex"]) > #control-panel,
-#workspace:has(#control-panel[style*="display: flex"]) > #main-workspace { height: 100%; }
+#workspace:has(#control-panel[style*="display: flex"]) > #main-workspace { height: 100%; min-height: 0; }
 #control-panel {
   display: flex !important;
   flex-direction: column !important;
@@ -725,20 +723,27 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   padding: var(--space-6, 24px);
   box-sizing: border-box;
 }
+.status-order-board .image-viewport {
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 0 !important;
+  overflow-y: auto !important;
+}
 
-/* The alignment editor shares the board's bounded height. Keep its controls
-   reachable in a vertical pane and let long character sequences scroll across. */
+/* Keep Character Alignment within the board height. Chips wrap to the pane
+   width, and only this section scrolls vertically when the rows overflow. */
 .status-order-board .order-editor {
   min-width: 0;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 .status-order-board .order-chips {
-  flex-wrap: nowrap;
-  width: max-content;
+  flex-wrap: wrap;
+  width: 100%;
   min-width: 100%;
-  max-width: none;
+  max-width: 100%;
   overflow: visible;
 }
 
@@ -848,7 +853,7 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   .stepper { align-items: flex-start; min-height: 44px; }
   .stepper-item { align-items: flex-start; white-space: normal; }
   .stepper-label { line-height: 1.2; }
-  #workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; overflow: visible; }
+  #workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; height: auto !important; min-height: min(700px, calc(100vh - 180px)); overflow: visible; }
   .panel { height: auto; }
   #main-workspace { min-height: 0; }
   #control-panel { max-height: none; padding: var(--space-4); overflow: visible; }
