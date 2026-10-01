@@ -125,13 +125,22 @@ def spatial_box_order(state):
         raise ValueError('Every spatial region must have a numeric Box ID.') from exc
 
 
-def initialize_alignment(state):
-    """Assign canonical IDs/order and text when a 1:1 alignment exists."""
+def initialize_alignment(state, ordered_uids=None):
+    """Assign canonical IDs/order and materialize character tokens.
+
+    ``ordered_uids`` is supplied by the frontend reading-order draft. When it
+    is omitted, the established Python spatial sorter remains authoritative.
+    """
     refresh_bbox_validation(state)
     if (not state['workflow']['content_verified']
             or not (state['workflow']['bbox_valid'] or source_mismatch_confirmed(state))):
         raise ValueError('Bounding-box and character counts must match or have a confirmed source mismatch.')
-    ordered_uids = _spatial_region_order(state)
+    ordered_uids = (_spatial_region_order(state) if ordered_uids is None
+                    else list(ordered_uids))
+    if (len(ordered_uids) != len(state['regions'])
+            or len(set(ordered_uids)) != len(ordered_uids)
+            or set(ordered_uids) != set(state['regions'])):
+        raise ValueError('Reading order must contain every region exactly once.')
     ids = list(range(1, len(ordered_uids) + 1))
     state['box_id_by_region'] = {uid: str(box_id) for uid, box_id in zip(ordered_uids, ids)}
     state['region_uid_by_box_id'] = {str(box_id): uid for uid, box_id in zip(ordered_uids, ids)}

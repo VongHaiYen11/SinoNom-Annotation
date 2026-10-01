@@ -141,6 +141,25 @@ class Invariants(unittest.TestCase):
         self.assertIsNotNone(s['source_mismatch'])
         self.assertFalse(source_mismatch_confirmed(s))
 
+    def test_complete_mismatch_order_materializes_character_tokens(self):
+        s=state('永寺',n=3)
+        s['source_mismatch']={
+            'source_text':s['annotation_text'],
+            'source_character_count':2,
+            'bounding_box_count':3,
+            'issue_type':'missing_text',
+            'note':'',
+        }
+        boxes={}
+        for order,(uid,box) in enumerate(s['regions'].items(),1):
+            boxes[uid]=dict(box,order=order)
+        sync_draft_boxes(s,{'boxes':boxes,'active':next(iter(boxes)),
+                            'selected':[next(iter(boxes))]})
+        self.assertTrue(s['workflow']['alignment_valid'])
+        self.assertEqual(list(s['annotations'].values()),['永','寺','MISS'])
+        self.assertEqual(s['text_sequence'],['永','寺','MISS'])
+        self.assertEqual(s['text_token_ids'],['1','2','3'])
+
     def test_reorder_assigns_character_tokens_to_coordinate_slots(self):
         s=aligned_state()
         statuses={key:box['status'] for key,box in s['bounding_boxes'].items()}

@@ -215,7 +215,6 @@ def snapshot(s):
                 calcSortedBoxIds=calc_sorted,
                 bboxValid=s['workflow'].get('bbox_valid', False),
                 mismatchConfirmed=source_mismatch_confirmed(s),
-                mismatchRecorded=bool(s.get('source_mismatch')),
                 readingOrder=list(s['reading_order']),
                 spatialBoxOrder=(list(s.get('reading_order', [])) if s.get('bounding_boxes') else []),
                 suspiciousTokenIds=list(map(str,s.get('suspicious_token_ids',[]))),

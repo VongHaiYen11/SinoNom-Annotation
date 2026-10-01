@@ -112,27 +112,10 @@ def sync_draft_boxes(state, payload):
                     pass
         n = len(state['regions'])
         if len(val_orders) == n and sorted(val_orders.values()) == list(range(1, n + 1)):
-            from copy import deepcopy
-            from .state import source_mismatch_confirmed
             ordered_uids = sorted(state['regions'].keys(), key=lambda u: val_orders[u])
-            ids = list(range(1, n + 1))
-            state['box_id_by_region'] = {uid: str(box_id) for uid, box_id in zip(ordered_uids, ids)}
-            state['region_uid_by_box_id'] = {str(box_id): uid for uid, box_id in zip(ordered_uids, ids)}
-            state['bounding_boxes'] = {
-                str(box_id): deepcopy(state['regions'][uid])
-                for uid, box_id in zip(ordered_uids, ids)
-            }
             if state['workflow'].get('content_verified'):
-                if state['workflow'].get('bbox_valid'):
-                    from .text_alignment import temporary_align_text
-                    state['annotations'] = temporary_align_text(ids, state['annotation_text'])
-                    state['text_sequence'] = list(state['annotations'].values())
-                    state['text_token_ids'] = [str(i) for i in range(1, len(state['text_sequence']) + 1)]
-                    state['reading_order'] = ids
-                    state['workflow']['alignment_valid'] = True
-                elif source_mismatch_confirmed(state):
-                    state['reading_order'] = ids
-                    state['workflow']['alignment_valid'] = True
+                from .state import initialize_alignment
+                initialize_alignment(state, ordered_uids=ordered_uids)
     log.info('APPLY: persisted draft count=%d IDs=%s',
              len(state['regions']), list(state['regions']))
 

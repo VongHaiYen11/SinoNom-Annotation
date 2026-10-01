@@ -92,7 +92,10 @@ const updateValidationSummary = () => {
 
   const mismatchGroup = root.querySelector('.mismatch-panel') || root.querySelector('#mismatch_group');
   if (mismatchGroup && props.value.step === 3) {
-    mismatchGroup.style.display = matched && !props.value.mismatchRecorded ? 'none' : 'block';
+    // The panel describes the current count state. Once the live localBoxes
+    // count matches the character count, stale mismatch metadata is irrelevant
+    // to this screen and the whole section should disappear immediately.
+    mismatchGroup.style.display = matched ? 'none' : 'block';
   }
   const reason = canOrder ? '' : `Reading order is unavailable: ${boxCount} boxes for ${charCount} characters.`;
   ['#sort-boxes', '#clear-box-orders'].forEach(selector => {

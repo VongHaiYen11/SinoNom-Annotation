@@ -194,8 +194,6 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('snapshot = JSON.parse(board.dataset.localBoxesSnapshot)',app_source)
         self.assertIn('def clear_source_mismatch(ctx,selection):',app_source)
         self.assertIn('clear_source_mismatch,[session,selection_bridge]',app_source)
-        self.assertIn('mismatchRecorded=bool(s.get(\'source_mismatch\'))',
-                      (Path(__file__).resolve().parents[1]/'ui/editor.py').read_text())
 
     def test_bounding_box_apply_button_is_removed(self):
         app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
@@ -203,6 +201,11 @@ class GradioCallbacks(unittest.TestCase):
         self.assertNotIn("elem_id='apply-bbox-changes'",app_source)
         self.assertNotIn("#apply-bbox-changes",editor_js)
         self.assertNotIn('commitDraftState',editor_js)
+
+    def test_matching_live_counts_hide_mismatch_section_immediately(self):
+        editor_js=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
+        self.assertIn("mismatchGroup.style.display = matched ? 'none' : 'block'",editor_js)
+        self.assertNotIn("matched && !props.value.mismatchRecorded",editor_js)
 
     def test_sidebar_has_bounded_scroll_and_aligned_action_controls(self):
         css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
