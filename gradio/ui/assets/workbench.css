@@ -82,15 +82,15 @@ body,
 
 .gradio-container .main {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto;
   gap: var(--section-gap);
   width: 100%;
   max-width: var(--page-max-width);
-  height: 100dvh;
-  min-height: 0;
+  height: auto;
+  min-height: 100dvh;
   margin-inline: auto;
   padding: var(--page-padding) !important;
-  overflow: hidden;
+  overflow: visible;
   box-sizing: border-box;
 }
 
@@ -231,16 +231,15 @@ body,
 #workspace {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto;
   align-items: stretch !important;
-  height: 100%;
-  min-height: 0;
+  height: auto;
   gap: var(--panel-gap);
   width: 100%;
-  min-height: 0;
+  min-height: min(700px, calc(100vh - 180px));
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 #control-panel { grid-column: 1; }
 #main-workspace { grid-column: 2 / 5; }
@@ -255,7 +254,7 @@ body,
 #image-start .prose p { margin: 0; }
 #image-start button { width: 100%; min-height: var(--button-height); }
 
-.panel { align-self: stretch; min-width: 0; min-height: 0; height: 100%; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-panel); }
+.panel { align-self: stretch; min-width: 0; height: auto; overflow: visible; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-panel); }
 #control-panel {
   display: flex !important;
   flex-direction: column !important;
@@ -264,10 +263,9 @@ body,
   width: 100%;
   min-width: 0 !important;
   min-height: 0;
-  max-height: 100%;
-  height: 100%;
+  max-height: none;
   padding: var(--card-padding);
-  overflow-y: auto;
+  overflow: visible;
   scrollbar-color: #4a4d53 transparent;
   scrollbar-width: thin;
 }
@@ -279,7 +277,7 @@ body,
   box-sizing: border-box;
 }
 #control-panel .sidebar-step-stack > * > button { width: 100% !important; }
-#main-workspace { display: flex !important; flex: 1 1 0 !important; flex-direction: column !important; gap: 0 !important; min-width: 0 !important; min-height: 0 !important; height: 100% !important; padding: 0; overflow: hidden !important; }
+#main-workspace { display: flex !important; flex-direction: column !important; gap: 0 !important; min-width: 0 !important; min-height: 0 !important; height: 100% !important; padding: 0; }
 #workspace-body { display: flex; flex: 1 1 auto !important; flex-direction: column; gap: var(--section-gap); min-width: 0; min-height: 0; padding: 0; }
 
 /* Footer is a sibling after the complete two-column workspace. */
@@ -681,7 +679,7 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 .panel-summary dt { color: var(--color-muted); }
 .panel-summary dd { margin: 0; font-variant-numeric: tabular-nums; }
 
-#content-editor { display: flex !important; flex: 1 1 0 !important; flex-direction: column !important; min-width: 0 !important; min-height: 0 !important; height: 100% !important; overflow: hidden !important; gap: var(--section-gap) !important; padding: var(--card-padding) !important; background: var(--color-page) !important; }
+#content-editor { gap: var(--section-gap) !important; padding: var(--card-padding) !important; background: var(--color-page) !important; }
 #content-editor > .styler { gap: var(--section-gap) !important; }
 #content-editor .prose h2 { margin: 0; font-size: 20px; }
 #annotation-board,
@@ -815,7 +813,7 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 
 @media (max-width: 767.98px) {
   .gradio-container { --page-padding: 12px; }
-  .gradio-container .main { display: flex; height: 100dvh; min-height: 0; overflow: hidden; }
+  .gradio-container .main { display: flex; height: auto; overflow: visible; }
   #topbar { grid-template-columns: minmax(0, 1fr) auto; padding-inline: var(--space-3); }
   .app-header { padding: 0; }
   .app-header h1 { font-size: 14px !important; }
@@ -824,10 +822,10 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   .stepper { align-items: flex-start; min-height: 44px; }
   .stepper-item { align-items: flex-start; white-space: normal; }
   .stepper-label { line-height: 1.2; }
-  #workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); min-height: 0; overflow: hidden; }
-  .panel { min-height: 0; height: 100%; }
+  #workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; overflow: visible; }
+  .panel { height: auto; }
   #main-workspace { min-height: 0; }
-  #control-panel { max-height: 100%; min-height: 0; padding: var(--space-4); overflow-y: auto; }
+  #control-panel { max-height: none; padding: var(--space-4); overflow: visible; }
   #workflow-footer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #footer-step { grid-column: 1 / -1; grid-row: 1; }
   #back-button { grid-column: 1; grid-row: 2; }
