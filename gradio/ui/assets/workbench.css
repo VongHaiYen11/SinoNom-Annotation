@@ -713,20 +713,28 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   align-items: stretch !important;
 }
 
-/* Keep Character Alignment within the board height. Chips wrap to the pane
-   width, and only this section scrolls vertically when the rows overflow. */
+/* Keep Character Alignment and the image viewport at least 800px tall, or
+   as tall as the sidebar/workspace row when that is larger. Chips stay in
+   their own wrapped container while the alignment pane scrolls. */
 .status-order-board .order-editor {
+  height: max(800px, 100%);
+  min-height: max(800px, 100%);
+  max-height: max(800px, 100%);
   min-width: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+.status-order-board .image-viewport {
+  height: max(800px, 100%);
+  min-height: 800px;
+}
 .status-order-board .order-chips {
   flex-wrap: wrap;
   width: 100%;
-  min-width: 100%;
+  min-width: 0;
   max-width: 100%;
-  overflow: visible;
+  overflow: hidden;
 }
 
 #action-message { grid-column: 1 / -1; width: auto; margin: 0; padding: var(--space-3) var(--space-4); border: 1px solid #7f1d1d; border-radius: var(--radius-md); background: #291719; color: #fca5a5; }
@@ -781,6 +789,9 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   gap: var(--space-3);
 }
 #sidebar-source-text .sidebar-source-text p {
+  max-height: 500px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   margin: 0;
   overflow-wrap: anywhere;
   font-family: var(--han-nom-font), Arial, sans-serif;
