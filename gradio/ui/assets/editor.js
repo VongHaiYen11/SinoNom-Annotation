@@ -71,8 +71,8 @@ const updateValidationSummary = () => {
   if (badge) {
     const label = mismatchConfirmed ? 'Source mismatch confirmed'
       : matched ? 'Counts match'
-      : !contentVerified ? 'Content not verified'
-      : 'Count mismatch';
+        : !contentVerified ? 'Content not verified'
+          : 'Count mismatch';
     const span = badge.querySelector('span');
     if (span) span.textContent = label;
 
@@ -451,6 +451,7 @@ const fitCanvas = (width, height, focalPoint = null) => {
   const label = element.querySelector('.zoom-label');
   if (label) label.textContent = `${Math.round(imageTransform.zoom)}%`;
 };
+const applyZoom = (focalPoint = null) => fitCanvas(undefined, undefined, focalPoint);
 let spacePressed = false;
 window.addEventListener('keydown', event => {
   if (event.code === 'Space' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {

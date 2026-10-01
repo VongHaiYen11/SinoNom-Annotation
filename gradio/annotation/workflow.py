@@ -490,11 +490,24 @@ class Workflow:
             else:
                 boxes_dict = {}
 
+            if boxes_dict:
+                for uid, bbox in boxes_dict.items():
+                    if uid in s['regions']:
+                        s['regions'][uid]['bbox'] = list(bbox)
+
+            refresh_bbox_validation(s)
             from annotation.state import calculate_spatial_order
-            ordered_uids = calculate_spatial_order(boxes_dict, s['image_size'])
+            ordered_uids = calculate_spatial_order(boxes_dict or {k: v['bbox'] for k, v in s['regions'].items()}, s['image_size'])
+            s['calc_sorted_box_ids'] = ordered_uids
+
+            if s['workflow']['bbox_valid'] or source_mismatch_confirmed(s):
+                try:
+                    initialize_alignment(s)
+                except Exception as exc:
+                    log.warning('Could not initialize alignment during sort_boxes_calc: %s', exc)
+
             log.info('SORT PYTHON INPUT: count=%d, IDs=%s', len(boxes_dict), list(boxes_dict.keys()))
             log.info('SORT RESPONSE: count=%d, ordered IDs=%s', len(ordered_uids), ordered_uids)
-            s['calc_sorted_box_ids'] = ordered_uids
             return s
         elif action == 'sort_boxes':
             require(s, 'content_verified')
@@ -612,6 +625,13 @@ class Workflow:
                 refresh_bbox_validation(s)
                 if not (s['workflow']['bbox_valid'] or source_mismatch_confirmed(s)):
                     raise ValueError('Match the box and character counts or confirm a source mismatch.')
+                if not s['workflow']['alignment_valid']:
+                    mapped = set(s.get('box_id_by_region', {}))
+                    n = len(s['regions'])
+                    if n > 0 and set(s['regions']).issubset(mapped) and len(mapped) == n:
+                        s['workflow']['alignment_valid'] = True
+                    else:
+                        raise ValueError('Sort boxes before continuing so the numbered reading order is saved.')
                 if (source_mismatch_confirmed(s)
                         and s['source_mismatch']['issue_type'] == 'other'):
                     s['current_step'] = 7
