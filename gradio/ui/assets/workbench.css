@@ -240,11 +240,11 @@ body,
   padding: 0;
   overflow: visible;
 }
-/* Give the image workspace a definite height so its canvas viewport can scroll
-   instead of contributing its full zoomed canvas height to the layout. */
+/* The workspace row takes the larger of the sidebar's intrinsic height and
+   this viewport-based minimum. The canvas is constrained inside the main panel. */
 #workspace:has(#control-panel[style*="display: flex"]) {
-  height: max(320px, min(700px, calc(100dvh - 180px)));
-  min-height: 0;
+  height: auto;
+  min-height: max(320px, min(700px, calc(100dvh - 180px)));
 }
 #control-panel { grid-column: 1; }
 #main-workspace { grid-column: 2 / 5; }
@@ -260,8 +260,11 @@ body,
 #image-start button { width: 100%; min-height: var(--button-height); }
 
 .panel { align-self: stretch; min-width: 0; height: auto; overflow: visible; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-panel); }
-#workspace:has(#control-panel[style*="display: flex"]) > #control-panel,
-#workspace:has(#control-panel[style*="display: flex"]) > #main-workspace { height: 100%; min-height: 0; }
+#workspace:has(#control-panel[style*="display: flex"]) > #control-panel { height: auto; }
+#workspace:has(#control-panel[style*="display: flex"]) > #main-workspace {
+  height: auto !important;
+  min-height: max(320px, min(700px, calc(100dvh - 180px)));
+}
 #control-panel {
   display: flex !important;
   flex-direction: column !important;
@@ -284,7 +287,7 @@ body,
   box-sizing: border-box;
 }
 #control-panel .sidebar-step-stack > * > button { width: 100% !important; }
-#main-workspace { display: flex !important; flex-direction: column !important; gap: 0 !important; min-width: 0 !important; min-height: 0 !important; height: 100% !important; padding: 0; }
+#main-workspace { display: flex !important; flex-direction: column !important; gap: 0 !important; min-width: 0 !important; min-height: 0 !important; padding: 0; }
 #workspace-body { display: flex; flex: 1 1 auto !important; flex-direction: column; gap: var(--section-gap); min-width: 0; min-height: 0; padding: 0; }
 
 /* Footer is a sibling after the complete two-column workspace. */
@@ -833,6 +836,7 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   .stepper-item { align-items: flex-start; white-space: normal; }
   .stepper-label { line-height: 1.2; }
   #workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; height: auto !important; min-height: min(700px, calc(100vh - 180px)); overflow: visible; }
+  #workspace:has(#control-panel[style*="display: flex"]) > #main-workspace { height: auto !important; min-height: 0; }
   .panel { height: auto; }
   #main-workspace { min-height: 0; }
   #control-panel { max-height: none; padding: var(--space-4); overflow: visible; }
