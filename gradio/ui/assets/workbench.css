@@ -241,6 +241,13 @@ body,
   padding: 0;
   overflow: visible;
 }
+/* Keep the desktop workspace bounded by the larger of its sidebar content and
+   the browser space available below the app chrome. The page itself still
+   scrolls normally when the sidebar needs more room. */
+#workspace:has(#control-panel[style*="display: flex"]) {
+  height: max(min(700px, calc(100dvh - 180px)), max-content);
+  min-height: min(700px, calc(100dvh - 180px));
+}
 #control-panel { grid-column: 1; }
 #main-workspace { grid-column: 2 / 5; }
 #image-start {
@@ -255,6 +262,8 @@ body,
 #image-start button { width: 100%; min-height: var(--button-height); }
 
 .panel { align-self: stretch; min-width: 0; height: auto; overflow: visible; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-panel); }
+#workspace:has(#control-panel[style*="display: flex"]) > #control-panel,
+#workspace:has(#control-panel[style*="display: flex"]) > #main-workspace { height: 100%; }
 #control-panel {
   display: flex !important;
   flex-direction: column !important;
@@ -693,6 +702,7 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   flex: 1 1 100% !important;
   align-self: stretch !important;
   overflow: hidden !important;
+  min-width: 0 !important;
 }
 
 .workbench-board.status-order-board {
@@ -710,10 +720,26 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   flex: 1 1 100% !important;
   min-height: 0 !important;
   overflow-x: auto !important;
-  overflow-y: scroll !important;
+  overflow-y: auto !important;
   scrollbar-gutter: stable;
   padding: var(--space-6, 24px);
   box-sizing: border-box;
+}
+
+/* The alignment editor shares the board's bounded height. Keep its controls
+   reachable in a vertical pane and let long character sequences scroll across. */
+.status-order-board .order-editor {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.status-order-board .order-chips {
+  flex-wrap: nowrap;
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  overflow: visible;
 }
 
 #action-message { grid-column: 1 / -1; width: auto; margin: 0; padding: var(--space-3) var(--space-4); border: 1px solid #7f1d1d; border-radius: var(--radius-md); background: #291719; color: #fca5a5; }
