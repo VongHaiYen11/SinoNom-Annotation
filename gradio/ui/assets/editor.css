@@ -128,12 +128,14 @@
   grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   align-items: stretch;
-  height: 900px;
+  height: max(1200px, 100%);
+  min-height: 1200px;
+  max-height: none;
 }
 
 .status-order-board .order-editor {
-  min-height: max(800px, 100%);
-  max-height: max(800px, 100%);
+  min-height: 0;
+  max-height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -192,8 +194,12 @@
 .status-order-board .image-viewport {
   grid-row: 2;
   width: 100%;
-  height: max(800px, 100%);
-  min-height: 800px;
+  height: max(1200px, 100%);
+  min-height: 1200px;
+  max-height: none;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .status-order-board .status-legend { grid-row: 3; }
 .order-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3, 12px); }
@@ -302,7 +308,7 @@ button:focus-visible { outline: 2px solid var(--color-accent, #ff7a1a); outline-
   .workspace-toolbar { align-items: flex-start; }
   .dimensions { display: none; }
   .image-viewport { min-height: 320px; padding: var(--space-3, 12px); }
-  .status-order-board .image-viewport { height: max(800px, 100%); min-height: 800px; }
+  .status-order-board .image-viewport { height: 100%; min-height: 1200px; }
   .order-heading { align-items: flex-start; flex-direction: column; }
   .source-preview,
   .order-editor,
@@ -310,8 +316,8 @@ button:focus-visible { outline: 2px solid var(--color-accent, #ff7a1a); outline-
   .status-order-board { display: flex; }
   .status-order-board .order-editor {
     order: 2;
-    min-height: max(800px, 100%);
-    max-height: max(800px, 100%);
+    min-height: 1200px;
+    max-height: none;
     border-top: 1px solid var(--color-border, #303237);
     border-right: 0;
   }

@@ -226,10 +226,11 @@ body,
 .stepper-item.is-complete { color: #b3b6bd; }
 .stepper-item.is-complete .stepper-dot { border-color: #9a531f; background: #302116; color: var(--color-accent); }
 
-/* The workspace uses four equal tracks: one for the sidebar, three for the main panel. */
+/* Keep the sidebar at its designed width and let the workspace follow its
+   natural height, including any content-driven sidebar growth. */
 #workspace {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, var(--sidebar-width)) minmax(0, 3fr);
   grid-template-rows: auto;
   align-items: stretch !important;
   height: auto;
@@ -240,14 +241,9 @@ body,
   padding: 0;
   overflow: visible;
 }
-/* The workspace row takes the larger of the sidebar's intrinsic height and
-   this viewport-based minimum. The canvas is constrained inside the main panel. */
-#workspace:has(#control-panel[style*="display: flex"]) {
-  height: auto;
-  min-height: max(320px, min(700px, calc(100dvh - 180px)));
-}
+#workspace:has(#control-panel[style*="display: flex"]) { height: auto; }
 #control-panel { grid-column: 1; }
-#main-workspace { grid-column: 2 / 5; }
+#main-workspace { grid-column: 2; }
 #image-start {
   grid-column: 1 / -1;
   width: min(560px, 100%);
@@ -260,10 +256,16 @@ body,
 #image-start button { width: 100%; min-height: var(--button-height); }
 
 .panel { align-self: stretch; min-width: 0; height: auto; overflow: visible; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-panel); }
-#workspace:has(#control-panel[style*="display: flex"]) > #control-panel { height: auto; }
+#workspace:has(#control-panel[style*="display: flex"]) > #control-panel {
+  height: auto;
+  max-height: none;
+  min-width: 0;
+  overflow-x: hidden;
+}
 #workspace:has(#control-panel[style*="display: flex"]) > #main-workspace {
   height: auto !important;
-  min-height: max(320px, min(700px, calc(100dvh - 180px)));
+  min-height: max(1200px, min(700px, calc(100dvh - 180px)));
+  max-height: none;
 }
 #control-panel {
   display: flex !important;
@@ -275,9 +277,10 @@ body,
   min-height: 0;
   max-height: none;
   padding: var(--card-padding);
-  overflow: visible;
+  overflow-y: auto;
   scrollbar-color: #4a4d53 transparent;
   scrollbar-width: thin;
+  overflow-x: hidden;
 }
 #control-panel > *,
 #control-panel .sidebar-step-stack > * {
@@ -713,21 +716,24 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   align-items: stretch !important;
 }
 
-/* Keep Character Alignment and the image viewport at least 800px tall, or
-   as tall as the sidebar/workspace row when that is larger. Chips stay in
-   their own wrapped container while the alignment pane scrolls. */
+/* Character Alignment is a bounded pane inside the board; long chip lists
+   scroll here while the workspace itself follows the sidebar height. */
 .status-order-board .order-editor {
-  height: max(800px, 100%);
-  min-height: max(800px, 100%);
-  max-height: max(800px, 100%);
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
   min-width: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 .status-order-board .image-viewport {
-  height: max(800px, 100%);
-  min-height: 800px;
+  height: max(1200px, 100%);
+  min-height: 1200px;
+  max-height: none;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .status-order-board .order-chips {
   flex-wrap: wrap;
@@ -786,11 +792,16 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 #sidebar-source-text .sidebar-source-text {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   gap: var(--space-3);
+  overflow: hidden;
 }
 #sidebar-source-text .sidebar-source-text p {
-  max-height: 500px;
+  max-height: min(500px, calc(100dvh - 240px));
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   margin: 0;
   overflow-wrap: anywhere;
@@ -798,6 +809,9 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   font-size: 18px;
   line-height: 1.7;
   white-space: pre-wrap;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
 }
 #control-panel .box-color-control,
 #control-panel .box-color-control > .styler,
@@ -846,11 +860,11 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   .stepper { align-items: flex-start; min-height: 44px; }
   .stepper-item { align-items: flex-start; white-space: normal; }
   .stepper-label { line-height: 1.2; }
-  #workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; height: auto !important; min-height: min(700px, calc(100vh - 180px)); overflow: visible; }
+  #workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; height: auto !important; min-height: min(700px, calc(100vh - 180px)); max-height: none; overflow: visible; }
   #workspace:has(#control-panel[style*="display: flex"]) > #main-workspace { height: auto !important; min-height: 0; }
   .panel { height: auto; }
   #main-workspace { min-height: 0; }
-  #control-panel { max-height: none; padding: var(--space-4); overflow: visible; }
+  #control-panel { height: auto; max-height: none; padding: var(--space-4); overflow: visible; }
   #workflow-footer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #footer-step { grid-column: 1 / -1; grid-row: 1; }
   #back-button { grid-column: 1; grid-row: 2; }
