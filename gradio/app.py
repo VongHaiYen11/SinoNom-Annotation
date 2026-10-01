@@ -463,7 +463,6 @@ def create_app(options):
                     gr.update(value=issue.get('issue_type')),
                     gr.update(value=issue.get('note','')),
                     gr.update(interactive=has and step==3),gr.update(visible=bool(issue)),
-                    gr.update(visible=has and step==3),
                     gr.update(visible=has and step in (3,4)),
                     workflow_progress(s),LOADING_HIDDEN,
                     gr.update(visible=step==1),gr.update(visible=has and step>1),
