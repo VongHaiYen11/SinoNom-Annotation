@@ -854,23 +854,9 @@ const animateChipReflow = (container, first) => {
 const beginOrderDrag = event => {
   const state = orderDrag;
   if (!state?.active || event.pointerId !== state.pointerId) return;
-  const rect = state.chip.getBoundingClientRect();
-  state.started = true; state.offsetX = event.clientX - rect.left; state.offsetY = event.clientY - rect.top;
+  state.started = true;
   state.originalOrder = tokenOrderFromDOM(state.container);
-  state.ghost = state.chip.cloneNode(true);
-  state.ghost.classList.remove('active'); state.ghost.classList.add('order-chip-ghost');
-  state.ghost.dataset.orderDragGhost = 'true';
-  state.ghost.removeAttribute('data-order-chip'); state.ghost.removeAttribute('id');
-  state.ghost.removeAttribute('data-order-drag-active');
-  state.ghost.style.width = `${rect.width}px`; state.ghost.style.height = `${rect.height}px`;
-  document.body.appendChild(state.ghost);
   state.container.classList.add('is-sorting'); state.chip.classList.add('dragging');
-};
-const moveOrderGhost = event => {
-  const state = orderDrag;
-  if (!state?.active || event.pointerId !== state.pointerId || !state.ghost) return;
-  const x = event.clientX - state.offsetX, y = event.clientY - state.offsetY;
-  state.ghost.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(1deg) scale(1.03)`;
 };
 const arrangeOrder = (container, order) => order.forEach(tokenId => {
   const chip = [...container.querySelectorAll('[data-order-chip]')].find(
@@ -889,7 +875,6 @@ const cleanupOrderDrag = (reason, commit = false) => {
       updateExcludedChips(state.container);
       animateChipReflow(state.container, first);
     }
-    state.ghost?.remove();
     state.chip.classList.remove('dragging');
     state.container?.classList.remove('is-sorting');
     if (commit) {
@@ -914,7 +899,6 @@ const handleOrderPointerMove = event => {
   if (!state?.active || event.pointerId !== state.pointerId) return;
   if (!state.started && Math.hypot(event.clientX - state.startX, event.clientY - state.startY) < 4) return;
   if (!state.started) beginOrderDrag(event);
-  moveOrderGhost(event);
   const reference = insertionReference(state.container, event.clientX, event.clientY);
   if (reference !== state.chip.nextElementSibling) {
     const first = captureChipRects(state.container);
@@ -961,7 +945,7 @@ element.addEventListener('pointerdown', event => {
     orderDrag = {
       active: true, chip, container: chip.closest('.order-chips'), pointerId: event.pointerId,
       captureTarget: element, startX: event.clientX, startY: event.clientY,
-      started: false, ghost: null
+      started: false
     };
     chip.dataset.orderDragActive = 'true';
     element.addEventListener('lostpointercapture', handleOrderLostPointerCapture);

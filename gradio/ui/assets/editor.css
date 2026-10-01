@@ -247,21 +247,6 @@
   background: rgb(255 122 26 / 14%);
   opacity: 35%;
 }
-.order-chip-ghost {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 10000;
-  margin: 0;
-  border-color: var(--color-accent, #ff7a1a);
-  background: #302116;
-  box-shadow: 0 10px 28px rgb(0 0 0 / 45%);
-  opacity: .96;
-  pointer-events: none;
-  transform: translate3d(0, 0, 0) rotate(1deg) scale(1.03);
-  transform-origin: center;
-  will-change: transform;
-}
 .order-chip .tile-character { font-size: 18px; line-height: 1; }
 
 .review-detail { display: flex; flex-direction: column; gap: var(--space-6, 24px); padding: var(--space-6, 24px); border-top: 1px solid var(--color-border, #303237); }
@@ -403,4 +388,3 @@ button:focus-visible { outline: 2px solid var(--color-accent, #ff7a1a); outline-
   color: #ef4444;
   font-size: 11px;
 }
-

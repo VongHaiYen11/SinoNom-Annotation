@@ -96,7 +96,7 @@ class GradioCallbacks(unittest.TestCase):
         editor_css=(Path(__file__).resolve().parents[1]/'ui/assets/editor.css').read_text()
         self.assertIn('.order-chips {',editor_css)
         self.assertIn('flex-wrap: wrap',editor_css)
-        self.assertIn('.order-chip-ghost {',editor_css)
+        self.assertNotIn('.order-chip-ghost',editor_css)
         self.assertIn('.order-chip.excluded {',editor_css)
         self.assertIn("content: '× Excluded'",editor_css)
         self.assertNotIn('.excluded-divider',editor_css)
@@ -131,9 +131,24 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn("removeEventListener('pointerup', handleOrderPointerUp, true)",script)
         self.assertIn("removeEventListener('pointercancel', handleOrderPointerCancel, true)",script)
         self.assertIn("addEventListener('lostpointercapture', handleOrderLostPointerCapture)",script)
-        self.assertIn("state.ghost.dataset.orderDragGhost = 'true'",script)
+        self.assertNotIn('cloneNode(true)',script)
+        self.assertNotIn('document.body.appendChild',script)
+        self.assertNotIn('orderDragGhost',script)
         self.assertIn("if (orderDrag) cleanupOrderDrag('rerender', false)",script)
         self.assertIn('captureTarget: element',script)
+
+    def test_repeated_alignment_characters_keep_distinct_chip_ids(self):
+        state=new_state();state.update(image='12305.png',image_size=[100,100],
+                                      image_url='image.jpg',current_step=4)
+        set_verified_content(state,{},'永寺永')
+        for x in (0,20,40):add_bbox(state,[x,0,x+10,10])
+        refresh_bbox_validation(state);initialize_alignment(state)
+        markup=snapshot(state)['markup']
+        self.assertEqual(markup.count('data-order-chip="1"'),3)
+        self.assertEqual(markup.count('data-token-id="1"'),1)
+        self.assertEqual(markup.count('data-token-id="2"'),1)
+        self.assertEqual(markup.count('data-token-id="3"'),1)
+        self.assertEqual(markup.count('data-character="永"'),2)
 
     def test_status_order_uses_sidebar_source_and_dominant_image_grid(self):
         state=new_state();state.update(image='12305.png',image_size=[100,100],
