@@ -122,12 +122,15 @@
 .source-preview p { margin: 0; overflow-wrap: anywhere; font-size: 18px; line-height: 1.7; white-space: pre-wrap; }
 
 .order-editor { display: flex; flex-direction: column; gap: var(--space-4, 16px); padding: var(--space-6, 24px); border-top: 1px solid var(--color-border, #303237); }
+
 .status-order-board {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   align-items: stretch;
+  height: 900px;
 }
+
 .status-order-board .order-editor {
   min-height: max(800px, 100%);
   max-height: max(800px, 100%);
