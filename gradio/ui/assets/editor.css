@@ -181,9 +181,8 @@
 .status-order-board .image-viewport {
   grid-row: 2;
   width: 100%;
-  height: 100%;
+  height: max(320px, calc(100dvh - 180px));
   min-height: 0;
-  max-height: 100%;
 }
 .status-order-board .status-legend { grid-row: 3; }
 .order-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3, 12px); }
@@ -284,6 +283,7 @@ button:focus-visible { outline: 2px solid var(--color-accent, #ff7a1a); outline-
   .workspace-toolbar { align-items: flex-start; }
   .dimensions { display: none; }
   .image-viewport { min-height: 320px; padding: var(--space-3, 12px); }
+  .status-order-board .image-viewport { height: auto; }
   .order-heading { align-items: flex-start; flex-direction: column; }
   .source-preview,
   .order-editor,
