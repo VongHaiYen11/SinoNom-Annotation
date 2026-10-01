@@ -129,10 +129,13 @@ const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-bo
 const root = element.closest('.gradio-container') || document;
 const statusColor = (status, unknown = false) => status === 'damaged' ? (unknown ? '#f59e0b' : '#ef4444') : '#22c55e';
 const applyAnnotationColor = () => {
-  if (props.value.step !== 3) return;
+  if (![3, 4].includes(props.value.step)) return;
   element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
     const rect = group.querySelector('rect:not([data-image-resize-handle])');
-    if (rect) { rect.setAttribute('fill', annotationColor); rect.setAttribute('stroke', annotationColor); }
+    if (rect) {
+      if (props.value.step === 3) rect.setAttribute('fill', annotationColor);
+      rect.setAttribute('stroke', annotationColor);
+    }
     const label = group.querySelector('text');
     if (label) label.setAttribute('fill', annotationColor);
   });
@@ -307,6 +310,7 @@ const renderLocalStatus = (id, status, unknown = null) => {
   }
   const label = group.querySelector('text');
   if (label) label.setAttribute('fill', color);
+  if (props.value.step === 4) applyAnnotationColor();
 };
 const renderSelection = (sync = true) => {
   const showResizeHandles = selectedIds.size === 1;
@@ -830,6 +834,7 @@ function renderSuspiciousPreview() {
     }
     const label = group.querySelector('text'); if (label) label.setAttribute('fill', stroke);
   });
+  applyAnnotationColor();
 }
 const orderRows = chips => {
   const rows = [];
