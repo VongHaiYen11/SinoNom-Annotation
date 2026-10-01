@@ -60,6 +60,7 @@
   align-items: center;
   justify-content: flex-start;
   flex: 1 1 auto;
+  height: max(320px, calc(100dvh - 180px));
   min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
