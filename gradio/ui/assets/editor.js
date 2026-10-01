@@ -1,5 +1,6 @@
 // Python owns persisted data. Browser-local state owns direct manipulation.
 let pending = false, pendingAction = null, moving = null, orderDrag = null;
+let suppressAlignmentClick = false, alignmentClickTimer = null;
 let syncingStatusControl = false;
 let syncingCoordinateControls = false;
 let isDirty = false, pendingSortSelectedRange = null;
@@ -944,6 +945,7 @@ const handleOrderPointerMove = event => {
   if (!state?.active || event.pointerId !== state.pointerId) return;
   if (!state.started && Math.hypot(event.clientX - state.startX, event.clientY - state.startY) < 4) return;
   if (!state.started) beginOrderDrag(event);
+  state.dragged = true;
   const reference = insertionReference(state.container, event.clientX, event.clientY);
   if (reference !== state.chip.nextElementSibling) {
     const first = captureChipRects(state.container);
@@ -956,6 +958,11 @@ const handleOrderPointerMove = event => {
 };
 const handleOrderPointerUp = event => {
   if (!orderDrag?.active || event.pointerId !== orderDrag.pointerId) return;
+  if (orderDrag.dragged) {
+    suppressAlignmentClick = true;
+    clearTimeout(alignmentClickTimer);
+    alignmentClickTimer = setTimeout(() => { suppressAlignmentClick = false; }, 0);
+  }
   finishOrderDrag(true);
 };
 const handleOrderPointerCancel = event => {
@@ -1311,6 +1318,13 @@ const updateSortModalPreview = () => {
 };
 
 root.addEventListener('click', event => {
+  if (suppressAlignmentClick && event.target.closest('[data-order-chip]')) {
+    event.preventDefault();
+    event.stopPropagation();
+    suppressAlignmentClick = false;
+    clearTimeout(alignmentClickTimer);
+    return;
+  }
   const nextBtn = event.target.closest('#next-button, #next-step, .next-button, [elem_id="next-button"]');
   if (nextBtn) {
     setSelection([], null);
