@@ -133,8 +133,10 @@ const applyAnnotationColor = () => {
   element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
     const rect = group.querySelector('rect:not([data-image-resize-handle])');
     if (rect) {
-      if (props.value.step === 3) rect.setAttribute('fill', annotationColor);
-      rect.setAttribute('stroke', annotationColor);
+      if (props.value.step === 3) {
+        rect.setAttribute('fill', annotationColor);
+        rect.setAttribute('stroke', annotationColor);
+      }
     }
     const label = group.querySelector('text');
     if (label) label.setAttribute('fill', annotationColor);
@@ -309,8 +311,7 @@ const renderLocalStatus = (id, status, unknown = null) => {
     rect.setAttribute('fill-opacity', suspicious ? '.20' : missing ? '.30' : '.04');
   }
   const label = group.querySelector('text');
-  if (label) label.setAttribute('fill', color);
-  if (props.value.step === 4) applyAnnotationColor();
+  if (label) label.setAttribute('fill', revealStatus ? color : annotationColor);
 };
 const renderSelection = (sync = true) => {
   const showResizeHandles = selectedIds.size === 1;
@@ -649,7 +650,7 @@ root.addEventListener('input', event => {
     }
     const conflict = Object.entries(localBoxes).find(([id, box]) => id !== activeBoxId && box.order === num);
     if (conflict) {
-      if (errorEl) errorEl.textContent = `Order ${num} is already used by box ${conflict[0]}.`;
+      if (errorEl) errorEl.textContent = `Order ${num} is already used by another box.`;
       return;
     }
     if (errorEl) errorEl.textContent = '';
@@ -832,7 +833,7 @@ function renderSuspiciousPreview() {
       rect.setAttribute('fill-opacity', suspicious ? '.20' : missing ? '.30' : '.04');
       rect.setAttribute('stroke', stroke);
     }
-    const label = group.querySelector('text'); if (label) label.setAttribute('fill', stroke);
+    const label = group.querySelector('text'); if (label && props.value.step !== 4) label.setAttribute('fill', stroke);
   });
   applyAnnotationColor();
 }
