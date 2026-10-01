@@ -144,7 +144,7 @@
 .status-order-board .review-editor {
   grid-column: 1;
   grid-row: 1 / -1;
-  height: 100%;
+  height: 1200px;
   min-height: 0;
   max-height: 100%;
   overflow-y: auto;
