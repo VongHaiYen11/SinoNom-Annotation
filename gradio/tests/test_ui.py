@@ -174,6 +174,14 @@ class GradioCallbacks(unittest.TestCase):
         for label in ('Image','Content','Bounding Boxes','Reading Order','Status','Crop','Review'):
             self.assertIn(f'>{label}</span>',markup)
 
+    def test_canvas_box_labels_are_order_driven(self):
+        editor_source=(Path(__file__).resolve().parents[1]/'ui/editor.py').read_text()
+        editor_js=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
+        self.assertIn('data-box-order-label="1"',editor_source)
+        self.assertIn("g.querySelector(':scope > [data-box-order-label]')",editor_js)
+        self.assertIn('text.textContent = labelText',editor_js)
+        self.assertIn("if (localBoxes[id]) localBoxes[id].order = idx + 1",editor_js)
+
     def test_sidebar_has_bounded_scroll_and_aligned_action_controls(self):
         css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
         self.assertIn('#header-stack {',css)

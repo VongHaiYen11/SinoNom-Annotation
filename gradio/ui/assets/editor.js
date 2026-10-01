@@ -7,6 +7,7 @@ let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId = null;
 let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
 let localMismatchConfirmed = false, pendingMismatchAction = null;
+let nextTemporaryBoxId = 1;
 let annotationColor = '#f4f4f5';
 const annotationColors = {
   White: '#f4f4f5', Cyan: '#22d3ee', Amber: '#f59e0b',
@@ -49,6 +50,7 @@ const updateValidationSummary = () => {
   const contentVerified = Boolean(props.value.contentVerified ?? true);
   const mismatchConfirmed = Boolean(props.value.mismatchConfirmed) || localMismatchConfirmed;
   const matched = contentVerified && boxCount === charCount && charCount > 0;
+  const canOrder = matched || mismatchConfirmed;
 
   if (!matched && !mismatchConfirmed) {
     let hasOrder = false;
@@ -89,11 +91,31 @@ const updateValidationSummary = () => {
   if (mismatchGroup && props.value.step === 3) {
     mismatchGroup.style.display = matched ? 'none' : 'block';
   }
+  const reason = canOrder ? '' : `Reading order is unavailable: ${boxCount} boxes for ${charCount} characters.`;
+  ['#sort-boxes', '#clear-box-orders'].forEach(selector => {
+    const control = root.querySelector(selector);
+    if (control) { control.disabled = !canOrder; control.title = reason; }
+  });
 };
 
-const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map(
-  ([id, box]) => [id, { ...box, bbox: [...box.bbox], unknown: Boolean(box.unknown), order: box.order ?? null }]
-));
+const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map(([id, box]) => {
+  const copy = structuredClone(box);
+  copy.bbox = [...box.bbox];
+  copy.unknown = Boolean(box.unknown);
+  copy.order = box.order ?? null;
+  return [String(id), copy];
+}));
+const assertUniqueBoxIds = (action) => {
+  const ids = Object.keys(localBoxes);
+  if (new Set(ids).size !== ids.length) throw new Error(`${action}: duplicate bounding-box IDs.`);
+};
+const traceTransition = (action, beforeIds) => {
+  const afterIds = Object.keys(localBoxes);
+  console.debug('BBOX STATE', { action, beforeCount: beforeIds.length, beforeIds,
+    afterCount: afterIds.length, afterIds });
+  assertUniqueBoxIds(action);
+};
+const serializeLocalBoxes = () => cloneBoxes(localBoxes);
 const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-box-id]')].find(
   group => (group.dataset?.boxId || group.getAttribute('data-box-id')) === String(id)
 );
@@ -301,11 +323,12 @@ const updateCanvasLabels = () => {
   Object.entries(localBoxes).forEach(([id, b]) => {
     const g = groupFor(id);
     if (!g) return;
-    let text = g.querySelector('text');
+    let text = g.querySelector(':scope > [data-box-order-label]');
     const hasOrder = b.order !== null && b.order !== undefined && b.order !== '';
     if (hasOrder || text) {
       if (!text) {
         text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('data-box-order-label', '1');
         text.setAttribute('pointer-events', 'none');
         text.setAttribute('paint-order', 'stroke');
         text.setAttribute('stroke', '#17191c');
@@ -327,6 +350,11 @@ const updateCanvasLabels = () => {
       const publicBox = props.value.step !== 6;
       const labelText = publicBox ? (hasOrder ? String(b.order) : '') : '';
       text.textContent = labelText;
+      g.dataset.order = hasOrder ? String(b.order) : '';
+      const title = g.querySelector(':scope > title');
+      if (title && props.value.step === 3) {
+        title.textContent = hasOrder ? `Region · order ${b.order}` : 'Region · order unassigned';
+      }
     }
   });
 };
@@ -336,7 +364,7 @@ const hydrateLocalState = () => {
   const preserveSelection = context === localContext;
   const preserveOrder = preserveSelection && ['select', 'suspicious'].includes(pendingAction);
   const previousBoxes = localBoxes;
-  if (pendingAction === 'sort_boxes_calc' && preserveSelection) {
+  if (['sort_boxes_calc', 'commit_boxes'].includes(pendingAction) && preserveSelection) {
     localBoxes = previousBoxes;
   } else {
     localBoxes = cloneBoxes(props.value.boxes);
@@ -397,6 +425,7 @@ const hydrateLocalState = () => {
     Object.entries(localBoxes).forEach(([id, box]) => renderLocalStatus(id, box.status, box.unknown));
   }
   renderSelection();
+  assertUniqueBoxIds('hydrate');
   readAnnotationColor();
   applyAnnotationColor();
 };
@@ -516,6 +545,7 @@ watch('value', () => {
     image = props.value.image;
   }
   hydrateLocalState();
+  if (pendingAction === 'commit_boxes') isDirty = false;
   pendingAction = null;
   requestAnimationFrame(applyZoom);
 });
@@ -572,28 +602,24 @@ root.addEventListener('input', event => {
       if (errorEl) errorEl.textContent = '';
       isDirty = true;
       updateCanvasLabels();
+      syncExternalControls();
       return;
     }
     const num = parseInt(val, 10);
-    if (isNaN(num) || num < 1) {
+    if (!/^\d+$/.test(val) || isNaN(num) || num < 1) {
       if (errorEl) errorEl.textContent = 'Order must be a positive integer.';
-      localBoxes[activeBoxId].order = null;
-      isDirty = true;
-      updateCanvasLabels();
       return;
     }
     const conflict = Object.entries(localBoxes).find(([id, box]) => id !== activeBoxId && box.order === num);
     if (conflict) {
       if (errorEl) errorEl.textContent = `Order ${num} is already used by box ${conflict[0]}.`;
-      localBoxes[activeBoxId].order = null;
-      isDirty = true;
-      updateCanvasLabels();
       return;
     }
     if (errorEl) errorEl.textContent = '';
     localBoxes[activeBoxId].order = num;
     isDirty = true;
     updateCanvasLabels();
+    syncExternalControls();
     return;
   }
   const modalStartInput = event.target.closest('#sort-modal-start');
@@ -1021,10 +1047,12 @@ element.addEventListener('pointerup', event => {
     state.rect.remove(); syncExternalControls(); return;
   }
   if (state.kind === 'add') {
+    const beforeIds = Object.keys(localBoxes);
     state.rect.remove();
     if (state.result && state.result[2] > state.result[0] && state.result[3] > state.result[1]) {
       const bbox = state.result;
-      const newId = 'box_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+      let newId;
+      do { newId = `box_new_${nextTemporaryBoxId++}`; } while (localBoxes[newId]);
       localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, order: null };
       localMismatchConfirmed = false;
 
@@ -1044,6 +1072,7 @@ element.addEventListener('pointerup', event => {
       group.appendChild(rect);
 
       const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('data-box-order-label', '1');
       const bw = bbox[2] - bbox[0], bh = bbox[3] - bbox[1];
       const unit = Math.max(props.value.width, props.value.height) / 900;
       const fontSize = Math.max(10 * unit, Math.min(bw, bh) * 0.30);
@@ -1077,21 +1106,24 @@ element.addEventListener('pointerup', event => {
 
       isDirty = true;
       setSelection([newId], newId);
+      traceTransition('ADD', beforeIds);
     }
     return;
   }
   if (state.kind === 'drag' && state.result) {
+    const beforeIds = Object.keys(localBoxes);
     Object.entries(state.result).forEach(([id, box]) => {
       localBoxes[id].bbox = [...box];
     });
     isDirty = true;
-    syncExternalControls(); return;
+    syncExternalControls(); traceTransition('MOVE', beforeIds); return;
   }
   if (state.kind === 'resize' && state.result && state.result[2] > state.result[0] && state.result[3] > state.result[1]) {
+    const beforeIds = Object.keys(localBoxes);
     localBoxes[state.id].bbox = [...state.result];
     isDirty = true;
     syncExternalControls();
-    return;
+    traceTransition('RESIZE', beforeIds); return;
   }
   if (state.kind === 'crop-new') {
     state.rect.remove();
@@ -1231,9 +1263,12 @@ const commitDraftState = (navigateNext = false) => {
     }
     return false;
   }
-  isDirty = false;
+  const snapshot = serializeLocalBoxes();
+  console.info(navigateNext ? 'NEXT SNAPSHOT' : 'APPLY SNAPSHOT', {
+    frontendCount: Object.keys(snapshot).length, frontendIDs: Object.keys(snapshot)
+  });
   send(navigateNext ? 'next' : 'commit_boxes', {
-    boxes: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.bbox])),
+    boxes: snapshot,
     orders: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.order])),
     statuses: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.status])),
     unknowns: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, Boolean(b.unknown)])),
@@ -1259,6 +1294,8 @@ root.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
     if (!selectedIds.size) return;
+    const beforeIds = Object.keys(localBoxes);
+    const deletedCount = selectedIds.size;
     selectedIds.forEach(id => {
       delete localBoxes[id];
       groupFor(id)?.remove();
@@ -1268,6 +1305,7 @@ root.addEventListener('click', event => {
     localMismatchConfirmed = false;
     isDirty = true;
     renderSelection();
+    traceTransition(`DELETE ${deletedCount}`, beforeIds);
     return;
   }
   const manualOrderContainer = event.target.closest('#manual-box-order');
@@ -1309,7 +1347,8 @@ root.addEventListener('click', event => {
         frontendIDs: Object.keys(localBoxes)
       });
       send('sort_boxes_calc', {
-        boxes: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.bbox]))
+        boxes: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.bbox])),
+        allBoxes: serializeLocalBoxes()
       });
     } else {
       openSortSelectedModal();
@@ -1351,6 +1390,7 @@ root.addEventListener('click', event => {
     });
     send('sort_boxes_calc', {
       boxes: Object.fromEntries([...selectedIds].map(id => [id, localBoxes[id].bbox])),
+      allBoxes: serializeLocalBoxes(),
       selectedIds: [...selectedIds]
     });
     event.preventDefault();
@@ -1372,6 +1412,7 @@ root.addEventListener('click', event => {
   }
   const confirmClearModal = event.target.closest('#clear-modal-confirm');
   if (confirmClearModal) {
+    const beforeIds = Object.keys(localBoxes);
     const modal = root.querySelector('#clear-order-modal');
     if (modal) modal.style.display = 'none';
     const targetIds = selectedIds.size > 0 ? [...selectedIds] : Object.keys(localBoxes);
@@ -1387,6 +1428,7 @@ root.addEventListener('click', event => {
     isDirty = true;
     updateCanvasLabels();
     renderSelection();
+    traceTransition('CLEAR ORDER', beforeIds);
     event.preventDefault();
     return;
   }
@@ -1399,6 +1441,8 @@ window.addEventListener('keydown', event => {
       return;
     }
     if (!selectedIds.size) return;
+    const beforeIds = Object.keys(localBoxes);
+    const deletedCount = selectedIds.size;
     selectedIds.forEach(id => {
       delete localBoxes[id];
       groupFor(id)?.remove();
@@ -1407,6 +1451,7 @@ window.addEventListener('keydown', event => {
     activeBoxId = null;
     isDirty = true;
     renderSelection();
+    traceTransition(`DELETE ${deletedCount}`, beforeIds);
     event.preventDefault();
   }
 });

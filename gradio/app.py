@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # This directory deliberately is NOT a Python package named gradio.
 import gradio as gr
-from annotation.state import new_state, source_mismatch_confirmed
+from annotation.state import new_state, source_mismatch_confirmed, calculate_spatial_order
 from annotation.reading_order import suspicious_box_ids
 from annotation.workflow import Workflow
 from annotation.io import (SUSPICIOUS_NOTE, final_document,
@@ -83,7 +83,9 @@ def snapshot_board_state_js(selection_index, label_text='Loading…'):
             snapshot.suspiciousTokenIds = [...cards.querySelectorAll('[data-order-chip].suspicious')]
                 .map(card => card.dataset.tokenId);
         }}
-        const groups = [...(board?.querySelectorAll('.annotation-canvas [data-box-id]') || [])];
+        // The hidden bridge is the canonical serialization of localBoxes.
+        // DOM geometry is only a legacy fallback when no local snapshot exists.
+        const groups = snapshot.boxes ? [] : [...(board?.querySelectorAll('.annotation-canvas [data-box-id]') || [])];
         const boxes = {{}};
         const statuses = {{}};
         const unknowns = {{}};
@@ -102,7 +104,7 @@ def snapshot_board_state_js(selection_index, label_text='Loading…'):
                 }}
             }}
         }}
-        if (Object.keys(boxes).length) snapshot.boxes = boxes;
+        if (!snapshot.boxes && Object.keys(boxes).length) snapshot.boxes = boxes;
         if (Object.keys(statuses).length) snapshot.statuses = statuses;
         if (Object.keys(unknowns).length) snapshot.unknowns = unknowns;
         args[{selection_index}] = JSON.stringify(snapshot);
@@ -649,8 +651,7 @@ def create_app(options):
                     return result
             if ctx['active']['current_step'] == 3:
                 try:
-                    ctx,_,_=commit_frontend_boxes(
-                        ctx, selection, (x1_value, y1_value, x2_value, y2_value))
+                    ctx,_,_=commit_frontend_boxes(ctx, selection)
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if (ctx['active']['current_step'] == 3
@@ -759,10 +760,15 @@ def create_app(options):
         def frontend_boxes(value):
             try:
                 parsed=json.loads(value or '{}')
-                boxes=parsed.get('boxes',{})
+                if 'boxes' not in parsed:
+                    return None
+                boxes=parsed['boxes']
                 if (not isinstance(boxes,dict)
-                        or any(not isinstance(uid,str) or not isinstance(bbox,list)
-                               or len(bbox) != 4 for uid,bbox in boxes.items())):
+                        or any(not isinstance(uid,str)
+                               or not isinstance(box,(list,dict))
+                               or not isinstance(box if isinstance(box,list) else box.get('bbox'),list)
+                               or len(box if isinstance(box,list) else box['bbox']) != 4
+                               for uid,box in boxes.items())):
                     raise ValueError
                 return boxes
             except (ValueError,TypeError,AttributeError):
@@ -771,7 +777,7 @@ def create_app(options):
             """Commit live canvas geometry plus the active sidebar coordinates."""
             boxes=frontend_boxes(selection)
             active,selected=frontend_selection(selection)
-            if not boxes:
+            if boxes is None:
                 boxes={
                     uid:list(region['bbox'])
                     for uid,region in ctx['active']['regions'].items()
@@ -788,13 +794,14 @@ def create_app(options):
                 elif not active or any(coordinate is None for coordinate in coordinates):
                     raise ValueError('Select a box and enter all four coordinates.')
                 else:
-                    boxes[active]=list(coordinates)
+                    current=boxes.get(active)
+                    boxes[active]=(dict(current,bbox=list(coordinates))
+                                   if isinstance(current,dict) else list(coordinates))
                     if active not in selected:selected=[*selected,active]
-            if boxes:
-                updated=engine.apply(ctx['active'],'commit_boxes',{
-                    'boxes':boxes,'active':active,'selected':selected,
-                })
-                ctx=dict(ctx,active=updated)
+            updated=engine.apply(ctx['active'],'commit_boxes',{
+                'boxes':boxes,'active':active,'selected':selected,
+            })
+            ctx=dict(ctx,active=updated)
             return ctx,active,selected
         def frontend_crop(value):
             try:
@@ -920,16 +927,9 @@ def create_app(options):
             except Exception as exc:
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
         # Frontend draft state & modal handle sort_boxes cleanly via sort_boxes_calc bridge
-        def apply_bbox_edits(ctx,selection,a,b,d,e):
-            try:
-                ctx,_,_=commit_frontend_boxes(ctx,selection,(a,b,d,e))
-                gr.Info('Saved.')
-                return render(ctx)
-            except Exception as exc:
-                return render(ctx,WARNING+' '+html.escape(str(exc)))
-        clear_loading_when_done(apply_bbox_changes.click(
-            apply_bbox_edits,[session,selection_bridge,x1,y1,x2,y2],
-            **dict(event_args,js=snapshot_board_state_js(1))))
+        # Apply is handled exclusively by the editor's ``commit_boxes`` action.
+        # Attaching a second Gradio click callback here caused two competing
+        # snapshots to be committed from one user click.
         def confirm_source_mismatch(ctx,issue_type,note):
             return run(ctx,'confirm_source_mismatch',dict(issue_type=issue_type,note=note))
         def clear_source_mismatch(ctx):
@@ -966,6 +966,42 @@ def create_app(options):
             apply_reading_order,[session,selection_bridge,status],
             **dict(event_args,js=snapshot_board_state_js(1))))
         def on_action(ctx,evt:gr.EventData):
+            if evt._data['action'] == 'sort_boxes_calc':
+                try:
+                    payload=evt._data.get('payload') or {}
+                    raw=payload.get('boxes')
+                    if not isinstance(raw,dict):
+                        raise ValueError('Sort requires the current frontend box snapshot.')
+                    boxes={
+                        str(uid):(box.get('bbox') if isinstance(box,dict) else box)
+                        for uid,box in raw.items()
+                    }
+                    ordered=calculate_spatial_order(boxes,ctx['active']['image_size'])
+                    if set(ordered) != set(boxes) or len(ordered) != len(boxes):
+                        raise ValueError('Sorter did not return every frontend box exactly once.')
+                    log.info('SORT: frontend count=%d sent IDs=%s returned IDs=%s',
+                             len(boxes),list(boxes),ordered)
+                    result=render(ctx)
+                    transient=deepcopy(ctx['active'])
+                    all_boxes=payload.get('allBoxes')
+                    if isinstance(all_boxes,dict):
+                        transient['regions']={
+                            str(uid):dict(box) for uid,box in all_boxes.items()
+                            if isinstance(box,dict)
+                        }
+                        transient['selected_region_uids']=[
+                            uid for uid in payload.get('selectedIds',[])
+                            if uid in transient['regions']
+                        ]
+                        transient['selected_region_uid']=(
+                            transient['selected_region_uids'][-1]
+                            if transient['selected_region_uids'] else None)
+                    board_value=snapshot(transient)
+                    board_value['calcSortedBoxIds']=ordered
+                    result[8]=gr.update(value=board_value,visible=True)
+                    return result
+                except Exception as exc:
+                    return render(ctx,WARNING+' '+html.escape(str(exc)))
             return run(ctx,evt._data['action'],evt._data['payload'])
         board.action(on_action,[session],outputs=outputs,concurrency_id='annotation-actions',
                      concurrency_limit=1,show_progress='hidden')

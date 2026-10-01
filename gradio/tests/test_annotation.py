@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from annotation.state import new_state, set_verified_content, refresh_bbox_validation, initialize_alignment
-from annotation.bbox import add_bbox, update_bbox, update_bboxes, delete_bbox
+from annotation.bbox import (add_bbox, update_bbox, update_bboxes, delete_bbox,
+                             sync_draft_boxes)
 from annotation.text_alignment import count_annotation_characters, normalize_annotation_text
 from annotation.reading_order import (update_text_sequence, update_text_tokens,
                                       build_text_sequence, suspicious_box_ids,
@@ -101,6 +102,28 @@ class Invariants(unittest.TestCase):
         with self.assertRaises(ValueError):
             update_bboxes(invalid,{uids[0]:[2,2,7,7],uids[1]:[0,0,101,10]})
         self.assertEqual(invalid,before)
+
+    def test_frontend_snapshot_replaces_regions_and_preserves_metadata(self):
+        s=state();uids=list(s['regions'])
+        snapshot={
+            uids[0]:dict(s['regions'][uids[0]],bbox=[1,1,8,8],order=4,
+                         character='永',custom_flag='kept'),
+            'box_new_1':dict(bbox=[40,0,49,9],status='damaged',unknown=True,
+                             order=None,character=None),
+        }
+        sync_draft_boxes(s,{'boxes':snapshot,'active':'box_new_1',
+                            'selected':['box_new_1']})
+        self.assertEqual(set(s['regions']),{uids[0],'box_new_1'})
+        self.assertEqual(s['regions'][uids[0]]['custom_flag'],'kept')
+        self.assertEqual(s['regions']['box_new_1']['status'],'damaged')
+        self.assertEqual(s['regions']['box_new_1']['order'],None)
+        self.assertEqual(s['selected_region_uid'],'box_new_1')
+
+    def test_empty_frontend_snapshot_does_not_restore_backend_regions(self):
+        s=state()
+        sync_draft_boxes(s,{'boxes':{},'active':None,'selected':[]})
+        self.assertEqual(s['regions'],{})
+        self.assertEqual(s['bounding_boxes'],{})
 
     def test_reorder_assigns_character_tokens_to_coordinate_slots(self):
         s=aligned_state()

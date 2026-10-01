@@ -1,6 +1,9 @@
 import math
+import logging
 from uuid import uuid4
 from .state import invalidate
+
+log = logging.getLogger(__name__)
 
 
 def validate_coordinates(bbox, size):
@@ -35,49 +38,47 @@ def update_bbox(state, region_uid, bbox):
 
 
 def update_bboxes(state, boxes, active=None, selected=None):
-    """Commit one completed frontend manipulation as a single transaction."""
-    if not isinstance(boxes, dict) or not boxes:
-        raise ValueError('A bounding-box commit must contain at least one box.')
+    """Replace regions with one complete frontend snapshot.
+
+    ``boxes`` accepts the legacy ``{id: bbox}`` shape and the canonical
+    ``{id: box}`` shape.  Existing/new metadata is retained; this function
+    never merges missing backend regions back into the snapshot.
+    """
+    if not isinstance(boxes, dict):
+        raise ValueError('A bounding-box commit must be an object keyed by box ID.')
     
     # Pre-validate all coordinates before mutating state
-    validated = {
-        uid: validate_coordinates(bbox, state['image_size'])
-        for uid, bbox in boxes.items()
-    }
-    
-    # Remove regions deleted on frontend
-    for uid in list(state['regions'].keys()):
-        if uid not in boxes:
-            delete_bbox(state, uid)
+    normalized = {}
+    for uid, value in boxes.items():
+        if not isinstance(uid, str) or not uid:
+            raise ValueError('Every bounding box must have a unique string ID.')
+        box = dict(value) if isinstance(value, dict) else {'bbox': value}
+        box['bbox'] = validate_coordinates(box.get('bbox'), state['image_size'])
+        box.setdefault('status', 'intact')
+        box.setdefault('unknown', False)
+        if box['status'] not in {'intact', 'damaged', 'unknown'}:
+            raise ValueError(f'Invalid status for box {uid}.')
+        box['unknown'] = bool(box['unknown']) if box['status'] == 'damaged' else False
+        normalized[uid] = box
 
-    # Update or add regions
-    for uid, bbox in validated.items():
-        if uid not in state['regions']:
-            state['regions'][uid] = dict(bbox=bbox, status='intact', unknown=False)
-        else:
-            state['regions'][uid]['bbox'] = bbox
-
-        box_id = state.get('box_id_by_region', {}).get(uid)
-        if box_id in state.get('bounding_boxes', {}):
-            state['bounding_boxes'][box_id]['bbox'] = list(bbox)
+    # Replacement semantics are deliberate: deleted frontend IDs stay deleted.
+    state['regions'] = normalized
 
     selected = list(dict.fromkeys(selected or []))
     selected = [uid for uid in selected if uid in state['regions']]
     state['selected_region_uids'] = selected
     state['selected_region_uid'] = active if active in state['regions'] else (selected[-1] if selected else next(iter(state['regions']), None))
 
-    mapped = set(state.get('box_id_by_region', {}))
-    if set(state['regions']).issubset(mapped):
-        state['saved'] = False
-    else:
-        invalidate(state, clear=True)
+    invalidate(state, clear=True)
 
 
 def sync_draft_boxes(state, payload):
     """Synchronize frontend draft boxes, statuses, unknowns, and orders to Python state."""
     boxes = payload.get('boxes')
-    if not isinstance(boxes, dict) or not boxes:
+    if not isinstance(boxes, dict):
         return
+
+    log.info('APPLY: frontend/Python received count=%d IDs=%s', len(boxes), list(boxes))
 
     update_bboxes(state, boxes, payload.get('active'), payload.get('selected'))
 
@@ -90,14 +91,23 @@ def sync_draft_boxes(state, payload):
         if uid in state['regions']:
             state['regions'][uid]['unknown'] = bool(unk)
 
+    # Orders are draft metadata and may be incomplete.  Apply saves progress;
+    # only a complete 1..N set materializes the public alignment mapping.
     orders = payload.get('orders', {})
+    if not orders:
+        orders = {uid: box.get('order') for uid, box in state['regions'].items()}
+    for uid in state['regions']:
+        state['regions'][uid]['order'] = orders.get(uid)
     if orders and isinstance(orders, dict):
         val_orders = {}
         for uid in state['regions']:
             o = orders.get(uid)
             if o is not None:
                 try:
-                    val_orders[uid] = int(o)
+                    parsed = int(o)
+                    if isinstance(o, bool) or float(o) != parsed or parsed < 1:
+                        raise ValueError
+                    val_orders[uid] = parsed
                 except (ValueError, TypeError):
                     pass
         n = len(state['regions'])
@@ -123,6 +133,8 @@ def sync_draft_boxes(state, payload):
                 elif source_mismatch_confirmed(state):
                     state['reading_order'] = ids
                     state['workflow']['alignment_valid'] = True
+    log.info('APPLY: persisted draft count=%d IDs=%s',
+             len(state['regions']), list(state['regions']))
 
 
 def delete_bbox(state, region_uid):
@@ -143,4 +155,3 @@ def delete_bbox(state, region_uid):
     state['workflow'].update(alignment_valid=False, status_valid=False,
                              reading_order_valid=False)
     state['saved'] = False
-

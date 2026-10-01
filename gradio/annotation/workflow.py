@@ -474,41 +474,12 @@ class Workflow:
                 s['selected_region_uids'] = [uid for uid in s.get('selected_region_uids', []) if uid in s['regions']]
                 s['selected_region_uid'] = s['selected_region_uids'][-1] if s['selected_region_uids'] else next(iter(s['regions']), None)
             refresh_bbox_validation(s)
-            if action in ('add', 'delete', 'detect', 'commit_boxes'):
+            if action in ('add', 'delete', 'detect'):
+                s['source_mismatch'] = None
+            elif action == 'commit_boxes' and not source_mismatch_confirmed(s):
                 s['source_mismatch'] = None
         elif action == 'sort_boxes_calc':
-            require(s, 'content_verified')
-            input_boxes = payload.get('boxes', {})
-            if isinstance(input_boxes, list):
-                boxes_dict = {
-                    item['id']: item['bbox']
-                    for item in input_boxes
-                    if isinstance(item, dict) and 'id' in item and 'bbox' in item
-                }
-            elif isinstance(input_boxes, dict):
-                boxes_dict = input_boxes
-            else:
-                boxes_dict = {}
-
-            if boxes_dict:
-                for uid, bbox in boxes_dict.items():
-                    if uid in s['regions']:
-                        s['regions'][uid]['bbox'] = list(bbox)
-
-            refresh_bbox_validation(s)
-            from annotation.state import calculate_spatial_order
-            ordered_uids = calculate_spatial_order(boxes_dict or {k: v['bbox'] for k, v in s['regions'].items()}, s['image_size'])
-            s['calc_sorted_box_ids'] = ordered_uids
-
-            if s['workflow']['bbox_valid'] or source_mismatch_confirmed(s):
-                try:
-                    initialize_alignment(s)
-                except Exception as exc:
-                    log.warning('Could not initialize alignment during sort_boxes_calc: %s', exc)
-
-            log.info('SORT PYTHON INPUT: count=%d, IDs=%s', len(boxes_dict), list(boxes_dict.keys()))
-            log.info('SORT RESPONSE: count=%d, ordered IDs=%s', len(ordered_uids), ordered_uids)
-            return s
+            raise ValueError('sort_boxes_calc is calculation-only and must use the UI adapter.')
         elif action == 'sort_boxes':
             require(s, 'content_verified')
             if step != 3:
@@ -611,7 +582,7 @@ class Workflow:
                     raise ValueError('Suspicious token selection is invalid.')
                 s['suspicious_token_ids'] = sorted(suspicious_ids, key=int)
         elif action == 'next':
-            if payload and payload.get('boxes'):
+            if payload and 'boxes' in payload:
                 sync_draft_boxes(s, payload)
             s['selected_region_uid'] = None
             s['selected_region_uids'] = []
@@ -631,7 +602,19 @@ class Workflow:
                     if n > 0 and set(s['regions']).issubset(mapped) and len(mapped) == n:
                         s['workflow']['alignment_valid'] = True
                     else:
-                        raise ValueError('Sort boxes before continuing so the numbered reading order is saved.')
+                        orders=[box.get('order') for box in s['regions'].values()]
+                        integers=[value for value in orders
+                                  if isinstance(value,int) and not isinstance(value,bool)
+                                  and value >= 1]
+                        missing=sorted(set(range(1,n+1))-set(integers))
+                        duplicates=sorted({value for value in integers
+                                           if integers.count(value)>1})
+                        details=[f'Expected reading order 1–{n}.']
+                        if any(value is None for value in orders):
+                            details.append(f'Unassigned boxes: {sum(value is None for value in orders)}.')
+                        if missing:details.append('Missing: '+', '.join(map(str,missing))+'.')
+                        if duplicates:details.append('Duplicate: '+', '.join(map(str,duplicates))+'.')
+                        raise ValueError(' '.join(details))
                 if (source_mismatch_confirmed(s)
                         and s['source_mismatch']['issue_type'] == 'other'):
                     s['current_step'] = 7
