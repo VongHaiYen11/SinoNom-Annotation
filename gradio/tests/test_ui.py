@@ -182,6 +182,17 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('text.textContent = labelText',editor_js)
         self.assertIn("if (localBoxes[id]) localBoxes[id].order = idx + 1",editor_js)
 
+    def test_box_count_changes_invalidate_mismatch_confirmation(self):
+        app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
+        editor_js=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
+        self.assertIn('mismatchConfirmationInvalidated = true',editor_js)
+        self.assertIn('!mismatchConfirmationInvalidated',editor_js)
+        self.assertIn('ctx,_,_=commit_frontend_boxes(ctx,selection)',app_source)
+        self.assertIn('[session,mismatch_type,mismatch_note,selection_bridge]',app_source)
+        self.assertIn('snapshot_board_state_js(3)',app_source)
+        self.assertIn('board.dataset.localBoxesSnapshot = serializedSnapshot',editor_js)
+        self.assertIn('snapshot = JSON.parse(board.dataset.localBoxesSnapshot)',app_source)
+
     def test_sidebar_has_bounded_scroll_and_aligned_action_controls(self):
         css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
         self.assertIn('#header-stack {',css)

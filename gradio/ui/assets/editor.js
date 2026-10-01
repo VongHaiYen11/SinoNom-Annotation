@@ -6,7 +6,8 @@ let isDirty = false, pendingSortSelectedRange = null;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId = null;
 let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
-let localMismatchConfirmed = false, pendingMismatchAction = null;
+let localMismatchConfirmed = false, mismatchConfirmationInvalidated = false;
+let pendingMismatchAction = null;
 let nextTemporaryBoxId = 1;
 let annotationColor = '#f4f4f5';
 const annotationColors = {
@@ -22,7 +23,8 @@ const canEditReadingOrder = () => {
   const boxCount = Object.keys(localBoxes).length;
   const charCount = dds.length >= 2 ? (parseInt(dds[1].textContent.trim(), 10) || 0) : 0;
   const bboxValid = boxCount === charCount && boxCount > 0;
-  const mismatchConfirmed = Boolean(props.value?.mismatchConfirmed) || localMismatchConfirmed;
+  const mismatchConfirmed = !mismatchConfirmationInvalidated
+    && (Boolean(props.value?.mismatchConfirmed) || localMismatchConfirmed);
   return step >= 3 && (bboxValid || mismatchConfirmed);
 };
 
@@ -48,7 +50,8 @@ const updateValidationSummary = () => {
   }
 
   const contentVerified = Boolean(props.value.contentVerified ?? true);
-  const mismatchConfirmed = Boolean(props.value.mismatchConfirmed) || localMismatchConfirmed;
+  const mismatchConfirmed = !mismatchConfirmationInvalidated
+    && (Boolean(props.value.mismatchConfirmed) || localMismatchConfirmed);
   const matched = contentVerified && boxCount === charCount && charCount > 0;
   const canOrder = matched || mismatchConfirmed;
 
@@ -158,7 +161,7 @@ const setInputValue = (selector, value) => {
 };
 const syncExternalControls = () => {
   updateValidationSummary();
-  setInputValue('#selection-bridge', JSON.stringify({
+  const bridgeSnapshot = {
     active: activeBoxId,
     selected: [...selectedIds],
     statuses: Object.fromEntries(Object.entries(localBoxes).map(
@@ -167,9 +170,7 @@ const syncExternalControls = () => {
     unknowns: Object.fromEntries(Object.entries(localBoxes).map(
       ([id, box]) => [id, Boolean(box.status === 'damaged' && box.unknown)]
     )),
-    boxes: Object.fromEntries(Object.entries(localBoxes).map(
-      ([id, box]) => [id, [...box.bbox]]
-    )),
+    boxes: serializeLocalBoxes(),
     orders: Object.fromEntries(Object.entries(localBoxes).map(
       ([id, box]) => [id, box.order ?? null]
     )),
@@ -178,7 +179,14 @@ const syncExternalControls = () => {
     tokenOrder: [...(element.querySelectorAll('.order-chips [data-order-chip]') || [])]
       .map(chip => chip.dataset.tokenId),
     suspiciousTokenIds: [...localSuspiciousTokenIds],
-  }));
+  };
+  const serializedSnapshot = JSON.stringify(bridgeSnapshot);
+  // Gradio component values can lag one browser event behind. Keep a
+  // synchronous snapshot on the board for button preprocessors such as
+  // Confirm Source Mismatch and Next.
+  const board = element.querySelector('.workbench-board');
+  if (board) board.dataset.localBoxesSnapshot = serializedSnapshot;
+  setInputValue('#selection-bridge', serializedSnapshot);
   const active = activeBoxId && localBoxes[activeBoxId];
   if (props.value.step === 4) {
     const suspicious = root.querySelector('#suspicious-toggle input[type="checkbox"]');
@@ -368,6 +376,12 @@ const hydrateLocalState = () => {
     localBoxes = previousBoxes;
   } else {
     localBoxes = cloneBoxes(props.value.boxes);
+  }
+  // A successful backend confirmation is only accepted after its exact box
+  // snapshot has initialized this editor. Local Add/Delete invalidates it.
+  if (props.value.mismatchConfirmed && !['sort_boxes_calc'].includes(pendingAction)) {
+    localMismatchConfirmed = true;
+    mismatchConfirmationInvalidated = false;
   }
 
   Object.entries(localBoxes).forEach(([id, box]) => {
@@ -1055,6 +1069,7 @@ element.addEventListener('pointerup', event => {
       do { newId = `box_new_${nextTemporaryBoxId++}`; } while (localBoxes[newId]);
       localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, order: null };
       localMismatchConfirmed = false;
+      mismatchConfirmationInvalidated = true;
 
       const svg = state.svg;
       const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -1303,6 +1318,7 @@ root.addEventListener('click', event => {
     selectedIds.clear();
     activeBoxId = null;
     localMismatchConfirmed = false;
+    mismatchConfirmationInvalidated = true;
     isDirty = true;
     renderSelection();
     traceTransition(`DELETE ${deletedCount}`, beforeIds);
@@ -1449,6 +1465,8 @@ window.addEventListener('keydown', event => {
     });
     selectedIds.clear();
     activeBoxId = null;
+    localMismatchConfirmed = false;
+    mismatchConfirmationInvalidated = true;
     isDirty = true;
     renderSelection();
     traceTransition(`DELETE ${deletedCount}`, beforeIds);

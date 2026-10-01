@@ -75,6 +75,11 @@ def snapshot_board_state_js(selection_index, label_text='Loading…'):
         const cards = board?.querySelector('.order-chips');
         let snapshot = {{}};
         try {{ snapshot = JSON.parse(args[{selection_index}] || '{{}}'); }} catch (_) {{}}
+        // Prefer the editor-owned synchronous snapshot. The Gradio textbox
+        // value may still contain the state from the preceding browser event.
+        if (board?.dataset?.localBoxesSnapshot) {{
+            try {{ snapshot = JSON.parse(board.dataset.localBoxesSnapshot); }} catch (_) {{}}
+        }}
         if (cards) {{
             snapshot.textSequence = [...cards.querySelectorAll('[data-order-chip]')]
                 .map(card => card.dataset.character);
@@ -930,12 +935,21 @@ def create_app(options):
         # Apply is handled exclusively by the editor's ``commit_boxes`` action.
         # Attaching a second Gradio click callback here caused two competing
         # snapshots to be committed from one user click.
-        def confirm_source_mismatch(ctx,issue_type,note):
-            return run(ctx,'confirm_source_mismatch',dict(issue_type=issue_type,note=note))
+        def confirm_source_mismatch(ctx,issue_type,note,selection):
+            try:
+                # A mismatch confirmation belongs to an exact box count. Commit
+                # the authoritative localBoxes snapshot before recording it.
+                ctx,_,_=commit_frontend_boxes(ctx,selection)
+                return run(ctx,'confirm_source_mismatch',dict(
+                    issue_type=issue_type,note=note))
+            except Exception as exc:
+                return render(ctx,WARNING+' '+html.escape(str(exc)))
         def clear_source_mismatch(ctx):
             return run(ctx,'clear_source_mismatch')
         clear_loading_when_done(confirm_mismatch.click(
-            confirm_source_mismatch,[session,mismatch_type,mismatch_note],**event_args))
+            confirm_source_mismatch,
+            [session,mismatch_type,mismatch_note,selection_bridge],
+            **dict(event_args,js=snapshot_board_state_js(3))))
         clear_loading_when_done(clear_mismatch.click(
             clear_source_mismatch,[session],**event_args))
         for selector in (box_id,status_id):
