@@ -92,7 +92,7 @@ const updateValidationSummary = () => {
 
   const mismatchGroup = root.querySelector('.mismatch-panel') || root.querySelector('#mismatch_group');
   if (mismatchGroup && props.value.step === 3) {
-    mismatchGroup.style.display = matched ? 'none' : 'block';
+    mismatchGroup.style.display = matched && !props.value.mismatchRecorded ? 'none' : 'block';
   }
   const reason = canOrder ? '' : `Reading order is unavailable: ${boxCount} boxes for ${charCount} characters.`;
   ['#sort-boxes', '#clear-box-orders'].forEach(selector => {
@@ -1218,81 +1218,6 @@ const updateSortModalPreview = () => {
   }
 };
 
-const validateDraftState = (strictReadingOrder = false) => {
-  const boxes = Object.entries(localBoxes);
-  if (!boxes.length) return { valid: true };
-
-  for (const [id, box] of boxes) {
-    if (!box.bbox || box.bbox.length !== 4 || box.bbox[0] >= box.bbox[2] || box.bbox[1] >= box.bbox[3]) {
-      return { valid: false, error: `Box ${id} has invalid coordinates.` };
-    }
-  }
-
-  if (!strictReadingOrder) return { valid: true };
-
-  const N = boxes.length;
-  const missing = [];
-  const duplicates = [];
-  const counts = {};
-
-  for (let i = 1; i <= N; i++) counts[i] = 0;
-
-  for (const [id, box] of boxes) {
-    if (box.order === null || box.order === undefined || isNaN(box.order) || box.order < 1) {
-      missing.push(`Box ${id}`);
-    } else {
-      counts[box.order] = (counts[box.order] || 0) + 1;
-    }
-  }
-
-  for (let i = 1; i <= N; i++) {
-    if (!counts[i] || counts[i] === 0) {
-      missing.push(`Order ${i}`);
-    } else if (counts[i] > 1) {
-      duplicates.push(`Order ${i}`);
-    }
-  }
-
-  if (missing.length || duplicates.length) {
-    const parts = ['Reading order is invalid for Step 4.'];
-    parts.push(`Expected continuous sequence: 1–${N}.`);
-    if (missing.length) parts.push(`Missing / unassigned: ${missing.join(', ')}.`);
-    if (duplicates.length) parts.push(`Duplicates: ${duplicates.join(', ')}.`);
-    parts.push('Please review reading order before continuing.');
-    return { valid: false, error: parts.join('<br>') };
-  }
-
-  return { valid: true };
-};
-
-const commitDraftState = (navigateNext = false) => {
-  const res = validateDraftState(navigateNext);
-  if (!res.valid) {
-    const modal = root.querySelector('#order-validation-modal');
-    const body = root.querySelector('#order-alert-body');
-    if (modal && body) {
-      body.innerHTML = res.error;
-      modal.style.display = 'flex';
-    } else {
-      alert(res.error.replace(/<br>/g, '\n'));
-    }
-    return false;
-  }
-  const snapshot = serializeLocalBoxes();
-  console.info(navigateNext ? 'NEXT SNAPSHOT' : 'APPLY SNAPSHOT', {
-    frontendCount: Object.keys(snapshot).length, frontendIDs: Object.keys(snapshot)
-  });
-  send(navigateNext ? 'next' : 'commit_boxes', {
-    boxes: snapshot,
-    orders: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.order])),
-    statuses: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.status])),
-    unknowns: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, Boolean(b.unknown)])),
-    active: activeBoxId,
-    selected: [...selectedIds],
-  });
-  return true;
-};
-
 root.addEventListener('click', event => {
   const nextBtn = event.target.closest('#next-button, #next-step, .next-button, [elem_id="next-button"]');
   if (nextBtn) {
@@ -1372,12 +1297,6 @@ root.addEventListener('click', event => {
     event.preventDefault();
     return;
   }
-  const applyBtn = event.target.closest('#apply-bbox-changes');
-  if (applyBtn) {
-    commitDraftState(false);
-    event.preventDefault();
-    return;
-  }
   const cancelMismatchModal = event.target.closest('#mismatch-modal-cancel');
   if (cancelMismatchModal) {
     const modal = root.querySelector('#mismatch-confirm-modal');
@@ -1409,13 +1328,6 @@ root.addEventListener('click', event => {
       allBoxes: serializeLocalBoxes(),
       selectedIds: [...selectedIds]
     });
-    event.preventDefault();
-    return;
-  }
-  const closeAlertModal = event.target.closest('#order-alert-close');
-  if (closeAlertModal) {
-    const modal = root.querySelector('#order-validation-modal');
-    if (modal) modal.style.display = 'none';
     event.preventDefault();
     return;
   }

@@ -476,8 +476,6 @@ class Workflow:
             refresh_bbox_validation(s)
             if action in ('add', 'delete', 'detect'):
                 s['source_mismatch'] = None
-            elif action == 'commit_boxes' and not source_mismatch_confirmed(s):
-                s['source_mismatch'] = None
         elif action == 'sort_boxes_calc':
             raise ValueError('sort_boxes_calc is calculation-only and must use the UI adapter.')
         elif action == 'sort_boxes':

@@ -207,15 +207,6 @@ def snapshot(s):
         </div>
       </div>
     </div>
-    <div id="order-validation-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="order-alert-title">
-      <div class="modal-card modal-card-error">
-        <h3 id="order-alert-title">Reading Order Invalid</h3>
-        <div id="order-alert-body" class="modal-error-body"></div>
-        <div class="modal-actions">
-          <button type="button" id="order-alert-close" class="btn btn-primary">Close & Review</button>
-        </div>
-      </div>
-    </div>
     '''
     markup+='</div>'
     calc_sorted = s.pop('calc_sorted_box_ids', None)
@@ -224,6 +215,7 @@ def snapshot(s):
                 calcSortedBoxIds=calc_sorted,
                 bboxValid=s['workflow'].get('bbox_valid', False),
                 mismatchConfirmed=source_mismatch_confirmed(s),
+                mismatchRecorded=bool(s.get('source_mismatch')),
                 readingOrder=list(s['reading_order']),
                 spatialBoxOrder=(list(s.get('reading_order', [])) if s.get('bounding_boxes') else []),
                 suspiciousTokenIds=list(map(str,s.get('suspicious_token_ids',[]))),

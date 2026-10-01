@@ -291,8 +291,6 @@ def create_app(options):
                     detect_confirm=gr.Checkbox(value=False,visible=False)
                     detect=gr.Button('Run Detection', variant='primary',
                                      interactive=not skip_detection,elem_id='run-detection')
-                    apply_bbox_changes=gr.Button('Apply Changes', variant='primary',
-                                                elem_id='apply-bbox-changes')
                     with gr.Group(visible=False,
                                   elem_classes=['section','sidebar-section','sidebar-component','mismatch-panel']) as mismatch_group:
                         gr.Markdown('### Box-Content Mismatch')
@@ -464,7 +462,7 @@ def create_app(options):
                     status_rows(s),gr.update(visible=step==3 and has),
                     gr.update(value=issue.get('issue_type')),
                     gr.update(value=issue.get('note','')),
-                    gr.update(interactive=has and step==3),gr.update(visible=mismatch),
+                    gr.update(interactive=has and step==3),gr.update(visible=bool(issue)),
                     gr.update(visible=has and step==3),
                     workflow_progress(s),LOADING_HIDDEN,
                     gr.update(visible=step==1),gr.update(visible=has and step>1),
@@ -931,10 +929,7 @@ def create_app(options):
                 return run(ctx,'sort_boxes')
             except Exception as exc:
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
-        # Frontend draft state & modal handle sort_boxes cleanly via sort_boxes_calc bridge
-        # Apply is handled exclusively by the editor's ``commit_boxes`` action.
-        # Attaching a second Gradio click callback here caused two competing
-        # snapshots to be committed from one user click.
+        # Frontend draft state & modal handle sort_boxes via sort_boxes_calc.
         def confirm_source_mismatch(ctx,issue_type,note,selection):
             try:
                 # A mismatch confirmation belongs to an exact box count. Commit
@@ -944,14 +939,21 @@ def create_app(options):
                     issue_type=issue_type,note=note))
             except Exception as exc:
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
-        def clear_source_mismatch(ctx):
-            return run(ctx,'clear_source_mismatch')
+        def clear_source_mismatch(ctx,selection):
+            try:
+                # Clearing mismatch metadata must not reload the older backend
+                # box collection. Persist the exact localBoxes draft first.
+                ctx,_,_=commit_frontend_boxes(ctx,selection)
+                return run(ctx,'clear_source_mismatch')
+            except Exception as exc:
+                return render(ctx,WARNING+' '+html.escape(str(exc)))
         clear_loading_when_done(confirm_mismatch.click(
             confirm_source_mismatch,
             [session,mismatch_type,mismatch_note,selection_bridge],
             **dict(event_args,js=snapshot_board_state_js(3))))
         clear_loading_when_done(clear_mismatch.click(
-            clear_source_mismatch,[session],**event_args))
+            clear_source_mismatch,[session,selection_bridge],
+            **dict(event_args,js=snapshot_board_state_js(1))))
         for selector in (box_id,status_id):
             clear_loading_when_done(selector.input(lambda c,i:run(c,'select',dict(id=i)),[session,selector],**event_args))
         def parse_action(c,a,key,value):

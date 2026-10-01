@@ -8,7 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from annotation.state import new_state, set_verified_content, refresh_bbox_validation, initialize_alignment
+from annotation.state import (new_state, set_verified_content, refresh_bbox_validation,
+                              initialize_alignment, source_mismatch_confirmed)
 from annotation.bbox import (add_bbox, update_bbox, update_bboxes, delete_bbox,
                              sync_draft_boxes)
 from annotation.text_alignment import count_annotation_characters, normalize_annotation_text
@@ -124,6 +125,21 @@ class Invariants(unittest.TestCase):
         sync_draft_boxes(s,{'boxes':{},'active':None,'selected':[]})
         self.assertEqual(s['regions'],{})
         self.assertEqual(s['bounding_boxes'],{})
+
+    def test_box_snapshot_keeps_stale_mismatch_removable_but_unconfirmed(self):
+        s=state('永寺樂文',n=3)
+        s['source_mismatch']={
+            'source_text':s['annotation_text'],
+            'source_character_count':4,
+            'bounding_box_count':3,
+            'issue_type':'missing_text',
+            'note':'draft',
+        }
+        self.assertTrue(source_mismatch_confirmed(s))
+        remaining=dict(list(s['regions'].items())[:2])
+        sync_draft_boxes(s,{'boxes':remaining,'active':None,'selected':[]})
+        self.assertIsNotNone(s['source_mismatch'])
+        self.assertFalse(source_mismatch_confirmed(s))
 
     def test_reorder_assigns_character_tokens_to_coordinate_slots(self):
         s=aligned_state()

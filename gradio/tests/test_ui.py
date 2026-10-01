@@ -192,6 +192,17 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('snapshot_board_state_js(3)',app_source)
         self.assertIn('board.dataset.localBoxesSnapshot = serializedSnapshot',editor_js)
         self.assertIn('snapshot = JSON.parse(board.dataset.localBoxesSnapshot)',app_source)
+        self.assertIn('def clear_source_mismatch(ctx,selection):',app_source)
+        self.assertIn('clear_source_mismatch,[session,selection_bridge]',app_source)
+        self.assertIn('mismatchRecorded=bool(s.get(\'source_mismatch\'))',
+                      (Path(__file__).resolve().parents[1]/'ui/editor.py').read_text())
+
+    def test_bounding_box_apply_button_is_removed(self):
+        app_source=(Path(__file__).resolve().parents[1]/'app.py').read_text()
+        editor_js=(Path(__file__).resolve().parents[1]/'ui/assets/editor.js').read_text()
+        self.assertNotIn("elem_id='apply-bbox-changes'",app_source)
+        self.assertNotIn("#apply-bbox-changes",editor_js)
+        self.assertNotIn('commitDraftState',editor_js)
 
     def test_sidebar_has_bounded_scroll_and_aligned_action_controls(self):
         css=(Path(__file__).resolve().parents[1]/'ui/assets/workbench.css').read_text()
@@ -545,7 +556,7 @@ class GradioCallbacks(unittest.TestCase):
             region_uids=list(ctx['active']['regions'])
             first_damaged_uid,damaged_uid=region_uids[:2]
             # Reading order is edited as text-only cards and explicitly
-            # committed with Apply Changes (or implicitly by Next).
+            # committed when continuing with Next.
             self.assertIn('class="order-chip',result[8]['value']['markup'])
             self.assertIn('class="order-chips"',result[8]['value']['markup'])
             self.assertIn('draggable="false"',result[8]['value']['markup'])
