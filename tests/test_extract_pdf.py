@@ -135,6 +135,24 @@ class ParserTests(unittest.TestCase):
             "\n".join(warnings),
         )
 
+    def test_identifier_values_accept_slash_separated_numbers_and_prefixes(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1"),
+            line("Tên bia: A"),
+            line("Địa điểm: B"),
+            line("Niên đại: C"),
+            line("Kí hiệu VNCHN: 8460/8461; N°12940/12941"),
+            line("Nguyên văn chữ Hán Nôm:"),
+            line("<8460> Mặt thứ nhất"),
+        ]
+
+        records, _ = parse_records(source, config())
+
+        self.assertEqual(
+            ["8460", "8461", "12940", "12941"],
+            records[0]["ky_hieu_vnchn"],
+        )
+
     def test_unmarked_content_is_preserved_and_warned(self) -> None:
         source = [
             line("VĂN BIA SỐ 1"),
