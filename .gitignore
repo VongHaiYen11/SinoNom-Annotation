@@ -222,6 +222,7 @@ __marimo__/
 # Source PDFs and page images can be large or document-specific.
 /input/
 /data/
+/examples/
 
 # Extraction results, per-image annotations, internal state and Save All bundles.
 /output/

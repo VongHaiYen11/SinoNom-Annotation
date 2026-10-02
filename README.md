@@ -101,11 +101,19 @@ python -m pip install -r requirements.txt
 
 This installs PDF extraction, Gradio, PyTorch, MMCV and MMDetection. The Torch/MMCV versions are intentionally pinned together. A clean environment is recommended.
 
-For the UI without detection models:
+For manual annotation without installing the detection-model dependencies:
 
 ```bash
 python -m pip install -r gradio/requirements.txt
 ```
+
+Start the Gradio app with detection disabled:
+
+```bash
+python gradio/app.py --skip-detection
+```
+
+This runs the normal annotation app and lets you draw boxes manually. Detection remains available when the app is started without `--skip-detection` and its model assets are installed.
 
 ---
 
@@ -210,6 +218,14 @@ python -m text_extraction.main \
   --config configs/tap_1.json
 ```
 
+To process every PDF directly inside `input/` with the `tap_1` configuration, run:
+
+```bash
+python scripts/extract_input_pdfs.py
+```
+
+Use `--only Tap-3` to process filenames containing a selected fragment. The batch script writes one extraction summary to `output/extraction_summary.txt`; it reports the record counts in each primary JSON and `_invalid.json`, plus the inscription numbers included in the review file.
+
 Both commands discover compatible embedded/reference fonts and refresh `encoded_fonts`. Paths inside a config are resolved relative to that config file.
 
 Glyph-profile runtime depends primarily on the number of glyphs in the configured reference fonts, not only on the PDF page count. Large CJK fonts may contain tens of thousands of candidates even when the PDF has only a few pages. The builder first attempts an exact normalized-outline signature match, which avoids rasterization when the embedded and reference outlines are identical. Only unresolved glyphs use visual matching; reference glyphs are rasterized once per font and L1 pixel scores are then computed with NumPy in bounded batches. Log output reports when this slower fallback is required. Reuse the generated profile for subsequent extractions from the same PDF/font set instead of rebuilding it for every run.
@@ -237,7 +253,7 @@ The primary output is a UTF-8 JSON array:
 ]
 ```
 
-Extraction also creates `<output-stem>_invalid.json` containing malformed records, parser warnings and sequence errors. Records flagged for review are excluded from the primary JSON.
+Extraction also creates `<output-stem>_invalid.json` containing records with errors or warnings, plus sequence issues. Records with critical errors are excluded from the primary JSON; records that have warnings only remain in the primary JSON and also appear in the review file. When comparing record counts, count numbered entries in both JSON files, since warning-only records appear in both.
 
 ---
 
@@ -382,15 +398,14 @@ python gradio/app.py \
   --output-dir /path/to/annotations
 ```
 
-To review the UI or annotate manually without loading detection models:
+To run the Gradio app for manual annotation without loading detection models:
 
 ```bash
-./run_gradio_no_detection.sh
+python gradio/app.py --skip-detection
 ```
 
-This repository-local launcher uses `.venv`, loads `configs/tap_1.json`, and disables
-automatic detection. Additional Gradio CLI options can be appended, for example
-`./run_gradio_no_detection.sh --port 7861`.
+The app uses `configs/tap_1.json` by default. Add normal Gradio app options as needed,
+for example `python gradio/app.py --skip-detection --port 7861`.
 
 When `--port` is omitted, Gradio automatically selects the first available local port,
 so an existing process on port `7860` does not prevent the app from starting.
@@ -398,7 +413,7 @@ so an existing process on port `7860` does not prevent the app from starting.
 For custom data paths, either edit the config or override individual paths:
 
 ```bash
-./run_gradio_no_detection.sh \
+python gradio/app.py --skip-detection \
   --image-dir /path/to/images \
   --source-json /path/to/extracted-source.json \
   --output-dir /path/to/annotations
