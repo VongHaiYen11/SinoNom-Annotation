@@ -71,6 +71,18 @@ def _identifier_values(value: str) -> list[str]:
     return re.findall(r"<\s*(\d+)\s*>?", value)
 
 
+def _matching_identifier(marker_id: str, identifiers: list[str]) -> str | None:
+    """Return the metadata spelling matching a marker, ignoring leading zeroes."""
+    if marker_id in identifiers:
+        return marker_id
+    marker_key = marker_id.lstrip("0") or "0"
+    return next(
+        (identifier for identifier in identifiers
+         if (identifier.lstrip("0") or "0") == marker_key),
+        None,
+    )
+
+
 def _add_warning(warnings: list[str], message: str) -> None:
     if message not in warnings:
         warnings.append(message)
@@ -113,7 +125,8 @@ def _parse_content(
         marker = marker_re.fullmatch(line.text)
         remainder = ""
         if marker is not None:
-            current_face = marker.group("id")
+            marker_id = marker.group("id")
+            current_face = _matching_identifier(marker_id, identifiers) or marker_id
             remainder = marker.groupdict().get("rest", "").strip()
             if current_face not in faces:
                 faces[current_face] = _FaceAccumulator(current_face)
