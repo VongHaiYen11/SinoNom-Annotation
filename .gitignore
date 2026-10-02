@@ -223,9 +223,10 @@ __marimo__/
 /input/
 /data/
 /examples/
+/merged_records/
+/output/
 
 # Extraction results, per-image annotations, internal state and Save All bundles.
-/output/
 /annotations/
 annotations.zip
 *.zip.tmp

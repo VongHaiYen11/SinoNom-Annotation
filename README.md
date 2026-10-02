@@ -15,9 +15,16 @@
 
 ---
 
+## Introduction
+
+SinoNom Annotation is a toolset for extracting structured inscription text from PDFs and preparing Hán/Nôm character annotations from images. It includes PDF font decoding, record validation, optional text-box detection and a Gradio-based annotation workflow.
+
+> **Gradio implementation note:** The annotation app was built through vibe coding. Its code is not cleanly structured and can be difficult to maintain or modify. Use it as a project-specific tool; its interface and implementation are not recommended as design or architecture references.
+
 ## 📑 Table of Contents
 
 - [SinoNom Annotation](#sinonom-annotation)
+  - [Introduction](#introduction)
   - [📑 Table of Contents](#-table-of-contents)
   - [🧩 Components](#-components)
   - [🔄 Processing Flow](#-processing-flow)
@@ -204,7 +211,7 @@ The command reports fonts for which no matching local reference exists. Once eve
 | `records.title_pattern` | Regular expression identifying the start of an inscription record. It must provide the named group `number` |
 | `records.metadata` | Declares metadata headings, output field names, value type and whether each field is required |
 | `records.content.start_heading` | Heading that marks the start of content sections |
-| `records.content.section_headings` | Exact section headings recognized by extraction. For this annotation UI, include the five supported headings listed under the Gradio section below |
+| `records.content.section_headings` | Exact section headings recognized by extraction. Only `records.content.start_heading` (`Nguyên văn chữ Hán Nôm`) must have nonblank text on every image face; other configured sections may be absent |
 | `records.face_marker_pattern` | Regular expression mapping content to an inscription face/image. It must provide the named group `id`, which becomes `ky_hieu` |
 | `records.require_consecutive_numbers` | When `true`, non-consecutive or duplicate inscription numbers are reported in `_invalid.json` |
 
@@ -218,13 +225,35 @@ python -m text_extraction.main \
   --config configs/tap_1.json
 ```
 
-To process every PDF directly inside `input/` with the `tap_1` configuration, run:
+To process every PDF directly inside `input/` with its matching `configs/tap_N.json`, run:
 
 ```bash
 python scripts/extract_input_pdfs.py
 ```
 
-Use `--only Tap-3` to process filenames containing a selected fragment. The batch script writes one extraction summary to `output/extraction_summary.txt`; it reports the record counts in each primary JSON and `_invalid.json`, plus the inscription numbers included in the review file.
+Use `--only Tap-3` to process filenames containing a selected fragment. The batch script uses each volume's own config for font mappings, glyph profile and output paths. It writes one extraction summary to `output/extraction_summary.txt`; it reports the record counts in each primary JSON and `_invalid.json`, the inscription numbers included in the review file, and the numbers whose records are missing the “Nguyên văn chữ Hán Nôm” section.
+
+To combine each volume's valid extraction records with its `manual-review` and `tag-corrected` records, run:
+
+```bash
+python3 scripts/merge_record_files.py
+```
+
+The script reads matching files from `examples/` and `output/`, then writes one `<volume-prefix>.json` per volume into `merged_records/`. For duplicate face IDs, `manual-review` takes priority over `tag-corrected`, which takes priority over the valid extraction. Before choosing a winner, it keeps only faces with a usable `ky_hieu` and exactly one configured source heading whose `van_ban` is a string; this matches Gradio's source-face lookup requirement. If `--image-dir` is provided, faces without a matching image are also skipped. Source files are left unchanged. A custom output directory can be provided with `--output-dir`.
+
+Check whether the merged JSON files can be used as Gradio source files:
+
+```bash
+python3 scripts/check_merged_records.py
+```
+
+To also verify that each image filename maps to exactly one face, provide the image folder:
+
+```bash
+python3 scripts/check_merged_records.py --image-dir /path/to/images
+```
+
+The checker uses each volume's `configs/tap_N.json` content heading and reports invalid records, duplicate face IDs and image/source mismatches.
 
 Both commands discover compatible embedded/reference fonts and refresh `encoded_fonts`. Paths inside a config are resolved relative to that config file.
 
@@ -253,7 +282,7 @@ The primary output is a UTF-8 JSON array:
 ]
 ```
 
-Extraction also creates `<output-stem>_invalid.json` containing records with errors or warnings, plus sequence issues. Records with critical errors are excluded from the primary JSON; records that have warnings only remain in the primary JSON and also appear in the review file. When comparing record counts, count numbered entries in both JSON files, since warning-only records appear in both.
+Extraction also creates `<output-stem>_invalid.json` containing records with errors or warnings, plus sequence issues. A record enters the primary JSON only when it has no errors or warnings and every `ky_hieu_vnchn` identifier has exactly one nonblank `Nguyên văn chữ Hán Nôm` section. `Phiên âm Hán Việt` and `Toát yếu` may be absent. Records that fail these checks appear in the review file and are excluded from the primary JSON.
 
 ---
 

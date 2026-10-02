@@ -344,8 +344,23 @@ def parse_records_with_issues(
             continue
         records.append(record)
         warnings.extend(item for item in local_warnings if item not in warnings)
-        if local_warnings:
-            issues.append(_issue(number, record_lines, warnings=local_warnings, record=record))
+        errors: list[str] = []
+        required_section = config.content_start
+        for identifier in record.get("ky_hieu_vnchn", []):
+            faces = [face for face in record.get("noi_dung", [])
+                     if face.get("ky_hieu") == identifier]
+            sections = [section for face in faces
+                        for section in face.get("chuyen_muc", [])
+                        if _label_key(section.get("tieu_de", ""))
+                        == _label_key(required_section)]
+            if len(sections) != 1 or not sections[0].get("van_ban", "").strip():
+                errors.append(
+                    f"Văn bia số {number}: marker <{identifier}> thiếu hoặc không có "
+                    f"nội dung mục {required_section!r}."
+                )
+        if local_warnings or errors:
+            issues.append(_issue(number, record_lines, errors=errors,
+                                 warnings=local_warnings, record=record))
     return records, warnings, issues
 
 

@@ -1,18 +1,17 @@
-"""Build glyph profiles and extract PDFs in input/ using tap_1 settings."""
+"""Build glyph profiles and extract PDFs using their per-volume configs."""
 
 from __future__ import annotations
 
-import json
-import os
 import argparse
+import json
 from pathlib import Path
+import re
 import subprocess
 import sys
-import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE = ROOT / "configs" / "tap_1.json"
+CONFIG_DIR = ROOT / "configs"
 INPUT_DIR = ROOT / "input"
 OUTPUT_DIR = ROOT / "output"
 PROFILE_DIR = ROOT / "data" / "glyph_profiles"
@@ -26,7 +25,6 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    template = json.loads(TEMPLATE.read_text(encoding="utf-8"))
     pdfs = sorted(INPUT_DIR.glob("*.pdf"))
     if args.only:
         pdfs = [pdf for pdf in pdfs if args.only.casefold() in pdf.name.casefold()]
@@ -36,19 +34,24 @@ def main() -> int:
 
     summaries: list[str] = []
     for pdf in pdfs:
-        config = json.loads(json.dumps(template))
-        profile = PROFILE_DIR / f"{pdf.stem}.json"
-        output = OUTPUT_DIR / f"{pdf.stem}.json"
-        config["input_pdf_path"] = os.path.relpath(pdf, ROOT / "configs")
-        config["paths"]["output_json"] = os.path.relpath(output, ROOT / "configs")
-        config["paths"]["glyph_profile"] = os.path.relpath(profile, ROOT / "configs")
-
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", suffix=".json", prefix=".batch_",
-            dir=ROOT / "configs", delete=False,
-        ) as config_file:
-            json.dump(config, config_file, ensure_ascii=False, indent=2)
-            config_path = Path(config_file.name)
+        tap_match = re.match(r"Tap-(\d+)", pdf.stem, flags=re.IGNORECASE)
+        if not tap_match:
+            print(f"Skipping {pdf.name}: cannot determine tap number", file=sys.stderr)
+            continue
+        config_path = CONFIG_DIR / f"tap_{tap_match.group(1)}.json"
+        if not config_path.is_file():
+            print(f"Skipping {pdf.name}: missing config {config_path.name}", file=sys.stderr)
+            continue
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        configured_pdf = (config_path.parent / config["input_pdf_path"]).resolve()
+        if configured_pdf != pdf.resolve():
+            print(
+                f"Skipping {pdf.name}: {config_path.name} points to {configured_pdf}",
+                file=sys.stderr,
+            )
+            continue
+        profile = (config_path.parent / config["paths"]["glyph_profile"]).resolve()
+        output = (config_path.parent / config["paths"]["output_json"]).resolve()
 
         try:
             if profile.is_file() and profile.stat().st_size:
@@ -71,6 +74,12 @@ def main() -> int:
                 item["so_van_bia"] for item in issues
                 if item.get("so_van_bia") is not None
             })
+            missing_han_nom_numbers = sorted({
+                item["so_van_bia"] for item in issues
+                if item.get("so_van_bia") is not None
+                and any("thiếu hoặc không có nội dung mục 'Nguyên văn chữ Hán Nôm'"
+                        in error for error in item.get("loi", []))
+            })
             unassigned_issue_count = sum(
                 item.get("so_van_bia") is None for item in issues
             )
@@ -82,6 +91,8 @@ def main() -> int:
                 f"(JSON chính: {valid_count}, file _invalid: {invalid_count}); "
                 f"record trong _invalid: "
                 f"{', '.join(map(str, invalid_numbers)) if invalid_numbers else 'không có'}"
+                f"; thiếu Nguyên văn chữ Hán Nôm: "
+                f"{', '.join(map(str, missing_han_nom_numbers)) if missing_han_nom_numbers else 'không có'}"
             )
             if unassigned_issue_count:
                 summary += f"; issue không gắn với record: {unassigned_issue_count}"
@@ -90,8 +101,6 @@ def main() -> int:
         except subprocess.CalledProcessError as exc:
             print(f"Extraction failed for {pdf.name} (exit {exc.returncode})", file=sys.stderr)
             return exc.returncode or 1
-        finally:
-            config_path.unlink(missing_ok=True)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     SUMMARY_PATH.write_text("\n".join(summaries) + "\n", encoding="utf-8")

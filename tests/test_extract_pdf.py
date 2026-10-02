@@ -62,6 +62,21 @@ def config(**overrides) -> ExtractConfig:
 
 
 class ParserTests(unittest.TestCase):
+    def test_missing_han_nom_section_is_an_error_issue(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1"), line("Tên bia: A"), line("Địa điểm: B"),
+            line("Niên đại: C"), line("Kí hiệu VNCHN: <10><11>"),
+            line("Nguyên văn chữ Hán Nôm:"), line("<10> 有正文"),
+            line("Phiên âm Hán Việt:"), line("<11> phiên âm"),
+        ]
+
+        records, _, issues = parse_records_with_issues(source, config())
+
+        self.assertEqual(1, len(records))
+        issue = next(item for item in issues if item["so_van_bia"] == 1)
+        self.assertTrue(issue["loi"])
+        self.assertIn("<11>", issue["loi"][0])
+
     def test_pdf_control_characters_are_removed_before_serialization(self) -> None:
         # TimesNewRoman is intentionally not in encoded_fonts, so it takes
         # the PyMuPDF fallback path that previously returned U+0001 unchanged.

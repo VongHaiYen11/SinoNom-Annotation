@@ -1,0 +1,79 @@
+{
+  "input_pdf_path": "../input/Tap-3_Bia-Hau-the-ki-XIX_616-trang.pdf",
+  "paths": {
+    "output_json": "../output/Tap-3_Bia-Hau-the-ki-XIX_616-trang.json",
+    "glyph_profile": "../data/glyph_profiles/Tap-3_Bia-Hau-the-ki-XIX_616-trang.json"
+  },
+  "gradio": {
+    "image_dir": "../data/images",
+    "output_dir": "../data/annotations",
+    "show_metadata_fields": false
+  },
+  "encoded_fonts": {
+    "Calibri": "../fonts/calibri.ttf",
+    "Cambria": "../fonts/cambria.ttf",
+    "Cambria,Bold": "../fonts/Cambria Bold.ttf",
+    "MicrosoftYaHei": "../fonts/MicrosoftYahei.ttf",
+    "NomNaTong": "../fonts/NomNaTong.ttf",
+    "PalatinoLinotype": "../fonts/Palatino-Regular.ttf",
+    "PalatinoLinotype,Bold": "../fonts/Palatino-Bold.ttf",
+    "PalatinoLinotype,BoldItalic": "../fonts/Palatino-BoldItalic.ttf",
+    "PalatinoLinotype,Italic": "../fonts/Palatino-Italic.ttf",
+    "PMingLiU": "../fonts/PMingLiU.ttf",
+    "PMingLiU-ExtB": "../fonts/PMingLiU-ExtB.ttf",
+    "SimSun": "../fonts/SimSun.ttf",
+    "SimSun-ExtB": "../fonts/simsun-extb.ttf",
+    "Symbol": "../fonts/symbol.ttf",
+    "TimesNewRoman": "../fonts/TimesNewRoman.ttf",
+    "TimesNewRoman,Bold": "../fonts/TimesNewRoman.ttf"
+  },
+  "page_filter": {
+    "margins": {
+      "top": 40.0,
+      "bottom": 45.0
+    },
+    "footnotes": {
+      "start_pattern": "^\\d+\\s+",
+      "max_font_size": 10.0
+    }
+  },
+  "records": {
+    "title_pattern": "^VĂN BIA SỐ\\s+(?P<number>\\d+)\\s*$",
+    "metadata": [
+      {
+        "label": "Tên bia",
+        "field": "ten_bia",
+        "type": "string",
+        "required": false
+      },
+      {
+        "label": "Địa điểm",
+        "field": "dia_diem",
+        "type": "string",
+        "required": false
+      },
+      {
+        "label": "Niên đại",
+        "field": "nien_dai",
+        "type": "string",
+        "required": false
+      },
+      {
+        "label": "Kí hiệu VNCHN",
+        "field": "ky_hieu_vnchn",
+        "type": "identifiers",
+        "required": true
+      }
+    ],
+    "content": {
+      "start_heading": "Nguyên văn chữ Hán Nôm",
+      "section_headings": [
+        "Nguyên văn chữ Hán Nôm",
+        "Phiên âm Hán Việt",
+        "Toát yếu"
+      ]
+    },
+    "face_marker_pattern": "^\\s*<\\s*(?P<id>\\d+)\\s*>?\\s*(?P<rest>.*)$",
+    "require_consecutive_numbers": true
+  }
+}
