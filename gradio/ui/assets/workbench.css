@@ -38,6 +38,7 @@ body,
   --color-panel-hover: #282b30;
   --color-border: #303237;
   --color-accent: #ff7a1a;
+  --color-primary-hover: #ff923d;
   --color-text: #f4f4f5;
   --color-muted: #a1a1aa;
   --body-background-fill: var(--color-page);
@@ -61,7 +62,7 @@ body,
   --button-secondary-border-color: var(--color-border);
   --button-secondary-text-color: var(--color-text);
   --button-primary-background-fill: var(--color-accent);
-  --button-primary-background-fill-hover: #e96c0d;
+  --button-primary-background-fill-hover: var(--color-primary-hover);
   --button-primary-border-color: var(--color-accent);
   --button-primary-text-color: var(--color-page);
   --checkbox-background-color: var(--color-page);
@@ -259,16 +260,8 @@ body,
   background: var(--color-panel-hover);
   transform: translateY(-1px);
 }
-#header-actions #save-all button:not(:disabled):hover,
-#header-actions button#save-all:not(:disabled):hover {
-  border-color: #e96c0d;
-  background: #e96c0d;
-  transform: translateY(-1px);
-}
 #header-actions #history-open button:not(:disabled):active,
-#header-actions #save-all button:not(:disabled):active,
-#header-actions button#history-open:not(:disabled):active,
-#header-actions button#save-all:not(:disabled):active {
+#header-actions button#history-open:not(:disabled):active {
   transform: translateY(0);
 }
 #header-actions #history-open button:focus-visible,
@@ -653,9 +646,6 @@ button#confirm-source-mismatch {
   color: var(--color-page) !important;
   font-size: 11px !important;
 }
-#confirm-source-mismatch:hover,
-#confirm-source-mismatch button:hover,
-button#confirm-source-mismatch:hover { background: #e96c0d !important; }
 #clear-source-mismatch,
 #clear-source-mismatch button,
 button#clear-source-mismatch {
@@ -664,6 +654,7 @@ button#clear-source-mismatch {
   background: transparent !important;
   color: var(--color-muted) !important;
 }
+#clear-source-mismatch.mismatch-unconfirmed { display: none !important; }
 #clear-source-mismatch:hover,
 #clear-source-mismatch button:hover,
 button#clear-source-mismatch:hover { background: var(--color-panel-hover) !important; color: var(--color-text) !important; }
@@ -862,16 +853,17 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   align-items: stretch !important;
 }
 
-/* Character Alignment is a bounded pane inside the board; long chip lists
-   scroll here while the workspace itself follows the sidebar height. */
+/* Keep the note fixed while the black character list scrolls independently. */
 .status-order-board .order-editor {
-  height: 100%;
+  display: grid !important;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  align-self: stretch;
+  height: auto !important;
   min-height: 0;
-  max-height: 100%;
+  max-height: none;
   min-width: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 .status-order-board .image-viewport {
   height: max(1200px, 100%);
@@ -883,10 +875,15 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 }
 .status-order-board .order-chips {
   flex-wrap: wrap;
+  height: 100%;
   width: 100%;
   min-width: 0;
+  min-height: 0;
   max-width: 100%;
-  overflow: hidden;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 #action-message { grid-column: 1 / -1; width: auto; margin: 0; padding: var(--space-3) var(--space-4); border: 1px solid #7f1d1d; border-radius: var(--radius-md); background: #291719; color: #fca5a5; }
@@ -938,6 +935,9 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 #sidebar-source-text .sidebar-source-text {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -945,7 +945,9 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   overflow: hidden;
 }
 #sidebar-source-text .sidebar-source-text p {
-  max-height: min(500px, calc(100dvh - 240px));
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -958,6 +960,18 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   word-break: break-word;
   min-width: 0;
   max-width: 100%;
+}
+@media (min-width: 768px) {
+  #control-panel #sidebar-source-text { flex: 1 1 0; min-height: 0; overflow: hidden; }
+  #sidebar-source-text > .html-container,
+  #sidebar-source-text > .html-container > .prose {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+  }
 }
 #control-panel .box-color-control,
 #control-panel .box-color-control > .styler,
@@ -974,16 +988,21 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
 .gradio-container input:focus-visible,
 .gradio-container textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: var(--space-1); }
 .gradio-container button {
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition: background-color 160ms ease, border-color 160ms ease,
+              color 160ms ease, transform 160ms ease;
 }
 .gradio-container button:not(:disabled):hover {
   border-color: #4a4d53;
   background: var(--color-panel-hover);
 }
 .gradio-container button.primary:not(:disabled):hover,
-.gradio-container #save-all:not(:disabled):hover {
-  border-color: #e96c0d !important;
-  background: #e96c0d !important;
+.gradio-container button#save-all:not(:disabled):hover,
+.gradio-container #save-all button:not(:disabled):hover,
+.gradio-container #confirm-source-mismatch button:not(:disabled):hover,
+.gradio-container button#confirm-source-mismatch:not(:disabled):hover {
+  border-color: var(--color-primary-hover) !important;
+  background: var(--color-primary-hover) !important;
+  color: #fff !important;
 }
 .gradio-container button:disabled { cursor: not-allowed; opacity: 40%; }
 .frontend-bridge { display: none !important; }
@@ -1015,6 +1034,11 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   .panel { height: auto; }
   #main-workspace { min-height: 0; }
   #control-panel { height: auto; max-height: none; padding: var(--space-4); overflow: visible; }
+  #sidebar-source-text .sidebar-source-text { height: auto; }
+  #sidebar-source-text .sidebar-source-text p {
+    flex: 0 1 auto;
+    max-height: min(500px, calc(100dvh - 240px));
+  }
   #workflow-footer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #footer-step { grid-column: 1 / -1; grid-row: 1; }
   #back-button { grid-column: 1; grid-row: 2; }

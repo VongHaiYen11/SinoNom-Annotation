@@ -29,6 +29,14 @@ const canEditReadingOrder = () => {
   return step >= 3 && (bboxValid || mismatchConfirmed);
 };
 
+const orderedClearTargets = () => {
+  const ids = selectedIds.size ? [...selectedIds] : Object.keys(localBoxes);
+  return ids.filter(id => {
+    const order = localBoxes[id]?.order;
+    return order !== null && order !== undefined && order !== '';
+  });
+};
+
 const updateValidationSummary = () => {
   const summaryHost = root.querySelector('#validation-summary-host');
   if (!summaryHost) return;
@@ -48,6 +56,13 @@ const updateValidationSummary = () => {
   const contentVerified = Boolean(props.value.contentVerified ?? true);
   const mismatchConfirmed = !mismatchConfirmationInvalidated
     && (Boolean(props.value.mismatchConfirmed) || localMismatchConfirmed);
+  const issueLabels = {
+    missing_text: 'Missing Content',
+    extra_text: 'Extra Content',
+    other: 'Other',
+  };
+  const confirmedIssueLabel = mismatchConfirmed
+    ? issueLabels[props.value.mismatchIssueType] || 'Source' : null;
   const matched = contentVerified && boxCount === charCount && charCount > 0;
   const canOrder = matched || mismatchConfirmed;
 
@@ -70,7 +85,7 @@ const updateValidationSummary = () => {
 
   const badge = summaryHost.querySelector('.validation-badge');
   if (badge) {
-    const label = mismatchConfirmed ? 'Source mismatch confirmed'
+    const label = mismatchConfirmed ? `${confirmedIssueLabel} mismatch confirmed`
       : matched ? 'Counts match'
         : !contentVerified ? 'Content not verified'
           : 'Count mismatch';
@@ -82,22 +97,30 @@ const updateValidationSummary = () => {
 
     const svgContainer = badge.querySelector('svg');
     if (svgContainer) {
-      svgContainer.outerHTML = (matched || mismatchConfirmed) ? svgCheck : svgAlert;
+      svgContainer.outerHTML = matched && !mismatchConfirmed ? svgCheck : svgAlert;
     }
   }
 
   const mismatchGroup = root.querySelector('.mismatch-panel') || root.querySelector('#mismatch_group');
   if (mismatchGroup && props.value.step === 3) {
-    // The panel describes the current count state. Once the live localBoxes
-    // count matches the character count, stale mismatch metadata is irrelevant
-    // to this screen and the whole section should disappear immediately.
-    mismatchGroup.style.display = matched ? 'none' : 'block';
+    // Any confirmed issue remains visible until the user clears or invalidates it.
+    mismatchGroup.style.display = matched && !mismatchConfirmed ? 'none' : 'block';
   }
-  const reason = canOrder ? '' : `Reading order is unavailable: ${boxCount} boxes for ${charCount} characters.`;
-  ['#sort-boxes', '#clear-box-orders'].forEach(selector => {
-    const control = root.querySelector(selector);
-    if (control) { control.disabled = !canOrder; control.title = reason; }
-  });
+  root.querySelector('#clear-source-mismatch')?.classList.toggle(
+    'mismatch-unconfirmed', !mismatchConfirmed);
+  const sortButton = root.querySelector('button#sort-boxes, #sort-boxes button');
+  if (sortButton) {
+    sortButton.disabled = !canOrder;
+    sortButton.title = canOrder ? ''
+      : `Reading order is unavailable: ${boxCount} boxes for ${charCount} characters.`;
+  }
+  const clearButton = root.querySelector('button#clear-box-orders, #clear-box-orders button');
+  if (clearButton) {
+    clearButton.disabled = !canOrder || orderedClearTargets().length === 0;
+    clearButton.title = !canOrder
+      ? `Reading order is unavailable: ${boxCount} boxes for ${charCount} characters.`
+      : clearButton.disabled ? 'No assigned order to clear in the current selection.' : '';
+  }
 };
 
 const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map(([id, box]) => {
@@ -1367,7 +1390,7 @@ root.addEventListener('click', event => {
   }
   const clearOrderBtn = event.target.closest('#clear-box-orders');
   if (clearOrderBtn) {
-    if (!canEditReadingOrder()) {
+    if (!canEditReadingOrder() || orderedClearTargets().length === 0) {
       event.preventDefault();
       return;
     }
@@ -1440,6 +1463,11 @@ root.addEventListener('click', event => {
   }
   const confirmClearModal = event.target.closest('#clear-modal-confirm');
   if (confirmClearModal) {
+    if (!canEditReadingOrder() || orderedClearTargets().length === 0) {
+      root.querySelector('#clear-order-modal')?.style.setProperty('display', 'none');
+      event.preventDefault();
+      return;
+    }
     const beforeIds = Object.keys(localBoxes);
     const modal = root.querySelector('#clear-order-modal');
     if (modal) modal.style.display = 'none';

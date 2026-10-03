@@ -208,7 +208,9 @@ def snapshot(s):
                 bboxValid=s['workflow'].get('bbox_valid', False),
                 contentVerified=s['workflow'].get('content_verified', False),
                 characterCount=count_annotation_characters(s['annotation_text']),
-                mismatchConfirmed=source_mismatch_confirmed(s),
+                mismatchConfirmed=source_mismatch,
+                mismatchIssueType=(s['source_mismatch']['issue_type']
+                                   if source_mismatch else None),
                 readingOrder=list(s['reading_order']),
                 spatialBoxOrder=(list(s.get('reading_order', [])) if s.get('bounding_boxes') else []),
                 suspiciousTokenIds=list(map(str,s.get('suspicious_token_ids',[]))),

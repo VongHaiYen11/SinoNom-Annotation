@@ -521,7 +521,7 @@ def create_app(options):
                     status_rows(s),gr.update(visible=step==3 and has),
                     gr.update(value=issue.get('issue_type')),
                     gr.update(value=issue.get('note','')),
-                    gr.update(interactive=has and step==3),gr.update(visible=bool(issue)),
+                    gr.update(interactive=has and step==3),gr.update(visible=mismatch),
                     gr.update(visible=has and step in (3,4)),
                     workflow_progress(s),LOADING_HIDDEN,
                     gr.update(visible=step==1),gr.update(visible=has and step>1),

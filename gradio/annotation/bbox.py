@@ -80,7 +80,11 @@ def sync_draft_boxes(state, payload, materialize_alignment=True):
 
     log.info('APPLY: frontend/Python received count=%d IDs=%s', len(boxes), list(boxes))
 
+    previous_ids = set(state['regions'])
     update_bboxes(state, boxes, payload.get('active'), payload.get('selected'))
+    if set(state['regions']) != previous_ids:
+        # A confirmation belongs to the exact set of boxes it was made for.
+        state['source_mismatch'] = None
 
     statuses = payload.get('statuses', {})
     unknowns = payload.get('unknowns', {})
