@@ -79,6 +79,7 @@ const updateValidationSummary = () => {
   const badge = summaryHost.querySelector('.validation-badge');
   if (badge) {
     const label = !contentVerified ? 'Content not verified'
+      : mismatchConfirmed ? 'Confirmed Mismatch'
       : matched ? 'Counts match' : 'Count mismatch';
     badge.classList.toggle('is-count-match', matched);
     const span = badge.querySelector('span');
