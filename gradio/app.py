@@ -48,6 +48,24 @@ def loading_markup(label='Loading…', visible=False):
 
 
 LOADING_HIDDEN = loading_markup()
+FONT_PRELOAD_JS = f"""() => {{
+    if (window.__vietnamicaFontsReady) return;
+    window.__vietnamicaFontsReady = true;
+    const overlay = document.getElementById('global-loading');
+    const families = {json.dumps(list(FONT_FILES), ensure_ascii=False)};
+    const sample = '漢字';
+    const specs = families.map(family => `20px "${{family}}"`);
+    if (specs.every(spec => document.fonts.check(spec, sample))) {{
+        overlay?.classList.remove('is-visible');
+        return;
+    }}
+    const label = overlay?.querySelector('span:not(.global-loading-spinner)');
+    if (label) label.textContent = 'Loading Hán/Nôm fonts…';
+    overlay?.classList.add('is-visible');
+    Promise.all(specs.map(spec => document.fonts.load(spec, sample)))
+        .catch(() => {{}}) // Continue with the browser's normal fallback if a font fails.
+        .finally(() => overlay?.classList.remove('is-visible'));
+}}"""
 SHOW_LOADING_JS = """(...args) => {
     const el = document.getElementById('global-loading');
     if (el) {
@@ -174,31 +192,7 @@ HIDE_LOADING_JS = """() => {
     document.getElementById('global-loading')?.classList.remove('is-visible');
 }"""
 
-FONT_LOADING_DONE_JS = f"""() => {{
-    const overlay = document.getElementById('global-loading');
-    const hide = () => overlay?.classList.remove('is-visible');
-    const contentPanel = document.getElementById('content-editor');
-    if (!overlay || !contentPanel || contentPanel.getClientRects().length === 0) {{
-        hide();
-        return;
-    }}
-
-    const textField = contentPanel.querySelector('.han-nom-text textarea');
-    const sample = textField?.value || '漢字';
-    const families = {json.dumps(list(FONT_FILES), ensure_ascii=False)};
-    const specs = families.map(family => `20px "${{family}}"`);
-    if (specs.every(spec => document.fonts.check(spec, sample))) {{
-        hide();
-        return;
-    }}
-
-    const label = overlay.querySelector('span:not(.global-loading-spinner)');
-    if (label) label.textContent = 'Loading Hán/Nôm fonts…';
-    overlay.classList.add('is-visible');
-    Promise.all(specs.map(spec => document.fonts.load(spec, sample)))
-        .catch(() => {{}}) // Continue with the browser's normal fallback if a font fails.
-        .finally(hide);
-}}"""
+FONT_LOADING_DONE_JS = HIDE_LOADING_JS
 
 
 def _config_relative(config_path, value, field):
@@ -684,10 +678,7 @@ def create_app(options):
                 );
             }""")
         def clear_loading_when_done(event):
-            # The returned loading HTML is normally identical to its initial value,
-            # so Gradio may skip patching the DOM after a completed action. On
-            # Content Verification, keep the shared overlay up until its web fonts load.
-            event.success(fn=None,inputs=None,outputs=None,js=FONT_LOADING_DONE_JS)
+            event.success(fn=None,inputs=None,outputs=None,js=HIDE_LOADING_JS)
             event.failure(fn=None,inputs=None,outputs=None,js=HIDE_LOADING_JS)
             return event
 
@@ -1198,6 +1189,8 @@ def create_app(options):
             return run(ctx,evt._data['action'],evt._data['payload'])
         board.action(on_action,[session],outputs=outputs,concurrency_id='annotation-actions',
                      concurrency_limit=1,show_progress='hidden')
+        app.load(fn=None, inputs=None, outputs=None, js=FONT_PRELOAD_JS,
+                 show_progress='hidden')
     return app
 
 
