@@ -66,6 +66,47 @@ class GradioCallbacks(unittest.TestCase):
         self.assertNotIn('PMingLiU',FONT_CSS)
         self.assertNotIn('PMingLiU',DEFAULT_FONT_STACK)
 
+    def test_repeated_sort_results_have_distinct_update_tokens(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve();image=root/'1.png'
+            Image.new('RGB',(100,100),'white').save(image)
+            source=root/'source.json'
+            atomic_write(source,[{'noi_dung':[{'ky_hieu':'1','chuyen_muc':[
+                {'tieu_de':'Nguyên văn chữ Hán Nôm','van_ban':'甲乙'}]}]}])
+            options=parser().parse_args([
+                '--image-dir',str(root),'--source-json',str(source),
+                '--output-dir',str(root/'out'),'--skip-detection'])
+            app=create_app(options)
+            functions=[f.fn for f in app.fns.values() if f.fn]
+            open_image=next(f for f in functions if f.__name__=='open_image')
+            on_action=next(f for f in functions if f.__name__=='on_action')
+            ctx=open_image(dict(active=new_state(),drafts={}),str(image))[0]
+            state=ctx['active']
+            state['current_step']=3
+            state['annotation_text']='甲乙'
+            state['workflow']['content_verified']=True
+            state['workflow']['bbox_valid']=True
+            state['regions']={
+                'left':dict(bbox=[10,0,20,10],status='intact',unknown=False,order=None),
+                'right':dict(bbox=[70,0,80,10],status='intact',unknown=False,order=None),
+            }
+            boxes={uid:dict(box) for uid,box in state['regions'].items()}
+            sort_payload={
+                'boxes':{uid:box['bbox'] for uid,box in boxes.items()},
+                'allBoxes':boxes,
+            }
+            responses=[]
+            for request_id in ('sort-1','sort-2'):
+                payload=dict(sort_payload,sortRequestId=request_id)
+                response=on_action(ctx,gr.EventData(None,{
+                    'action':'sort_boxes_calc','payload':payload}))
+                responses.append(response[8]['value'])
+            self.assertEqual(responses[0]['calcSortedBoxIds'],['right','left'])
+            self.assertEqual(responses[1]['calcSortedBoxIds'],['right','left'])
+            self.assertEqual([value['sortRequestId'] for value in responses],
+                             ['sort-1','sort-2'])
+            self.assertNotEqual(responses[0],responses[1])
+
     def test_miss_box_is_derived_unknown_and_rendered_yellow(self):
         state=new_state();state.update(image='12305.png',image_size=[100,100],
                                       image_url='image.jpg',current_step=4)

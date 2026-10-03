@@ -1191,7 +1191,8 @@ def create_app(options):
                     ordered=calculate_spatial_order(boxes,ctx['active']['image_size'])
                     if set(ordered) != set(boxes) or len(ordered) != len(boxes):
                         raise ValueError('Sorter did not return every frontend box exactly once.')
-                    log.info('SORT: frontend count=%d sent IDs=%s returned IDs=%s',
+                    log.info('SORT: image=%s request_id=%s frontend count=%d sent IDs=%s returned IDs=%s',
+                             ctx['active'].get('image_path'),payload.get('sortRequestId'),
                              len(boxes),list(boxes),ordered)
                     result=render(ctx)
                     transient['selected_region_uids']=[
@@ -1203,6 +1204,10 @@ def create_app(options):
                         if transient['selected_region_uids'] else None)
                     board_value=snapshot(transient)
                     board_value['calcSortedBoxIds']=ordered
+                    # Repeated sorts can produce the same IDs as an earlier
+                    # request. Carry a per-request token so Gradio still
+                    # delivers the update after a local Clear Order operation.
+                    board_value['sortRequestId']=payload.get('sortRequestId')
                     result[8]=gr.update(value=board_value,visible=True)
                     return result
                 except Exception as exc:

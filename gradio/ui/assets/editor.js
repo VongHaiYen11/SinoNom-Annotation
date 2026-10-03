@@ -1,5 +1,6 @@
 // Python owns persisted data. Browser-local state owns direct manipulation.
 let pending = false, pendingAction = null, moving = null, orderDrag = null;
+let sortRequestSequence = 0;
 let suppressAlignmentClick = false, alignmentClickTimer = null;
 let syncingStatusControl = false;
 let syncingCoordinateControls = false;
@@ -135,7 +136,9 @@ const assertUniqueBoxIds = (action) => {
 const traceTransition = (action, beforeIds) => {
   const afterIds = Object.keys(localBoxes);
   console.debug('BBOX STATE', { action, beforeCount: beforeIds.length, beforeIds,
-    afterCount: afterIds.length, afterIds });
+    afterCount: afterIds.length, afterIds,
+    orders: Object.fromEntries(Object.entries(localBoxes).map(
+      ([id, box]) => [id, box.order ?? null])) });
   assertUniqueBoxIds(action);
 };
 const serializeLocalBoxes = () => cloneBoxes(localBoxes);
@@ -1342,11 +1345,14 @@ const openSortSelectedModal = () => {
 };
 
 const sortAllBoxes = () => {
+  const sortRequestId = ++sortRequestSequence;
   console.log('SORT REQUEST', {
+    sortRequestId,
     frontendCount: Object.keys(localBoxes).length,
     frontendIDs: Object.keys(localBoxes)
   });
   send('sort_boxes_calc', {
+    sortRequestId,
     boxes: Object.fromEntries(Object.entries(localBoxes).map(([id, box]) => [id, box.bbox])),
     allBoxes: serializeLocalBoxes()
   });
@@ -1535,11 +1541,14 @@ root.addEventListener('click', event => {
     const modal = root.querySelector('#sort-selected-modal');
     if (modal) modal.style.display = 'none';
     pendingSortSelectedRange = [start, selectedIds.size];
+    const sortRequestId = ++sortRequestSequence;
     console.log('SORT REQUEST (SELECTED)', {
+      sortRequestId,
       frontendCount: selectedIds.size,
       frontendIDs: [...selectedIds]
     });
     send('sort_boxes_calc', {
+      sortRequestId,
       boxes: Object.fromEntries([...selectedIds].map(id => [id, localBoxes[id].bbox])),
       allBoxes: serializeLocalBoxes(),
       selectedIds: [...selectedIds]
