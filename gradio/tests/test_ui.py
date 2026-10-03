@@ -166,6 +166,25 @@ class GradioCallbacks(unittest.TestCase):
         self.assertNotIn('class="source-preview"',markup)
         self.assertIn('class="sidebar-source-text"',sidebar)
         self.assertIn('永寺樂',sidebar)
+        self.assertIn('viewBox="0 0 100 100"',markup)
+        state['crop']=[10,15,80,90]
+        state['current_step']=7
+        cropped=snapshot(state)
+        self.assertIn('viewBox="10 15 70 75"',cropped['markup'])
+        self.assertIn('cropped review',cropped['markup'])
+        self.assertEqual((cropped['width'],cropped['height']),(70,75))
+        scaled=new_state();scaled.update(image='large.png',image_path='/missing/large.png',
+            preview_dir='/private/tmp',image_size=[8000,6000],image_url='image.jpg',
+            current_step=7,crop=[2000,1000,7000,5000],
+            bounding_boxes={'1':{'bbox':[3000,2000,3200,2200],'status':'intact'}},
+            annotations={'1':'永'},reading_order=[1])
+        # Missing image paths keep this a pure overlay geometry check.
+        scaled.pop('image_path');scaled.pop('preview_dir')
+        scaled_render=snapshot(scaled)
+        # The image is resized to fit a 4096 px crop. The box is scaled by
+        # the same actual x/y resize factors before subtracting crop origin.
+        self.assertIn('viewBox="1638 819 4097 3277"',scaled_render['markup'])
+        self.assertIn('x="819.75" y="819.3333333333335"',scaled_render['markup'])
         css=(Path(__file__).resolve().parents[1]/'ui/assets/editor.css').read_text()
         self.assertIn('grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr)',css)
         self.assertIn('.status-order-board .image-viewport',css)

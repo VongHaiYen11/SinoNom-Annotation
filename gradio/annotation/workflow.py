@@ -181,6 +181,7 @@ class Workflow:
                     optimize=True, progressive=True)
         located = self._source_content_for(path.name)
         state.update(image=path.name, image_path=str(path), image_size=size,
+                     preview_dir=str(self.preview_dir),
                      resized_image_size=list(size),
                      image_url='gradio_api/file=' + quote(str(preview_path), safe='/'),
                      content_preview_url=('gradio_api/file=' +
@@ -230,6 +231,15 @@ class Workflow:
                         state['source_mismatch']['excluded_characters']=list(doc['excluded_characters'])
             state['detection_loaded'] = True
             state['loaded_document'] = deepcopy(doc)
+            state['saved_alignment_document'] = deepcopy(doc)
+            if (doc.get('annotations')
+                    and set(doc['annotations']) == set(state['bounding_boxes'])):
+                state['workflow']['alignment_valid'] = True
+                state['text_sequence'] = (list(doc.get('text_sequence', []))
+                                          or [doc['annotations'][key]
+                                              for key in state['bounding_boxes']])
+                state['text_token_ids'] = [str(index) for index in
+                                           range(1, len(state['text_sequence']) + 1)]
             state['loaded_is_mismatch'] = is_mismatch
             state['loaded_region_uid_by_box_id'] = deepcopy(state['region_uid_by_box_id'])
             meta = (self.output / '.state' /
@@ -306,6 +316,8 @@ class Workflow:
             if not count_annotation_characters(text):
                 raise ValueError('Annotation text contains no characters after normalization.')
             loaded_mapping = deepcopy(s.get('loaded_region_uid_by_box_id', {}))
+            loaded_alignment = deepcopy(s.get('saved_alignment_document') or
+                                         s.get('loaded_document'))
             loaded_suspicious = list(s.get('loaded_suspicious_box_ids', []))
             text_changed = text != s['annotation_text']
             set_verified_content(s, s['draft_content'], text)
@@ -333,6 +345,9 @@ class Workflow:
                                         for box_id in s['reading_order']]
                                     if s['annotations'] else [])
                 s['text_token_ids']=[str(index) for index in range(1,len(s['text_sequence'])+1)]
+                # Keep the saved character-to-box mapping as the starting
+                # assignment when an existing annotation is reopened.
+                # Step 4 displays this sequence and allows deliberate edits.
                 restore_suspicious_tokens(s,loaded_suspicious)
                 if mismatch_type:
                     if mismatch_type == 'other':
@@ -348,6 +363,17 @@ class Workflow:
                 s['workflow'].update(bbox_valid=True, alignment_valid=True)
                 synchronize_missing_statuses(s)
             s.pop('loaded_document', None)
+            if loaded_alignment:
+                s['saved_alignment_document'] = loaded_alignment
+                if (loaded_alignment.get('annotations')
+                        and set(loaded_alignment['annotations']) == set(s['bounding_boxes'])):
+                    s['annotations'] = deepcopy(loaded_alignment['annotations'])
+                    s['text_sequence'] = (list(loaded_alignment.get('text_sequence', []))
+                                          or [s['annotations'][key]
+                                              for key in s['bounding_boxes']])
+                    s['text_token_ids'] = [str(index) for index in
+                                           range(1, len(s['text_sequence']) + 1)]
+                    s['workflow']['alignment_valid'] = True
             s.pop('loaded_region_uid_by_box_id', None)
             s.pop('loaded_is_mismatch', None)
             s.pop('loaded_suspicious_box_ids', None)
@@ -522,6 +548,35 @@ class Workflow:
                 refresh_bbox_validation(s)
                 if not (s['workflow']['bbox_valid'] or source_mismatch_confirmed(s)):
                     raise ValueError('Match the box and character counts or confirm a source mismatch.')
+                has_saved_alignment = bool(
+                    (s.get('saved_alignment_document') or s.get('loaded_document'))
+                    and (s.get('saved_alignment_document') or s.get('loaded_document')).get('annotations')
+                    and set((s.get('saved_alignment_document') or s.get('loaded_document'))['annotations'])
+                        == set(s['bounding_boxes'])
+                )
+                if has_saved_alignment:
+                    document = s.get('saved_alignment_document') or s['loaded_document']
+                    mismatch_type = (source_mismatch_type(document)
+                                     if 'inscription_code' in document else None)
+                    saved_values = list(document['annotations'].values())
+                    saved_text_matches = (
+                        mismatch_type == 'extra_text'
+                        and ''.join(document.get('text_sequence', [])) == s['annotation_text']
+                        or mismatch_type == 'missing_text'
+                        and ''.join(value for value in saved_values if value != 'MISS')
+                            == s['annotation_text']
+                        or mismatch_type is None and ''.join(saved_values) == s['annotation_text']
+                    )
+                    if saved_text_matches or mismatch_type is None:
+                        s['annotations'] = deepcopy(document['annotations'])
+                        s['reading_order'] = list(map(int, s['bounding_boxes']))
+                        s['text_sequence'] = (list(document.get('text_sequence', []))
+                                              or [s['annotations'][str(box_id)]
+                                                  for box_id in s['reading_order']])
+                        s['text_token_ids'] = [str(index) for index in
+                                               range(1, len(s['text_sequence']) + 1)]
+                        s['workflow']['alignment_valid'] = True
+                        s.pop('saved_alignment_document', None)
                 if not s['workflow']['alignment_valid']:
                     mapped = set(s.get('box_id_by_region', {}))
                     n = len(s['regions'])

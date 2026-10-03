@@ -1,5 +1,6 @@
 """Render the canvas and cards from the accepted Python state snapshot."""
 import html
+import hashlib
 from pathlib import Path
 from annotation.reading_order import build_text_sequence, suspicious_box_ids
 from annotation.state import source_mismatch_confirmed, spatial_box_order
@@ -34,6 +35,7 @@ def snapshot(s):
     scale_x=scale_y=1.0
     canvas_x=canvas_y=0
     canvas_w,canvas_h=w,h
+    review_image_url=s['image_url']
     if step == 7:
         from annotation.io import crop_export_geometry
         scaled_crop,resized_size=crop_export_geometry(s)
@@ -41,6 +43,23 @@ def snapshot(s):
         scale_x,scale_y=draw_w/w,draw_h/h
         canvas_x,canvas_y,crop_x2,crop_y2=scaled_crop
         canvas_w,canvas_h=crop_x2-canvas_x,crop_y2-canvas_y
+        # Review uses a real crop preview. The overlay coordinates are local
+        # to that crop, while source boxes remain stored in original pixels.
+        if s.get('image_path'):
+            from PIL import Image
+            from urllib.parse import quote
+            preview_dir=Path(s.get('preview_dir') or Path(s['image_path']).parent)
+            preview_dir.mkdir(parents=True,exist_ok=True)
+            cache_key=hashlib.sha256(
+                f"{s['image_path']}:{scaled_crop}:{resized_size}".encode()).hexdigest()
+            crop_preview=preview_dir/(cache_key+'-review.jpg')
+            if not crop_preview.exists():
+                with Image.open(s['image_path']) as source:
+                    if list(source.size)!=list(resized_size):
+                        source=source.resize(tuple(resized_size),Image.Resampling.LANCZOS)
+                    source.crop(tuple(scaled_crop)).convert('RGB').save(
+                        crop_preview,format='JPEG',quality=95,subsampling=0)
+            review_image_url='gradio_api/file='+quote(str(crop_preview),safe='/')
     other_mismatch=(source_mismatch and s['source_mismatch']['issue_type']=='other')
     if step == 6:
         boxes = {'crop': dict(bbox=s['crop'], status='intact')}
@@ -70,7 +89,7 @@ def snapshot(s):
         <button type="button" data-zoom="out" aria-label="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
         <button type="button" data-zoom="in" aria-label="Zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg></button></div></div>
         <div class="image-viewport"><svg class="annotation-canvas" viewBox="{canvas_x} {canvas_y} {canvas_w} {canvas_h}" role="img" aria-label="{filename} · {'cropped review' if step == 7 else 'annotation canvas'}" style="aspect-ratio:{canvas_w}/{canvas_h}">
-        <image href="{html.escape(s['image_url'], quote=True)}" x="0" y="0" width="{draw_w}" height="{draw_h}" preserveAspectRatio="none"/>
+        <image href="{html.escape(review_image_url, quote=True)}" x="{canvas_x}" y="{canvas_y}" width="{draw_w}" height="{draw_h}" preserveAspectRatio="none"/>
         '''
     # Scale labels/handles to image size so full-resolution scans remain editable.
     unit=max(draw_w,draw_h)/900
@@ -78,6 +97,8 @@ def snapshot(s):
     for key,b in boxes.items():
         x1,y1,x2,y2=b['bbox']
         x1,y1,x2,y2=x1*scale_x,y1*scale_y,x2*scale_x,y2*scale_y
+        if step == 7:
+            x1,y1,x2,y2=(x1-canvas_x,y1-canvas_y,x2-canvas_x,y2-canvas_y)
         selected=key==selected_id or step==6; multi_selected=key in selected_ids
         bw = x2 - x1; bh = y2 - y1
         miss_x1,miss_x2=x1+bw*0.2,x2-bw*0.2

@@ -610,6 +610,8 @@ class Integration(unittest.TestCase):
         self.assertEqual(doc['annotations'],{'1':'永','2':'樂'})
         review=snapshot(s)['markup']
         self.assertIn('<span class="eyebrow">FINAL RESULT</span>',review)
+        self.assertIn('cropped review',review)
+        self.assertIn('-review.jpg',review)
         self.assertIn('<p>永樂</p>',review)
         self.assertNotIn('<p>永樂寺</p>',review)
         self.assertNotIn('<span class="eyebrow">SOURCE MISMATCH</span>',review)
@@ -688,15 +690,16 @@ class Integration(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_annotation(path,self.image.name,[100,100])
 
-    def test_existing_annotation_without_matching_sidecar_realigns_later(self):
+    def test_existing_annotation_without_matching_sidecar_keeps_saved_alignment(self):
         s=aligned_state();s['workflow']['reading_order_valid']=True
         save_annotation(s,self.root/'out')
         opened=self.engine.open_image(self.image)
         self.assertEqual(opened['annotations'],s['annotations'])
         opened=self.engine.apply(opened,'save_content')
         self.assertTrue(opened['workflow']['bbox_valid'])
-        self.assertFalse(opened['workflow']['alignment_valid'])
-        self.assertEqual(opened['annotations'],{})
+        self.assertTrue(opened['workflow']['alignment_valid'])
+        self.assertEqual(opened['annotations'],s['annotations'])
+        self.assertEqual(opened['text_sequence'],s['text_sequence'])
         self.assertFalse(opened['workflow']['reading_order_valid'])
 
 
