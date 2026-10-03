@@ -385,6 +385,7 @@ When CLI paths are omitted, Gradio reads them from the document config:
 ```
 
 `paths.output_json` becomes the source JSON. `gradio.image_dir` and `gradio.output_dir` provide the image and annotation folders. Relative paths are resolved from the config file location.
+The source JSON is read-only input. **Save Annotation** writes per-image results and verified content under `gradio.output_dir`; **Download All** packages those saved records. Reopening an image restores its saved content from the output registry, without changing the input JSON.
 
 In this example:
 
@@ -495,7 +496,7 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 - **Next** on Status commits the complete canonical status map before entering Crop
 - **Apply Changes** on Status & Order only redraws the browser preview, including `MISS` marks. **Next** commits the current status and character arrangement to the session
 - **Next** on Crop commits the current local orange frame; oversized crops are scaled only when the output document is built
-- **Save Annotation** on Review is the only action that writes durable image data. It commits verified content to the source JSON and internal registry, then saves either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image
+- **Save Annotation** on Review is the only action that writes durable image data. It commits verified content to the output registry, then saves either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image; the input source JSON is unchanged
 - **Download All** is enabled only after an annotation or source-mismatch record has been saved. Existing records from earlier app launches count. When enabled, it creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
   - `text_annotations.json` for images committed with **Save Annotation**
   - `inscription_content.json` for images committed with **Save Annotation**

@@ -13,7 +13,8 @@ from .state import (new_state, set_verified_content, refresh_bbox_validation,
                     initialize_alignment, require, invalidate,
                     source_mismatch_confirmed)
 from .text_extraction import (annotation_text, edit_content_field,
-                              save_source_content, content_document, save_content_document,
+                              content_fields, content_document, save_content_document,
+                              validate_content_document,
                               normalize_content_titles, normalize_metadata_fields)
 from .text_alignment import count_annotation_characters
 from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox, sync_draft_boxes
@@ -131,6 +132,30 @@ class Workflow:
         annotation_text(record, code, self.annotation_title)
         return dict(record=record, record_index=record_index, face_index=face_index, code=code)
 
+    def _saved_content_for(self, image_name, code, source_record):
+        """Restore committed edits without writing into the input dataset."""
+        registry = self.output / '.state' / 'content.json'
+        if not registry.exists():
+            return source_record
+        documents = read_json(registry)
+        if not isinstance(documents, list):
+            raise ValueError('The saved-content registry must be a JSON array.')
+        matches = [item for item in documents
+                   if isinstance(item, dict) and item.get('image') == image_name]
+        if len(matches) > 1:
+            raise ValueError('The saved-content registry contains duplicate images.')
+        if not matches:
+            return source_record
+        saved = validate_content_document(matches[0], image_name)
+        restored = deepcopy(source_record)
+        for field in content_fields(restored, code, self.content_titles, self.metadata_fields):
+            value = saved['content'].get(field['title'])
+            if value is not None:
+                restored = edit_content_field(
+                    restored, code, field['path'], value,
+                    self.content_titles, self.metadata_fields)
+        return restored
+
     def open_image(self, path):
         state = new_state()
         path = Path(path).resolve()
@@ -169,6 +194,10 @@ class Workflow:
         saved_crop = None
         persisted = saved if saved.exists() else mismatch_saved if mismatch_saved.exists() else None
         if persisted:
+            restored_content = self._saved_content_for(path.name, located['code'], located['record'])
+            state.update(source_content=deepcopy(restored_content),
+                         source_baseline=deepcopy(restored_content),
+                         draft_content=deepcopy(restored_content))
             is_mismatch = persisted == mismatch_saved
             doc = (load_source_mismatch(persisted, path.name, size) if is_mismatch
                    else load_annotation(persisted, path.name, size))
@@ -544,18 +573,12 @@ class Workflow:
             if step != 7:
                 raise ValueError('Save the image in Step 7.')
             mismatch = source_mismatch_confirmed(s)
-            # Save Annotation is the only action that commits content edits to
-            # durable source/registry files. Earlier steps update session state.
+            # The extraction JSON is input data. Save only the per-image output
+            # and content registry used by Download All and later reopening.
             content_doc = content_document(
                 s['image'], s['code'], s['verified_content'] or s['draft_content'],
                 self.content_titles, self.metadata_fields)
-            save_source_content(
-                self.options.source_json, s['image'], s['source_baseline'],
-                s['verified_content'] or s['draft_content'], self.annotation_title)
             save_content_document(content_doc, self.output, self.verification_titles)
-            self._source_records = None
-            self._source_mtime_ns = None
-            self._source_locations = None
             path = (save_source_mismatch(s, self.output) if mismatch
                     else save_annotation(s, self.output))
             save_suspicious_details(s, self.output)
