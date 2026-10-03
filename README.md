@@ -58,7 +58,7 @@ SinoNom Annotation is a toolset for extracting structured inscription text from 
 | --- | --- |
 | `text_extraction/` | Decodes embedded Type0 CID glyphs and converts PDF content into structured JSON |
 | `text_detection/` | Detects intact and damaged character boxes and proposes an initial reading order. It does not recognize characters |
-| `gradio/` | Seven-step interface for content verification, box editing, status, reading order, crop and review |
+| `gradio/` | Six-stage interface for content verification, box editing and sorting, status and character assignment, crop and review |
 
 > **Note**
 >
@@ -93,7 +93,7 @@ flowchart LR
 | Extract Text | PDF, config and glyph profile | Source JSON plus `_invalid.json` for manual review |
 | Prepare Images | Flat image folder and valid `ky_hieu` values | Images with invalid/missing source records removed |
 | Run Gradio | Valid image folder and extracted source JSON | Content verification and character annotation workflow |
-| Automatic Detection | The three model assets in their default folders | Initial intact/damaged regions; Gradio recalculates reading order after box editing |
+| Automatic Detection | The three model assets in their default folders | Initial intact/damaged regions; review the boxes and assign their reading order in Gradio |
 | Save Results | Verified content and completed Review steps | `annotations.zip`, saved in the configured output folder and downloaded by the browser |
 
 ---
@@ -409,17 +409,17 @@ python gradio/app.py \
   --output-dir /override/annotations
 ```
 
-The Content screen exposes only these existing sections from the selected inscription face:
+The Content screen exposes the configured fields from the selected inscription face. The standard content sections are:
 
 | Source Section | UI Label |
 | --- | --- |
-| `Nguyên văn chữ Hán Nôm` | Original Hán/Nôm Text |
-| `Phiên âm Hán Việt` | Sino-Vietnamese Transcription |
-| `Dịch nghĩa` | Translation |
-| `Toát yếu` | Summary |
-| `Chú thích` | Notes |
+| `Nguyên văn chữ Hán Nôm` | Nguyên văn chữ Hán Nôm |
+| `Phiên âm Hán Việt` | Phiên âm Hán Việt |
+| `Dịch nghĩa` | Dịch nghĩa |
+| `Toát yếu` | Toát yếu |
+| `Chú thích` | Chú thích |
 
-The original Hán/Nôm section is the character-annotation source. Missing sections are not invented, and metadata or content belonging to another face cannot be edited from this screen.
+The original Hán/Nôm section is the character-annotation source. Only fields present in the selected face are shown; the app does not invent missing sections or expose another face's content. Configured metadata fields may also appear when `gradio.show_metadata_fields` is enabled.
 
 ```bash
 python gradio/app.py \
@@ -457,31 +457,28 @@ Open the local URL printed by Gradio (normally `http://127.0.0.1:7860`; a later 
 
 ### Workflow
 
-1. **🖼️ Image** — Select an image from the configured folder
-2. **📝 Content** — Verify and save the five configured sections: original Hán/Nôm, Sino-Vietnamese transcription, translation, summary and notes
-3. **🔲 Bounding Boxes** — Detect regions, use Alt/Option-drag to add one, move/resize locally, or delete selected regions; compare box/character counts and record a source mismatch only when the extracted source is known to be wrong
-4. **🔢 Reading Order** — Use the detector's already-sorted coordinate slots, drag character tokens to correct their box assignment, and flag questionable content with the toggle in the sidebar
-5. **🏷️ Status** — Review the final box/character mapping and mark ordinary boxes `intact` or `damaged`; `MISS` boxes are automatically `unknown`
-6. **✂️ Crop** — Adjust the orange crop frame on the original image; when its longest side exceeds 4096 pixels, export scales it down proportionally and records the scale factors
-7. **✅ Review** — Inspect the annotated canvas, final text/JSON and save the image object
+1. **Image** — Select an image from the configured folder and choose **Start Verification**.
+2. **Content** — Verify the source fields for that image. Only sections present in the source face appear; the original Hán/Nôm text supplies the character sequence.
+3. **Bounding Boxes & Sort** — Run detection or edit boxes manually, check the box and character counts, resolve any source mismatch, and assign a complete box order.
+4. **Status & Order** — Review each box's `intact`/`damaged` status, assign `unknown` only to damaged boxes when needed, arrange the character cards, and flag suspicious characters.
+5. **Crop** — Adjust the orange crop frame. Export scales crops longer than 4096 pixels down proportionally and records the scale factors.
+6. **Review** — Inspect the final image and JSON, then choose **Save Annotation**.
 
-The browser keeps transient geometry, selection, text-sequence and crop edits for responsive interaction; **Next** validates and commits the relevant local snapshot to the authoritative Python session state. Detection and Reading Order deliberately render every box with a neutral white outline, regardless of the detector's stored status; condition colors are revealed only in Status and Review. Before Reading Order, every editable region has a hidden `region_uid`, so edits do not depend on unstable public Box IDs. Entering Reading Order spatially sorts the committed regions with the detection-stage algorithm and assigns contiguous Box IDs from `1` to `n`. The editor renders only the annotation text as compact, horizontally flowing cards that wrap across rows; Box IDs are not shown on the cards. Dragging moves the text card itself and reflows nearby cards locally, with no Python callback during pointer movement. Dropping synchronizes the visible character sequence to the Gradio bridge. **Next** commits that sequence before continuing.
+The browser keeps geometry, selection, order, character and crop edits locally during interaction. **Next** validates and commits the relevant snapshot to the Python session. In the box stage, **Sort Boxes** can order all boxes or only the selected boxes; an existing order prompts before it is overwritten. A single selected box can also be given an order number manually. **Clear Order** removes the order from selected boxes, or from all boxes when none are selected. It leaves the boxes and any confirmed source mismatch unchanged, so the boxes can be sorted again. **Next** requires a complete, unique `1..n` order before leaving this stage.
 
-The normal path requires exactly one source character per box. In **Box-Content Mismatch**, **Missing Content** creates enough `MISS` tags to make the tag count equal the box count, while **Extra Content** handles extra source characters. Press **Confirm Mismatch** to confirm the selected issue; **Clear** removes that confirmation. These tags can be reordered with normal characters and are written to `annotations`. A box currently assigned `MISS` is always given the derived status `unknown` and is rendered yellow from the Status stage onward. **Other** requires a note. After it is confirmed, pressing **Next** skips the character-mapping stages and opens Review because an `other` record deliberately has no character annotations.
+Sorting is available after Content verification when the box and character counts match, or when a source mismatch has been confirmed for the current text and box count. If the counts differ, choose **Missing Content** when there are more boxes than characters or **Extra Content** when there are more characters than boxes. Choose **Other** for a source issue that cannot be mapped, including one where the counts match. Press **Confirm Mismatch**; **Clear** removes the confirmation. Changing the box count invalidates a previous confirmation and requires confirming again. Changing only the order does not. The **Next** action can also confirm the selected mismatch type after committing the current boxes. **Other** requires a note and goes directly from the box stage to Review.
 
-In Reading Order, bounding boxes are selectable but read-only: they cannot be moved, resized, created or deleted. Selecting a box resolves the character token currently assigned to that coordinate slot, and the compact toggle reflects that token's suspicious state. Clicking a chip does not select its box or control the toggle. Suspicious chips use a yellow background and the box currently receiving that token uses a yellow outline/fill. The flag moves with its character token when cards are reordered and is persisted only by **Save Annotation**. `suspicious_details.json` resolves the token back to its currently assigned Box ID at save time.
+For **Missing Content**, the app adds `MISS` character cards until every box has a card. For **Extra Content**, all source characters can be rearranged; characters beyond the box count are saved as `excluded_characters`. Character cards can be dragged in **Status & Order** to assign them to the numbered boxes without moving box geometry. A `MISS` card marks missing source content; it is not a box status and does not force `unknown`. Boxes retain `intact` or `damaged`, while `unknown` is a separate flag available only for damaged boxes. A suspicious flag follows its character card when it moves and is resolved to the final Box ID when saving.
 
-If a region is added, deleted, moved or resized before alignment, Next commits the final geometry and builds the Box ID and annotation mapping. Status remains attached to each surviving region. Hidden `region_uid` and token IDs are never written to output JSON.
+Box editing is immediate in the browser: click or drag to select, use Ctrl/Cmd-click for multiple selection, Alt/Option-drag to draw a box, or drag and resize existing boxes. **Delete Selected** and **Run Detection** update the box set; detection asks before replacing existing boxes. Entering coordinates in the sidebar or using **Next** commits the live geometry. Surviving regions keep their reviewed status. Internal region and character-token IDs are not written to output JSON. **Box color** changes only the editor's visual outline palette.
 
-Bounding-box manipulation is frontend-first. Selection, Ctrl/Cmd multi-selection, selection rectangles, dragging, resizing, group movement, valid coordinate typing and deselection update the SVG-local geometry immediately. Repeated edits stay local—even after pointer-up or selecting another box—and **Next** reads the live SVG and submits one validated geometry snapshot. **Delete Selected** first commits that same live snapshot and the active coordinate fields, then deletes the selected regions, so unrelated local changes survive its board refresh. Alt/Option-drag follows the same transaction rule: it commits every existing local box before creating the new region. **Run Detection** replaces the detected regions after confirmation when boxes already exist. Manually entered coordinates can be committed with **Update coordinates**; coordinates typed without pressing it are submitted directly by **Next** and override the selected box in that snapshot. There is no separate Add Box button. In Bounding Boxes and Reading Order, **Box color** offers a visual-only five-color outline palette (White, Cyan, Amber, Violet and Pink); this preference applies immediately and never changes or replaces stored statuses.
-
-After Reading Order is fixed, changing `intact`/`damaged` immediately switches the selected ordinary box between a solid green and dashed red outline and persists that edit to the Python session. A `MISS` box shows a disabled `unknown` status and a dotted yellow outline. Next atomically reconciles the complete canonical status map before Crop; there is no Update Status button.
+In **Status & Order**, boxes are selectable but cannot be moved, resized, created or deleted. The character cards and status controls update the local preview; **Next** commits their final arrangement and statuses before Crop.
 
 Crop dragging follows the same model: moving, resizing, or drawing the orange frame updates only local state and never opens a loading modal. **Next** snapshots the live frame and submits the coordinate textbox directly. The desktop and mobile layouts use normal page scrolling rather than clipping long content into a fixed-height application shell.
 
 Review renders the cropped image viewport from the accepted crop coordinates after drawing the annotation overlays. Bounding boxes retain their original image-space coordinates and are clipped together with the source image at the crop boundary; export data is not rewritten into crop-relative coordinates.
 
-Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengXian and PMingLiU fonts.
+Hán/Nôm text in the interface is rendered with locally served NomNaTong and DengXian fonts.
 
 ### Saving
 
@@ -491,10 +488,9 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 - Content edits stay in the current Gradio session until **Save Annotation**
 - **Back** returns to the preceding applicable workflow step
 - **Next** on Content (Step 2) applies the currently displayed editor text to session state before entering Bounding Boxes (Step 3). Use **Save change** before switching sections; **Next** also includes previously applied edits.
-- **Next** on Bounding Boxes commits the final locally dragged/resized geometry, validates the box/character relationship and auto-confirms the selected mismatch type when needed
-- **Next** on Reading Order assigns the visible text-card sequence to spatially sorted boxes before Status review
-- **Next** on Status commits the complete canonical status map before entering Crop
-- **Apply Changes** on Status & Order only redraws the browser preview, including `MISS` marks. **Next** commits the current status and character arrangement to the session
+- **Next** on Bounding Boxes & Sort commits the live geometry and box order, validates the box/character relationship, and confirms the selected mismatch type when needed
+- **Next** on Status & Order commits the character-card arrangement and complete box-status map before Crop
+- **Apply Changes** on Status & Order redraws the browser preview, including `MISS` marks; **Next** commits the current state to the session
 - **Next** on Crop commits the current local orange frame; oversized crops are scaled only when the output document is built
 - **Save Annotation** on Review is the only action that writes durable image data. It commits verified content to the output registry, then saves either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image; the input source JSON is unchanged
 - **Download All** is enabled only after an annotation or source-mismatch record has been saved. Existing records from earlier app launches count. When enabled, it creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
@@ -524,7 +520,7 @@ The three primary datasets are UTF-8 JSON arrays with one object per committed i
 
 #### `text_annotations.json`
 
-This file contains only images committed with **Save Annotation** on the Review step. Box IDs are contiguous from `1` to `n`. Applying the Reading Order editor never moves box geometry or its manually reviewed status; it assigns the arranged text cards to boxes in the detection-stage spatial order.
+This file contains only images committed with **Save Annotation** on the Review step. Box IDs are contiguous from `1` to `n`. Sorting and manually assigning order numbers determine those IDs; arranging character cards in **Status & Order** changes the character-to-box mapping without moving box geometry or changing its reviewed status.
 
 When at least one box is suspicious, the record also contains `"issue_type": ["suspicious_content"]`; the affected Box IDs are stored only in `suspicious_details.json`.
 
@@ -571,9 +567,9 @@ The `annotations` object is the final character-to-box mapping. Annotation files
 
 #### `source_mismatches.json`
 
-This optional file contains completed images whose source-character count cannot validly be aligned to the bounding boxes. Records with missing source characters include `MISS` annotations; other mismatch records retain the source text, boxes, statuses, resize and crop without a character mapping.
+This optional file contains saved images with a confirmed source mismatch. **Missing Content** records have more boxes than source characters and include `MISS` annotations. **Extra Content** records have more source characters than boxes and include `text_sequence` and `excluded_characters` alongside the mapped annotations. **Other** records use a minimal form with a note and box coordinates, without character annotations.
 
-For example, four boxes aligned against three source characters may contain:
+For example, the relevant fields of a record with four boxes and three source characters may contain:
 
 ```json
 {
@@ -589,33 +585,18 @@ For example, four boxes aligned against three source characters may contain:
 }
 ```
 
-Moving the `MISS` chip changes its final Box ID assignment and shifts the intervening token assignments. Its destination box is saved with `"status": "unknown"` and rendered yellow. An `other` record deliberately omits `annotations`.
+Moving the `MISS` card changes its final Box ID assignment and shifts the intervening character assignments. The destination box keeps its reviewed `intact` or `damaged` status. `MISS` is stored as an annotation value and marked on the canvas, not as an `unknown` status.
 
 ```json
 [
   {
     "image": "12306.jpg",
     "inscription_code": "12306",
-    "source_text": "永寺樂",
-    "source_character_count": 3,
-    "bounding_box_count": 2,
     "issue_type": ["other"],
     "note": "The extracted source does not match the inscription face.",
     "bounding_boxes": {
-      "1": {"bbox": [120, 350, 180, 420], "status": "intact"},
-      "2": {"bbox": [120, 450, 180, 520], "status": "damaged"}
-    },
-    "image_resize": {
-      "source_size": [1000, 1800],
-      "output_size": [1000, 1800],
-      "scale_x": 1.0,
-      "scale_y": 1.0
-    },
-    "crop": {
-      "top_left": [0, 0],
-      "top_right": [1000, 0],
-      "bottom_right": [1000, 1800],
-      "bottom_left": [0, 1800]
+      "1": {"bbox": [120, 350, 180, 420]},
+      "2": {"bbox": [120, 450, 180, 520]}
     }
   }
 ]
@@ -663,7 +644,7 @@ This file contains only images committed with **Save Annotation**. It stores the
 annotations/
 ├── 12305.json          # Boxes, statuses, final annotations and crop
 ├── source_mismatches/
-│   └── 12306.json      # Source issue plus boxes/status; MISS annotations when applicable
+│   └── 12306.json      # Source issue; MISS/extra-text mapping or minimal Other record
 ├── suspicious_details.json # Suspicious Box IDs keyed by inscription identifier
 ├── annotations.zip     # Download All archive, also downloaded by the browser
 └── .state/
