@@ -30,10 +30,16 @@ def snapshot(s):
     step=s['current_step']; source_w,source_h=s['image_size']
     source_mismatch=source_mismatch_confirmed(s)
     w,h=s['image_size']
+    draw_w,draw_h=w,h
+    scale_x=scale_y=1.0
     canvas_x=canvas_y=0
     canvas_w,canvas_h=w,h
     if step == 7:
-        canvas_x,canvas_y,crop_x2,crop_y2=s.get('crop') or [0,0,w,h]
+        from annotation.io import crop_export_geometry
+        scaled_crop,resized_size=crop_export_geometry(s)
+        draw_w,draw_h=resized_size
+        scale_x,scale_y=draw_w/w,draw_h/h
+        canvas_x,canvas_y,crop_x2,crop_y2=scaled_crop
         canvas_w,canvas_h=crop_x2-canvas_x,crop_y2-canvas_y
     other_mismatch=(source_mismatch and s['source_mismatch']['issue_type']=='other')
     if step == 6:
@@ -64,13 +70,15 @@ def snapshot(s):
         <button type="button" data-zoom="out" aria-label="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
         <button type="button" data-zoom="in" aria-label="Zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg></button></div></div>
         <div class="image-viewport"><svg class="annotation-canvas" viewBox="{canvas_x} {canvas_y} {canvas_w} {canvas_h}" role="img" aria-label="{filename} · {'cropped review' if step == 7 else 'annotation canvas'}" style="aspect-ratio:{canvas_w}/{canvas_h}">
-        <image href="{html.escape(s['image_url'], quote=True)}" x="0" y="0" width="{w}" height="{h}" preserveAspectRatio="none"/>
+        <image href="{html.escape(s['image_url'], quote=True)}" x="0" y="0" width="{draw_w}" height="{draw_h}" preserveAspectRatio="none"/>
         '''
     # Scale labels/handles to image size so full-resolution scans remain editable.
-    unit=max(w,h)/900
+    unit=max(draw_w,draw_h)/900
     suspicious_boxes=set(suspicious_box_ids(s)) if step in (4,7) else set()
     for key,b in boxes.items():
-        x1,y1,x2,y2=b['bbox']; selected=key==selected_id or step==6; multi_selected=key in selected_ids
+        x1,y1,x2,y2=b['bbox']
+        x1,y1,x2,y2=x1*scale_x,y1*scale_y,x2*scale_x,y2*scale_y
+        selected=key==selected_id or step==6; multi_selected=key in selected_ids
         bw = x2 - x1; bh = y2 - y1
         font_size = max(10 * unit, min(bw, bh) * 0.30)
         stroke_width = max(0.5, font_size * 0.1)

@@ -18,6 +18,10 @@
 .review-text p,
 .table-character { font-family: var(--han-nom-font, "Vietnamica NomNaTong", "Vietnamica DengXian", "Vietnamica PMingLiU", "Vietnamica PMingLiU ExtB", sans-serif) !important; font-weight: 400; }
 
+.sidebar-source-text p {
+  background-color: var(--color-panel);
+}
+
 .workspace-toolbar {
   display: flex;
   align-items: center;
@@ -158,9 +162,13 @@
   box-sizing: border-box;
 }
 .status-order-board .review-editor {
-  height: 1200px;
-  max-height: 100%;
-  overflow-y: auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+  align-self: stretch;
+  height: auto;
+  max-height: none;
+  overflow: hidden;
 }
 .review-editor {
   display: flex;
@@ -175,6 +183,8 @@
 .review-editor .review-detail {
   padding: 0;
   border: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 .review-text {
   display: flex;
@@ -184,6 +194,13 @@
   border: 1px solid var(--color-border, #303237);
   border-radius: var(--radius-sm, 4px);
   background: var(--color-page, #0b0d0f);
+}
+.status-order-board .review-text {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .review-text p {
   margin: 0;

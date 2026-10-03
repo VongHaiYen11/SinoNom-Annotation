@@ -14,8 +14,7 @@ from .state import (new_state, set_verified_content, refresh_bbox_validation,
                     source_mismatch_confirmed)
 from .text_extraction import (annotation_text, edit_content_field,
                               save_source_content, content_document, save_content_document,
-                              normalize_content_titles, normalize_metadata_fields,
-                              extract_source_content)
+                              normalize_content_titles, normalize_metadata_fields)
 from .text_alignment import count_annotation_characters
 from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox, sync_draft_boxes
 from .status import (update_status, replace_statuses, confirm_status,
@@ -103,106 +102,6 @@ class Workflow:
         self._source_records = None
         self._source_mtime_ns = None
         self._source_locations = None
-        # Reset All means "as the server started", not merely "reopen the
-        # latest files".  Keep an immutable in-memory baseline; individual
-        # image output files are small and this also records files that did not
-        # exist at startup.
-        self._startup_source = read_json(options.source_json)
-        self._startup_files = {}
-        content_path = self.output / '.state' / 'content.json'
-        self._startup_files[content_path] = (
-            content_path.read_bytes() if content_path.exists() else None)
-        suspicious_path = self.output / 'suspicious_details.json'
-        self._startup_suspicious = load_suspicious_details(self.output)
-        image_root = Path(getattr(options, 'image_dir', ''))
-        for image_path in image_root.iterdir() if image_root.is_dir() else ():
-            if not image_path.is_file():
-                continue
-            stem = image_path.stem
-            for target in self._image_persistence_paths(stem):
-                self._startup_files[target] = target.read_bytes() if target.exists() else None
-
-    def _image_persistence_paths(self, stem):
-        name = stem + '.json'
-        return (
-            self.output / name,
-            self.output / 'source_mismatches' / name,
-            self.output / 'crops' / name,
-            self.output / '.state' / name,
-            self.output / '.state' / 'source_mismatches' / name,
-        )
-
-    @staticmethod
-    def _restore_bytes(path, value):
-        path = Path(path)
-        if value is None:
-            path.unlink(missing_ok=True)
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        handle = tempfile.NamedTemporaryFile('wb', dir=path.parent, delete=False)
-        try:
-            with handle:
-                handle.write(value)
-                handle.flush()
-            Path(handle.name).replace(path)
-        finally:
-            Path(handle.name).unlink(missing_ok=True)
-
-    def reset_image(self, image_path):
-        """Transactionally restore one image to the server-start snapshot."""
-        image_path = Path(image_path).resolve()
-        located = extract_source_content(
-            image_path.name, self._startup_source, self.annotation_title)
-        current_source = read_json(self.options.source_json)
-        current_located = extract_source_content(
-            image_path.name, current_source, self.annotation_title)
-        current_source[current_located['record_index']] = deepcopy(located['record'])
-
-        content_path = self.output / '.state' / 'content.json'
-        startup_content = []
-        startup_content_bytes = self._startup_files.get(content_path)
-        if startup_content_bytes:
-            startup_content = json.loads(startup_content_bytes)
-        current_content = read_json(content_path) if content_path.exists() else []
-        image_name = image_path.name
-        restored_entry = next(
-            (deepcopy(item) for item in startup_content if item.get('image') == image_name), None)
-        current_content = [item for item in current_content if item.get('image') != image_name]
-        if restored_entry is not None:
-            current_content.append(restored_entry)
-
-        suspicious_path = self.output / 'suspicious_details.json'
-        current_suspicious = load_suspicious_details(self.output)
-        identifier = str(located['code'])
-        if identifier in self._startup_suspicious:
-            current_suspicious[identifier] = deepcopy(self._startup_suspicious[identifier])
-        else:
-            current_suspicious.pop(identifier, None)
-
-        targets = {
-            Path(self.options.source_json): json.dumps(
-                current_source, ensure_ascii=False, indent=2).encode('utf-8'),
-            content_path: (json.dumps(current_content, ensure_ascii=False, indent=2).encode('utf-8')
-                           if current_content or self._startup_files.get(content_path) is not None
-                           else None),
-            suspicious_path: (json.dumps(current_suspicious, ensure_ascii=False, indent=2).encode('utf-8')
-                              if current_suspicious else None),
-        }
-        targets.update({path: self._startup_files.get(path)
-                        for path in self._image_persistence_paths(image_path.stem)})
-        before = {path: path.read_bytes() if path.exists() else None for path in targets}
-        try:
-            for path, value in targets.items():
-                self._restore_bytes(path, value)
-        except Exception:
-            for path, value in before.items():
-                self._restore_bytes(path, value)
-            raise
-        self._source_records = None
-        self._source_mtime_ns = None
-        self._source_locations = None
-        return self.open_image(image_path)
-
     def _cached_source_records(self):
         """Avoid reparsing the complete extraction JSON for every opened image."""
         source = Path(self.options.source_json)
@@ -318,9 +217,20 @@ class Workflow:
             if any(box_id not in known for box_id in restored_ids):
                 raise ValueError('Suspicious details reference an unknown Box ID.')
             state['loaded_suspicious_box_ids'] = restored_ids
-        state['crop'] = default_crop(state['resized_image_size'])
+        # Editing always uses source-image coordinates. Saved crop corners are
+        # in image_resize.output_size coordinates, so undo that resize on load.
+        state['crop'] = default_crop(size)
         if saved_crop is not None:
-            state['crop'] = crop_bbox(saved_crop, state['resized_image_size'])
+            scaled_crop = crop_bbox(saved_crop, state['resized_image_size'])
+            resized_w, resized_h = state['resized_image_size']
+            state['crop'] = validate_crop_coordinates([
+                scaled_crop[0] * size[0] / resized_w,
+                scaled_crop[1] * size[1] / resized_h,
+                scaled_crop[2] * size[0] / resized_w,
+                scaled_crop[3] * size[1] / resized_h,
+            ], size)
+            state['loaded_crop_source'] = list(state['crop'])
+            state['loaded_crop_scaled'] = list(scaled_crop)
             state['crop_saved'] = True
         log.info('Loaded image %s; extracted source ky_hieu=%s', path.name, state['code'])
         return state
@@ -663,6 +573,8 @@ class Workflow:
             if step != 6:
                 raise ValueError('Edit crop in Step 6.')
             s['crop'] = validate_crop_coordinates(payload['bbox'], s['image_size'])
+            s.pop('loaded_crop_source', None)
+            s.pop('loaded_crop_scaled', None)
             s['crop_saved'] = False
             s['saved'] = False
         elif action == 'save_crop':

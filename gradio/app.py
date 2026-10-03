@@ -57,6 +57,39 @@ SHOW_LOADING_JS = """(...args) => {
     }
     return args;
 }"""
+HISTORY_FILTER_JS = """(...args) => {
+    const root = document.querySelector('#history-modal');
+    if (!root) return;
+    const search = root.querySelector('#history-search input, #history-search textarea');
+    const query = (typeof args[0] === 'string' ? args[0] : (search?.value || ''))
+        .trim().toLocaleLowerCase();
+    const selected = Array.isArray(args[1]) ? args[1] : ['Done', 'Not Done'];
+    const showDone = selected.includes('Done');
+    const showPending = selected.includes('Not Done');
+    let shown = 0;
+    root.querySelectorAll('.history-item').forEach(item => {
+        const name = item.querySelector('.history-image-name')?.textContent || '';
+        const matches = name.toLocaleLowerCase().includes(query)
+            && (item.classList.contains('processed') ? showDone : showPending);
+        item.hidden = !matches;
+        if (matches) shown++;
+    });
+    const count = root.querySelector('#history-shown');
+    if (count) count.textContent = shown;
+    const empty = root.querySelector('.history-empty');
+    if (empty) empty.hidden = shown > 0;
+    const clear = root.querySelector('#history-search-clear');
+    if (clear) clear.hidden = !query;
+}"""
+HISTORY_CLEAR_JS = """() => {
+    const root = document.querySelector('#history-modal');
+    const input = root?.querySelector('#history-search input, #history-search textarea');
+    if (input) {
+        input.value = '';
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+    return [''];
+}"""
 
 
 def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=False):
@@ -283,9 +316,15 @@ def create_app(options):
                     gr.Markdown('### Image History')
                     history_close=gr.Button('×', elem_id='history-close',
                                             elem_classes=['icon-button'], scale=0)
-                history_search=gr.Textbox(
-                    placeholder='Search image name…', show_label=False,
-                    elem_id='history-search', container=False)
+                with gr.Row(elem_id='history-controls'):
+                    history_search=gr.Textbox(
+                        placeholder='Search image name…', show_label=False,
+                        elem_id='history-search', container=False, scale=1)
+                    history_clear=gr.Button('×', elem_id='history-search-clear',
+                                            min_width=0, scale=0)
+                    history_filter=gr.CheckboxGroup(
+                        ['Done', 'Not Done'], value=['Done', 'Not Done'],
+                        label='Filter', elem_id='history-filter')
                 history_results=gr.HTML(elem_id='history-results')
         message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
         download_payload=gr.Textbox(visible=False)
@@ -303,9 +342,6 @@ def create_app(options):
                 with gr.Group(elem_classes=['section','sidebar-section','sidebar-component','current-image-section']):
                     gr.Markdown('### Current image')
                     current_image=gr.Markdown('—', elem_id='current-image-name')
-                    reset_confirm=gr.Checkbox(value=False, visible=False)
-                    reset_button=gr.Button('Reset All', size='sm', min_width=0,
-                                           elem_id='reset-all')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','sidebar-component','content-tools']) as content_actions:
                     gr.Markdown('### Content actions')
@@ -354,7 +390,8 @@ def create_app(options):
                             ('Missing Content','missing_text'),
                             ('Extra Content','extra_text'),
                             ('Other','other'),
-                        ],label='Issue type',filterable=False)
+                        ],label='Issue type',filterable=False,
+                           elem_id='mismatch-issue-type')
                         mismatch_note=gr.Textbox(
                             label='Note (required only for Other)',lines=2,max_lines=3)
                         with gr.Row(elem_classes=['button-group','sidebar-action-row','mismatch-action-row']):
@@ -373,6 +410,8 @@ def create_app(options):
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
                     unknown_status=gr.Radio(['False','True'],value='False',label='Unknown character (Damaged only)',interactive=True,elem_id='unknown-radio')
                     suspicious_toggle=gr.Checkbox(value=False,label='Suspicious annotation',interactive=False,elem_id='suspicious-toggle')
+                    apply_changes=gr.Button('Apply Changes', variant='primary',
+                                            elem_id='apply-status-changes')
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','sidebar-component','box-color-control']) as box_color_group:
                     gr.Markdown('### Box color')
@@ -458,6 +497,9 @@ def create_app(options):
         outputs.append(save_all)
 
         def render(ctx, msg=''):
+            if msg:
+                gr.Warning(html.unescape(msg.removeprefix(WARNING).strip()))
+                msg=''
             s=ctx['active']; step=s['current_step']; has=bool(s.get('image'))
             fields=(content_fields(
                 s['draft_content'],s['code'],engine.content_titles,engine.metadata_fields)
@@ -506,7 +548,7 @@ def create_app(options):
                         doc for doc in source_mismatch_json
                         if str(doc.get('inscription_code')) != current_code
                     ] + [final]
-            issue=s.get('source_mismatch') or {}
+            issue=(s.get('source_mismatch') or {}) if mismatch else {}
             counts_differ=bool(has and len(s['regions']) != count_annotation_characters(s['annotation_text']))
             rendered=[ctx,app_identity(s),gr.update(value=msg,visible=bool(msg)),
                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
@@ -644,8 +686,7 @@ def create_app(options):
             except (ValueError,OSError,KeyError,TypeError) as exc:
                 raise gr.Error(str(exc)) from exc
 
-        def history_markup(query=''):
-            needle=(query or '').strip().casefold()
+        def history_markup():
             items=[]
             processed_count=0
             for image in images:
@@ -653,33 +694,32 @@ def create_app(options):
                 is_processed=(Path(options.output_dir)/(path.stem+'.json')).is_file() or (
                     Path(options.output_dir)/'source_mismatches'/(path.stem+'.json')).is_file()
                 processed_count += int(is_processed)
-                if needle and needle not in path.name.casefold():
-                    continue
                 state_label='Đã xử lý' if is_processed else 'Chưa xử lý'
                 badge='processed' if is_processed else 'pending'
                 items.append(
                     f'<li class="history-item {badge}"><span class="history-image-name">'
                     f'{html.escape(path.name)}</span><span class="history-status">'
                     f'{state_label}</span></li>')
-            if not items:
-                items=['<li class="history-empty">Không tìm thấy ảnh phù hợp.</li>']
-            shown=len([image for image in images
-                       if not needle or needle in Path(image).name.casefold()])
+            items.append('<li class="history-empty" hidden>Không tìm thấy ảnh phù hợp.</li>')
             return (
                 f'<div class="history-count">Đã xử lý {processed_count}/{len(images)} ảnh'
-                f' · Hiển thị {shown}</div><ul class="history-list">'
+                f' · Hiển thị <span id="history-shown">{len(images)}</span></div><ul class="history-list">'
                 + ''.join(items) + '</ul>')
 
         history_open.click(
             fn=lambda: (gr.update(visible=True), history_markup()),
             inputs=[], outputs=[history_modal,history_results],
-            show_progress='hidden')
+            show_progress='hidden').success(fn=None,inputs=[history_search,history_filter],outputs=None,
+                                           show_progress='hidden',js=HISTORY_FILTER_JS)
         history_close.click(
             fn=lambda: gr.update(visible=False), inputs=[], outputs=[history_modal],
             show_progress='hidden')
-        history_search.input(
-            fn=history_markup, inputs=[history_search], outputs=[history_results],
-            show_progress='hidden')
+        history_filter.change(fn=None,inputs=[history_search,history_filter],outputs=None,
+                              show_progress='hidden',js=HISTORY_FILTER_JS)
+        history_search.input(fn=None,inputs=[history_search,history_filter],outputs=None,
+                             show_progress='hidden',js=HISTORY_FILTER_JS)
+        history_clear.click(fn=None,inputs=[],outputs=[history_search],
+                            show_progress='hidden',js=HISTORY_CLEAR_JS)
 
         save_all.click(save_folder,[],[download_payload],concurrency_id='annotation-actions',concurrency_limit=1,
                        show_progress='hidden',js=SHOW_LOADING_JS).success(
@@ -696,28 +736,6 @@ def create_app(options):
                 setTimeout(()=>URL.revokeObjectURL(url),10000);
             }""")
         clear_loading_when_done(open_button.click(open_image,[session,image_choice],**event_args))
-        def reset_image(ctx,confirmed):
-            if not confirmed:
-                return render(ctx)
-            try:
-                ctx=deepcopy(ctx)
-                path=ctx['active'].get('image_path')
-                if not path:
-                    raise ValueError('No image is currently open.')
-                restored=engine.reset_image(path)
-                restored['revision']=ctx['active']['revision']+1
-                ctx['drafts'].pop(path,None)
-                ctx['active']=restored
-                gr.Info('All changes for this image were reset.')
-                return render(ctx)
-            except Exception as exc:
-                log.exception('Cannot reset image')
-                return render(ctx,WARNING+' '+html.escape(str(exc)))
-        clear_loading_when_done(reset_button.click(
-            reset_image,[session,reset_confirm],
-            **dict(event_args,js="""(ctx, confirmed) => [ctx, window.confirm(
-                'Reset all changes for this image to the state from server startup?\\n\\nShared record metadata may also affect related image faces.'
-            )]""")))
         for button,action in [(back,'back'),(save,'save'),(undo,'undo')]:
             clear_loading_when_done(button.click(lambda c,a=action:run(c,a),[session],**event_args))
         def commit_frontend_content(ctx,draft):
@@ -1005,6 +1023,12 @@ def create_app(options):
                     statuses[region_uid]=status_value
             updated=engine.apply(ctx['active'],'statuses',{'statuses':statuses, 'unknowns':unknowns_map})
             return dict(ctx,active=updated)
+        apply_changes.click(
+            fn=None,inputs=[],outputs=None,show_progress='hidden',
+            js="""() => {
+                document.querySelector('.workbench-board')?.dispatchEvent(
+                    new CustomEvent('apply-status-preview', {bubbles: true}));
+            }""")
         def update_coordinates(ctx,selection,a,b,d,e):
             active,_=frontend_selection(selection)
             if not active:raise gr.Error('Select a bounding box first.')

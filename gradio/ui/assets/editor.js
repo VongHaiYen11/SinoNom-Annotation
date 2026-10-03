@@ -137,6 +137,19 @@ const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-bo
   group => (group.dataset?.boxId || group.getAttribute('data-box-id')) === String(id)
 );
 const root = element.closest('.gradio-container') || document;
+const clearMismatchIssueSelection = () => {
+  const dropdown = root.querySelector('#mismatch-issue-type');
+  if (!dropdown) return;
+  const clear = dropdown.querySelector('button[aria-label*="Clear"], button[title*="Clear"], .clear-button');
+  if (clear) {
+    clear.click();
+    return;
+  }
+  const input = dropdown.querySelector('input');
+  if (input) {
+    setInputValue('#mismatch-issue-type', '');
+  }
+};
 const applyImageOnlyMode = (enabled) => {
   const svg = element.querySelector('.annotation-canvas');
   if (svg) svg.classList.toggle('image-only', Boolean(enabled) && props.value.step === 4);
@@ -448,9 +461,9 @@ const hydrateLocalState = () => {
     }
     isDirty = true;
   }
-  updateCanvasLabels();
+  if (props.value.step !== 7) updateCanvasLabels();
 
-  if (props.value.step !== 4) {
+  if (props.value.step !== 4 && props.value.step !== 7) {
     element.querySelectorAll('[data-miss-mark]').forEach(mark => mark.remove());
   }
   if (!preserveOrder) {
@@ -838,6 +851,48 @@ const updateExcludedChips = container => {
   updateCanvasLabels();
 };
 
+// Apply Changes only refreshes the browser preview. Next remains responsible
+// for committing the current text/status draft to the Python session.
+element.addEventListener('apply-status-preview', () => {
+  if (props.value.step !== 4) return;
+  const container = element.querySelector('.order-chips');
+  if (!container) return;
+  updateExcludedChips(container);
+  const characterByBoxId = new Map(
+    [...container.querySelectorAll('[data-order-chip][data-assigned-box-id]')]
+      .map(chip => [chip.dataset.assignedBoxId, chip.dataset.character]));
+  element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
+    const id = group.dataset.boxId;
+    const box = localBoxes[id];
+    if (!box) return;
+    const missing = characterByBoxId.get(id) === 'MISS';
+    const rect = group.querySelector('rect:not([data-image-resize-handle])');
+    if (rect) {
+      if (missing) rect.dataset.missing = '1';
+      else delete rect.dataset.missing;
+    }
+    group.querySelector('[data-miss-mark]')?.remove();
+    if (missing) {
+      const [x1, y1, x2, y2] = box.bbox;
+      const mark = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      mark.setAttribute('data-miss-mark', '1');
+      mark.setAttribute('stroke', '#ef4444');
+      mark.setAttribute('stroke-width', String(Math.max(2 * Math.max(props.value.width, props.value.height) / 900, 2)));
+      mark.setAttribute('vector-effect', 'non-scaling-stroke');
+      mark.setAttribute('pointer-events', 'none');
+      [[x1, y1, x2, y2], [x2, y1, x1, y2]].forEach(coords => {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        ['x1', 'y1', 'x2', 'y2'].forEach((key, index) => line.setAttribute(key, coords[index]));
+        line.setAttribute('vector-effect', 'non-scaling-stroke');
+        mark.appendChild(line);
+      });
+      group.insertBefore(mark, group.querySelector('text'));
+    }
+    renderLocalStatus(id, box.status, box.unknown);
+  });
+  renderSelection(false);
+});
+
 function renderSuspiciousPreview() {
   if (props.value.step !== 4) return;
   element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
@@ -1176,6 +1231,7 @@ element.addEventListener('pointerup', event => {
       localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, order: null };
       localMismatchConfirmed = false;
       mismatchConfirmationInvalidated = true;
+      clearMismatchIssueSelection();
 
       const svg = state.svg;
       const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -1381,6 +1437,7 @@ root.addEventListener('click', event => {
     activeBoxId = null;
     localMismatchConfirmed = false;
     mismatchConfirmationInvalidated = true;
+    clearMismatchIssueSelection();
     isDirty = true;
     renderSelection();
     traceTransition(`DELETE ${deletedCount}`, beforeIds);
@@ -1542,6 +1599,7 @@ window.addEventListener('keydown', event => {
     activeBoxId = null;
     localMismatchConfirmed = false;
     mismatchConfirmationInvalidated = true;
+    clearMismatchIssueSelection();
     isDirty = true;
     renderSelection();
     traceTransition(`DELETE ${deletedCount}`, beforeIds);

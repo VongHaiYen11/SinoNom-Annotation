@@ -485,7 +485,6 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 ### Saving
 
 - **Start Verification** opens the image selected in the **Image** dropdown
-- **Reset All** restores the currently open image to its initial server snapshot
 - **Save change** applies the currently displayed Content editor value to the selected section
 - **Undo changes** restores the current Content draft
 - Content edits stay in the current Gradio session until **Save Annotation**
@@ -494,6 +493,7 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 - **Next** on Bounding Boxes commits the final locally dragged/resized geometry, validates the box/character relationship and auto-confirms the selected mismatch type when needed
 - **Next** on Reading Order assigns the visible text-card sequence to spatially sorted boxes before Status review
 - **Next** on Status commits the complete canonical status map before entering Crop
+- **Apply Changes** on Status & Order only redraws the browser preview, including `MISS` marks. **Next** commits the current status and character arrangement to the session
 - **Next** on Crop commits the current local orange frame; oversized crops are scaled only when the output document is built
 - **Save Annotation** on Review is the only action that writes durable image data. It commits verified content to the source JSON and internal registry, then saves either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image
 - **Download All** is enabled only after an annotation or source-mismatch record has been saved. Existing records from earlier app launches count. When enabled, it creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
@@ -501,7 +501,7 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
   - `inscription_content.json` for images committed with **Save Annotation**
   - `source_mismatches.json` for images explicitly confirmed as source errors
   - `suspicious_details.json` for saved images containing suspicious Box IDs
-- **History** opens a searchable list showing which configured images have a saved annotation or source-mismatch record
+- **History** opens a locally searchable list of configured images with Done and Not Done filters; each opening refreshes the saved-record status
 
 > **Note**
 >

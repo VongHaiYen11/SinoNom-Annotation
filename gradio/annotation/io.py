@@ -210,6 +210,15 @@ def load_source_mismatch(path, image, size):
     return validate_source_mismatch_document(doc, image, size)
 
 
+def crop_export_geometry(state):
+    from crop.crop import auto_scale_crop, default_crop
+    source_crop = state.get('crop') or default_crop(state['image_size'])
+    if (state.get('loaded_crop_source') == source_crop
+            and state.get('loaded_crop_scaled') is not None):
+        return list(state['loaded_crop_scaled']), list(state['resized_image_size'])
+    return auto_scale_crop(source_crop, state['image_size'])
+
+
 def final_document(state):
     if not all(state['workflow'].values()) or not validate_bbox_text_count(state):
         raise ValueError('Complete all verification steps and match the box and character counts.')
@@ -217,9 +226,8 @@ def final_document(state):
     from .reading_order import suspicious_box_ids
     if suspicious_box_ids(state):
         doc['issue_type'] = ['suspicious_content']
-    from crop.crop import auto_scale_crop, crop_document, default_crop, image_resize
-    source_crop = state.get('crop') or default_crop(state['image_size'])
-    scaled_crop, resized_size = auto_scale_crop(source_crop, state['image_size'])
+    from crop.crop import crop_document, image_resize
+    scaled_crop, resized_size = crop_export_geometry(state)
     doc['crop'] = crop_document(
         state['image'], scaled_crop, resized_size
     )['crop']
@@ -264,9 +272,8 @@ def final_source_mismatch_document(state):
     if mismatch_type == 'extra_text':
         doc['text_sequence']=list(state['text_sequence'])
         doc['excluded_characters']=list(issue['excluded_characters'])
-    from crop.crop import auto_scale_crop, crop_document, default_crop, image_resize
-    source_crop = state.get('crop') or default_crop(state['image_size'])
-    scaled_crop, resized_size = auto_scale_crop(source_crop, state['image_size'])
+    from crop.crop import crop_document, image_resize
+    scaled_crop, resized_size = crop_export_geometry(state)
     doc['image_resize'] = image_resize(state['image_size'], resized_size)
     doc['crop'] = crop_document(
         state['image'], scaled_crop, resized_size

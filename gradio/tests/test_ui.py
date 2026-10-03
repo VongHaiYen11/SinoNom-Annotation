@@ -730,15 +730,6 @@ class GradioCallbacks(unittest.TestCase):
             self.assertEqual(reopened_result[0]['active']['current_step'],4)
             self.assertNotIn('Select a box and enter all four coordinates',
                              reopened_result[2]['value'])
-            reset_image=next(f for f in functions if f.__name__=='reset_image')
-            unchanged=reset_image(restored,False)[0]
-            self.assertTrue((root/'out/12305.json').exists())
-            self.assertEqual(unchanged['active']['annotations'],{'1':'永','2':'樂','3':'寺'})
-            reset=reset_image(restored,True)[0]
-            self.assertEqual(reset['active']['current_step'],2)
-            self.assertFalse(reset['active']['detection_loaded'])
-            self.assertEqual(reset['active']['annotations'],{})
-            self.assertFalse((root/'out/12305.json').exists())
 
     def test_ui_source_mismatch_flow(self):
         with tempfile.TemporaryDirectory() as folder:
