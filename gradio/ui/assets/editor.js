@@ -8,7 +8,7 @@ let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId = null;
 let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
 let alignmentStateReady = false, alignmentContainer = null;
-let localMismatchConfirmed = false, mismatchConfirmationInvalidated = false;
+let mismatchConfirmationInvalidated = false;
 let nextTemporaryBoxId = 1;
 let annotationColor = '#f4f4f5';
 const annotationColors = {
@@ -24,9 +24,12 @@ const canEditReadingOrder = () => {
   const charCount = Number(props.value?.characterCount ?? 0);
   const bboxValid = Boolean(props.value?.contentVerified)
     && boxCount === charCount && boxCount > 0;
+  const confirmedBoxCount = Number(props.value?.mismatchBoxCount);
   const mismatchConfirmed = !mismatchConfirmationInvalidated
-    && (Boolean(props.value?.mismatchConfirmed) || localMismatchConfirmed);
-  return step >= 3 && (bboxValid || mismatchConfirmed);
+    && Boolean(props.value?.mismatchConfirmed)
+    && confirmedBoxCount === boxCount;
+  return step === 3 && Boolean(props.value?.contentVerified)
+    && (bboxValid || mismatchConfirmed);
 };
 
 const orderedClearTargets = () => {
@@ -54,10 +57,12 @@ const updateValidationSummary = () => {
   }
 
   const contentVerified = Boolean(props.value.contentVerified ?? true);
+  const confirmedBoxCount = Number(props.value.mismatchBoxCount);
   const mismatchConfirmed = !mismatchConfirmationInvalidated
-    && (Boolean(props.value.mismatchConfirmed) || localMismatchConfirmed);
+    && Boolean(props.value.mismatchConfirmed)
+    && confirmedBoxCount === boxCount;
   const matched = contentVerified && boxCount === charCount && charCount > 0;
-  const canOrder = matched || mismatchConfirmed;
+  const canOrder = contentVerified && (matched || mismatchConfirmed);
 
   if (!matched && !mismatchConfirmed) {
     let hasOrder = false;
@@ -416,13 +421,13 @@ const hydrateLocalState = () => {
   }
   // A successful backend confirmation is only accepted after its exact box
   // snapshot has initialized this editor. Local Add/Delete invalidates it.
-  if (props.value.mismatchConfirmed && !['sort_boxes_calc'].includes(pendingAction)) {
-    localMismatchConfirmed = true;
+  if (props.value.mismatchConfirmed
+      && Number(props.value.mismatchBoxCount) === Object.keys(localBoxes).length
+      && !['sort_boxes_calc'].includes(pendingAction)) {
     mismatchConfirmationInvalidated = false;
   } else if (props.value.clearMismatchConfirmed) {
     // Clearing is an explicit backend transition. Drop the browser-local
     // confirmation too, otherwise this stale flag keeps the badge and sorting enabled.
-    localMismatchConfirmed = false;
     mismatchConfirmationInvalidated = true;
     props.value.clearMismatchConfirmed = false;
   }
@@ -1227,7 +1232,6 @@ element.addEventListener('pointerup', event => {
       let newId;
       do { newId = `box_new_${nextTemporaryBoxId++}`; } while (localBoxes[newId]);
       localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, order: null };
-      localMismatchConfirmed = false;
       mismatchConfirmationInvalidated = true;
       clearMismatchIssueSelection();
 
@@ -1433,7 +1437,6 @@ root.addEventListener('click', event => {
     });
     selectedIds.clear();
     activeBoxId = null;
-    localMismatchConfirmed = false;
     mismatchConfirmationInvalidated = true;
     clearMismatchIssueSelection();
     isDirty = true;
@@ -1595,7 +1598,6 @@ window.addEventListener('keydown', event => {
     });
     selectedIds.clear();
     activeBoxId = null;
-    localMismatchConfirmed = false;
     mismatchConfirmationInvalidated = true;
     clearMismatchIssueSelection();
     isDirty = true;

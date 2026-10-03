@@ -298,6 +298,7 @@ body,
   padding: 0 !important;
   background: rgb(0 0 0 / 64%);
 }
+#history-modal.history-dismissed { display: none !important; }
 #history-modal-card {
   position: fixed !important;
   top: 50% !important;

@@ -382,8 +382,10 @@ def create_app(options):
                         manual_order_error=gr.HTML('', elem_id='manual-box-order-error')
                         with gr.Row(elem_classes=['button-group','sidebar-action-row','bbox-action-row']):
                             sort_boxes=gr.Button('Sort Boxes', variant='primary', size='sm',
-                                                 min_width=0, elem_id='sort-boxes')
+                                                 min_width=0, interactive=False,
+                                                 elem_id='sort-boxes')
                             clear_order=gr.Button('Clear Order', size='sm', min_width=0,
+                                                  interactive=False,
                                                   elem_id='clear-box-orders')
                     gr.HTML('''<section class="selection-guide" aria-label="Selection Guide">
                         <h3>Selection Guide</h3>
@@ -516,6 +518,7 @@ def create_app(options):
             source_mismatches_preview,source_mismatches_json_section,
         ])
         outputs.append(save_all)
+        outputs.append(image_choice)
 
         def render(ctx, msg=''):
             if msg:
@@ -600,6 +603,7 @@ def create_app(options):
                     gr.update(value=source_mismatch_json),
                     gr.update(visible=step==7 and bool(source_mismatch_json))]
             rendered.append(gr.update(interactive=has_saved_image_records()))
+            rendered.append(gr.update(value=s.get('image_path') if step == 1 else None))
             return rendered
 
         def run(ctx, action, payload=None, auto_detect=True):
@@ -710,30 +714,44 @@ def create_app(options):
         def history_markup():
             items=[]
             processed_count=0
+            output_dir=Path(options.output_dir)
+            try:
+                processed_names={path.name for path in output_dir.glob('*.json')}
+            except OSError:
+                processed_names=set()
+            try:
+                processed_mismatch_names={
+                    path.name for path in (output_dir/'source_mismatches').glob('*.json')
+                }
+            except OSError:
+                processed_mismatch_names=set()
             for image in images:
                 path=Path(image)
-                is_processed=(Path(options.output_dir)/(path.stem+'.json')).is_file() or (
-                    Path(options.output_dir)/'source_mismatches'/(path.stem+'.json')).is_file()
+                record_name=path.stem+'.json'
+                is_processed=(record_name in processed_names
+                              or record_name in processed_mismatch_names)
                 processed_count += int(is_processed)
-                state_label='Đã xử lý' if is_processed else 'Chưa xử lý'
+                state_label='Processed' if is_processed else 'Not processed'
                 badge='processed' if is_processed else 'pending'
                 items.append(
                     f'<li class="history-item {badge}"><span class="history-image-name">'
                     f'{html.escape(path.name)}</span><span class="history-status">'
                     f'{state_label}</span></li>')
-            items.append('<li class="history-empty" hidden>Không tìm thấy ảnh phù hợp.</li>')
+            items.append('<li class="history-empty" hidden>No matching images found.</li>')
             return (
-                f'<div class="history-count">Đã xử lý {processed_count}/{len(images)} ảnh'
-                f' · Hiển thị <span id="history-shown">{len(images)}</span></div><ul class="history-list">'
+                f'<div class="history-count">Processed {processed_count}/{len(images)} images'
+                f' · Showing <span id="history-shown">{len(images)}</span></div><ul class="history-list">'
                 + ''.join(items) + '</ul>')
 
         history_open.click(
             fn=lambda: (gr.update(visible=True), history_markup()),
             inputs=[], outputs=[history_modal,history_results],
+            js="(...args) => { document.querySelector('#history-modal')?.classList.remove('history-dismissed'); return args; }",
             show_progress='hidden').success(fn=None,inputs=[history_search,history_filter],outputs=None,
                                            show_progress='hidden',js=HISTORY_FILTER_JS)
         history_close.click(
             fn=lambda: gr.update(visible=False), inputs=[], outputs=[history_modal],
+            js="(...args) => { document.querySelector('#history-modal')?.classList.add('history-dismissed'); return args; }",
             show_progress='hidden')
         history_filter.change(fn=None,inputs=[history_search,history_filter],outputs=None,
                               show_progress='hidden',js=HISTORY_FILTER_JS)
@@ -1169,6 +1187,13 @@ def create_app(options):
                     result[8]=gr.update(value=board_value,visible=True)
                     return result
                 except Exception as exc:
+                    if str(exc) == (
+                        'Confirm the source mismatch before sorting when box and character counts differ.'
+                    ):
+                        # The browser can dispatch a stale sort snapshot just as
+                        # validation state is changing. Refresh the authoritative
+                        # board so it disables Sort instead of surfacing a warning.
+                        return render(ctx)
                     return render(ctx,WARNING+' '+html.escape(str(exc)))
             return run(ctx,evt._data['action'],evt._data['payload'])
         board.action(on_action,[session],outputs=outputs,concurrency_id='annotation-actions',
