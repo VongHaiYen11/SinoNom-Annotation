@@ -9,7 +9,6 @@ let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId 
 let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
 let alignmentStateReady = false, alignmentContainer = null;
 let localMismatchConfirmed = false, mismatchConfirmationInvalidated = false;
-let pendingMismatchAction = null;
 let nextTemporaryBoxId = 1;
 let annotationColor = '#f4f4f5';
 const annotationColors = {
@@ -21,19 +20,13 @@ const imageTransform = { zoom: 100, width: props.value.width, height: props.valu
 
 const canEditReadingOrder = () => {
   const step = props.value?.step || 1;
-  const dds = root.querySelectorAll('#validation-summary-host dl dd');
   const boxCount = Object.keys(localBoxes).length;
-  const charCount = dds.length >= 2 ? (parseInt(dds[1].textContent.trim(), 10) || 0) : 0;
-  const bboxValid = boxCount === charCount && boxCount > 0;
+  const charCount = Number(props.value?.characterCount ?? 0);
+  const bboxValid = Boolean(props.value?.contentVerified)
+    && boxCount === charCount && boxCount > 0;
   const mismatchConfirmed = !mismatchConfirmationInvalidated
     && (Boolean(props.value?.mismatchConfirmed) || localMismatchConfirmed);
   return step >= 3 && (bboxValid || mismatchConfirmed);
-};
-
-const openMismatchConfirmModal = (action) => {
-  pendingMismatchAction = action;
-  const modal = root.querySelector('#mismatch-confirm-modal');
-  if (modal) modal.style.display = 'flex';
 };
 
 const updateValidationSummary = () => {
@@ -43,7 +36,8 @@ const updateValidationSummary = () => {
   if (dds.length < 2) return;
 
   const boxCount = Object.keys(localBoxes).length;
-  const charCount = parseInt(dds[1].textContent.trim(), 10) || 0;
+  const charCount = Number(props.value?.characterCount ??
+    (parseInt(dds[1].textContent.trim(), 10) || 0));
   const diff = boxCount - charCount;
 
   dds[0].textContent = String(boxCount);
@@ -128,6 +122,13 @@ const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-bo
   group => (group.dataset?.boxId || group.getAttribute('data-box-id')) === String(id)
 );
 const root = element.closest('.gradio-container') || document;
+const applyImageOnlyMode = (enabled) => {
+  const svg = element.querySelector('.annotation-canvas');
+  if (svg) svg.classList.toggle('image-only', Boolean(enabled) && props.value.step === 4);
+};
+root.addEventListener('canvas-image-only-change', event => {
+  applyImageOnlyMode(event.detail);
+});
 const statusColor = (status, unknown = false) => status === 'damaged' ? (unknown ? '#f59e0b' : '#ef4444') : '#22c55e';
 const applyAnnotationColor = () => {
   if (![3, 4].includes(props.value.step)) return;
@@ -466,6 +467,9 @@ const hydrateLocalState = () => {
   assertUniqueBoxIds('hydrate');
   readAnnotationColor();
   applyAnnotationColor();
+  applyImageOnlyMode(
+    root.querySelector('#show-image-only input[type="checkbox"]')?.checked
+  );
 };
 
 const fitCanvas = (width, height, focalPoint = null) => {
@@ -756,6 +760,7 @@ const setSelection = (ids, active = null, sync = true) => {
   activeBoxId = active && localBoxes[active] ? active : selectedIds.values().next().value || null;
   renderSelection(sync);
 };
+root.addEventListener('deselect-regions', () => setSelection([], null));
 const createOverlayRect = (svg, className) => {
   const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
   rect.setAttribute('class', className); rect.setAttribute('vector-effect', 'non-scaling-stroke');
@@ -1357,14 +1362,12 @@ root.addEventListener('click', event => {
   }
   const manualOrderContainer = event.target.closest('#manual-box-order');
   if (manualOrderContainer && !canEditReadingOrder()) {
-    openMismatchConfirmModal('input');
     event.preventDefault();
     return;
   }
   const clearOrderBtn = event.target.closest('#clear-box-orders');
   if (clearOrderBtn) {
     if (!canEditReadingOrder()) {
-      openMismatchConfirmModal('clear');
       event.preventDefault();
       return;
     }
@@ -1384,7 +1387,6 @@ root.addEventListener('click', event => {
   const sortBtn = event.target.closest('#sort-boxes');
   if (sortBtn) {
     if (!canEditReadingOrder()) {
-      openMismatchConfirmModal('sort');
       event.preventDefault();
       return;
     }
@@ -1400,14 +1402,6 @@ root.addEventListener('click', event => {
     } else {
       openSortSelectedModal();
     }
-    event.preventDefault();
-    return;
-  }
-  const cancelMismatchModal = event.target.closest('#mismatch-modal-cancel');
-  if (cancelMismatchModal) {
-    const modal = root.querySelector('#mismatch-confirm-modal');
-    if (modal) modal.style.display = 'none';
-    pendingMismatchAction = null;
     event.preventDefault();
     return;
   }

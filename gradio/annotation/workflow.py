@@ -31,7 +31,7 @@ from .io import (atomic_write, final_document,
                  canonical_issue_type, validate_document,
                  validate_source_mismatch_type)
 from .detection_adapter import detect
-from crop.crop import (save_crop_coordinates, crop_bbox, default_crop,
+from crop.crop import (crop_bbox, default_crop,
                        validate_crop_coordinates, validate_resized_image_size)
 
 log = logging.getLogger(__name__)
@@ -319,18 +319,8 @@ class Workflow:
                 raise ValueError('Suspicious details reference an unknown Box ID.')
             state['loaded_suspicious_box_ids'] = restored_ids
         state['crop'] = default_crop(state['resized_image_size'])
-        crop_path = self.output / 'crops' / (path.stem + '.json')
         if saved_crop is not None:
             state['crop'] = crop_bbox(saved_crop, state['resized_image_size'])
-            state['crop_saved'] = True
-        elif crop_path.exists():
-            crop = read_json(crop_path)
-            if crop['image'] != path.name:
-                raise ValueError('Crop does not belong to this image.')
-            if crop.get('image_resize'):
-                state['resized_image_size'] = validate_resized_image_size(
-                    crop['image_resize']['output_size'])
-            state['crop'] = crop_bbox(crop['crop'], state['resized_image_size'])
             state['crop_saved'] = True
         log.info('Loaded image %s; extracted source ky_hieu=%s', path.name, state['code'])
         return state
@@ -376,24 +366,12 @@ class Workflow:
             text = annotation_text(s['draft_content'], s['code'], self.annotation_title)
             if not count_annotation_characters(text):
                 raise ValueError('Annotation text contains no characters after normalization.')
-            content_doc = content_document(
-                s['image'], s['code'], s['draft_content'], self.content_titles,
-                self.metadata_fields)
-            save_source_content(
-                self.options.source_json, s['image'], s['source_baseline'],
-                s['draft_content'], self.annotation_title)
-            # The persisted source changed; refresh lazily on the next image open.
-            self._source_records = None
-            self._source_mtime_ns = None
-            self._source_locations = None
-            save_content_document(content_doc, self.output, self.verification_titles)
             loaded_mapping = deepcopy(s.get('loaded_region_uid_by_box_id', {}))
             loaded_suspicious = list(s.get('loaded_suspicious_box_ids', []))
             text_changed = text != s['annotation_text']
             set_verified_content(s, s['draft_content'], text)
             if text_changed:
                 s['source_mismatch'] = None
-            s['source_baseline'] = deepcopy(s['verified_content'])
             # Exact restore is allowed only with matching source AND document fingerprints.
             meta = s.pop('loaded_meta', None)
             if meta and meta.get('text_hash') == fingerprint(text) and 'loaded_document' in s:
@@ -452,6 +430,7 @@ class Workflow:
                 s['regions'] = {uuid4().hex: deepcopy(box) for box in doc['bounding_boxes'].values()}
                 s['selected_region_uid'] = next(iter(s['regions']), None)
                 s['selected_region_uids'] = [s['selected_region_uid']] if s['selected_region_uid'] else []
+                s['selection_cleared'] = False
                 s['detection_loaded'] = True
                 invalidate(s, clear=True)
             elif action == 'add':
@@ -460,10 +439,17 @@ class Workflow:
                                   payload.get('selected'))
                 s['selected_region_uid'] = add_bbox(s, payload['bbox'])
                 s['selected_region_uids'] = [s['selected_region_uid']]
+                s['selection_cleared'] = False
             elif action == 'update':
                 update_bbox(s, payload.get('uid') or payload.get('id') or s['selected_region_uid'], payload['bbox'])
             elif action == 'commit_boxes':
-                sync_draft_boxes(s, payload)
+                sync_draft_boxes(
+                    s, payload,
+                    materialize_alignment=payload.get('materialize_alignment', True))
+                s['selection_cleared'] = bool(payload.get('selection_cleared', False))
+                if s['selection_cleared']:
+                    s['selected_region_uid'] = None
+                    s['selected_region_uids'] = []
             else:
                 selected = payload.get('ids') or [payload.get('uid') or payload.get('id') or s['selected_region_uid']]
                 selected = list(dict.fromkeys(selected))
@@ -526,6 +512,7 @@ class Workflow:
                 if uid not in s['regions']:
                     raise ValueError('Region does not exist.')
                 s['selected_region_uid'] = uid
+                s['selection_cleared'] = False
                 selected = list(s.get('selected_region_uids', []))
                 if payload.get('toggle'):
                     was_selected = uid in selected
@@ -647,6 +634,18 @@ class Workflow:
             if step != 7:
                 raise ValueError('Save the image in Step 7.')
             mismatch = source_mismatch_confirmed(s)
+            # Save Annotation is the only action that commits content edits to
+            # durable source/registry files. Earlier steps update session state.
+            content_doc = content_document(
+                s['image'], s['code'], s['verified_content'] or s['draft_content'],
+                self.content_titles, self.metadata_fields)
+            save_source_content(
+                self.options.source_json, s['image'], s['source_baseline'],
+                s['verified_content'] or s['draft_content'], self.annotation_title)
+            save_content_document(content_doc, self.output, self.verification_titles)
+            self._source_records = None
+            self._source_mtime_ns = None
+            self._source_locations = None
             path = (save_source_mismatch(s, self.output) if mismatch
                     else save_annotation(s, self.output))
             save_suspicious_details(s, self.output)
@@ -669,8 +668,8 @@ class Workflow:
         elif action == 'save_crop':
             if step != 6:
                 raise ValueError('Save crop in Step 6.')
-            save_crop_coordinates(s['image'], s['crop'], s['resized_image_size'],
-                                  self.output / 'crops', source_size=s['image_size'])
+            # Kept as a session-only compatibility action; Save Annotation
+            # commits the crop together with the final image document.
             s['crop_saved'] = True
         else:
             raise ValueError('Invalid action: ' + action)

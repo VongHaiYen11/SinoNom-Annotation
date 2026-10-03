@@ -88,6 +88,11 @@
   user-select: none;
 }
 
+.annotation-canvas.image-only > :not(image) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .annotation-canvas [data-box-id] { cursor: pointer; }
 .annotation-canvas [data-region-uid] { cursor: move; }
 .annotation-canvas [data-corner] { display: none; cursor: nwse-resize; fill: #000; opacity: 0; pointer-events: all; }

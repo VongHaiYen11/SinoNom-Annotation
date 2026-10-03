@@ -3,7 +3,7 @@ import html
 from pathlib import Path
 from annotation.reading_order import build_text_sequence, suspicious_box_ids
 from annotation.state import source_mismatch_confirmed, spatial_box_order
-from annotation.text_alignment import MISSING_ANNOTATION
+from annotation.text_alignment import MISSING_ANNOTATION, count_annotation_characters
 from .icons import DOCUMENT
 
 SCRIPT = (Path(__file__).parent / 'assets/editor.js').read_text()
@@ -42,7 +42,8 @@ def snapshot(s):
         selected_ids = {'crop'}
     elif step == 3:
         boxes = s['regions']
-        selected_id = s['selected_region_uid'] if s['selected_region_uid'] in boxes else next(iter(boxes), None)
+        selected_id = (s['selected_region_uid'] if s['selected_region_uid'] in boxes else
+                       None if s.get('selection_cleared') else next(iter(boxes), None))
         selected_ids = set(s.get('selected_region_uids', [])) or ({selected_id} if selected_id else set())
     elif step == 7 and other_mismatch:
         boxes=s['regions'];selected_id=None;selected_ids=set()
@@ -198,15 +199,6 @@ def snapshot(s):
         </div>
       </div>
     </div>
-    <div id="mismatch-confirm-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="mismatch-modal-title">
-      <div class="modal-card">
-        <h3 id="mismatch-modal-title">Confirm Source Mismatch First</h3>
-        <p id="mismatch-modal-message" class="modal-subtitle">Bounding-box count and character count do not match. Please confirm the source mismatch before editing reading order.</p>
-        <div class="modal-actions">
-          <button type="button" id="mismatch-modal-cancel" class="btn btn-secondary">Cancel</button>
-        </div>
-      </div>
-    </div>
     '''
     markup+='</div>'
     calc_sorted = s.pop('calc_sorted_box_ids', None)
@@ -214,6 +206,8 @@ def snapshot(s):
                 width=canvas_w,height=canvas_h,boxes=boxes,selected=selected_id,selectedIds=list(selected_ids),
                 calcSortedBoxIds=calc_sorted,
                 bboxValid=s['workflow'].get('bbox_valid', False),
+                contentVerified=s['workflow'].get('content_verified', False),
+                characterCount=count_annotation_characters(s['annotation_text']),
                 mismatchConfirmed=source_mismatch_confirmed(s),
                 readingOrder=list(s['reading_order']),
                 spatialBoxOrder=(list(s.get('reading_order', [])) if s.get('bounding_boxes') else []),

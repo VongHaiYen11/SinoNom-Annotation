@@ -8,6 +8,7 @@ def new_state():
                 content_preview_url=None, source_content=None,
                 verified_content=None, draft_content=None, annotation_text='',
                 regions={}, selected_region_uid=None, selected_region_uids=[],
+                selection_cleared=False,
                 bounding_boxes={}, annotations={}, reading_order=[],
                 text_sequence=[],
                 text_token_ids=[], suspicious_token_ids=[],

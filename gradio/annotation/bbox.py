@@ -1,7 +1,7 @@
 import math
 import logging
 from uuid import uuid4
-from .state import invalidate
+from .state import invalidate, refresh_bbox_validation, source_mismatch_confirmed
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ def update_bboxes(state, boxes, active=None, selected=None):
     invalidate(state, clear=True)
 
 
-def sync_draft_boxes(state, payload):
+def sync_draft_boxes(state, payload, materialize_alignment=True):
     """Synchronize frontend draft boxes, statuses, unknowns, and orders to Python state."""
     boxes = payload.get('boxes')
     if not isinstance(boxes, dict):
@@ -111,9 +111,14 @@ def sync_draft_boxes(state, payload):
                 except (ValueError, TypeError):
                     pass
         n = len(state['regions'])
-        if len(val_orders) == n and sorted(val_orders.values()) == list(range(1, n + 1)):
+        if (materialize_alignment and len(val_orders) == n
+                and sorted(val_orders.values()) == list(range(1, n + 1))):
             ordered_uids = sorted(state['regions'].keys(), key=lambda u: val_orders[u])
             if state['workflow'].get('content_verified'):
+                refresh_bbox_validation(state)
+            if (state['workflow'].get('content_verified')
+                    and (state['workflow'].get('bbox_valid')
+                         or source_mismatch_confirmed(state))):
                 from .state import initialize_alignment
                 initialize_alignment(state, ordered_uids=ordered_uids)
     log.info('APPLY: persisted draft count=%d IDs=%s',

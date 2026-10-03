@@ -11,7 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # This directory deliberately is NOT a Python package named gradio.
 import gradio as gr
-from annotation.state import new_state, source_mismatch_confirmed, calculate_spatial_order
+from annotation.state import (new_state, source_mismatch_confirmed,
+                              calculate_spatial_order, refresh_bbox_validation)
 from annotation.reading_order import suspicious_box_ids
 from annotation.workflow import Workflow
 from annotation.io import (SUSPICIOUS_NOTE, final_document,
@@ -58,8 +59,11 @@ SHOW_LOADING_JS = """(...args) => {
 }"""
 
 
-def snapshot_board_state_js(selection_index, label_text='Loading…'):
+def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=False):
     """Submit the live board state instead of a potentially stale bridge."""
+    deselect_script = ("document.querySelector('#annotation-board')?.dispatchEvent(\n"
+                       "    new CustomEvent('deselect-regions', {bubbles: true})\n"
+                       ");" if deselect else '')
     return f"""(...args) => {{
         const el = document.getElementById('global-loading');
         if (el) {{
@@ -67,6 +71,7 @@ def snapshot_board_state_js(selection_index, label_text='Loading…'):
             if (label) label.textContent = {json.dumps(label_text)};
             el.classList.add('is-visible');
         }}
+        {deselect_script}
         // The editor owns the canvas; there is no #annotation-board wrapper.
         // Read the live SVG so drag/resize changes are committed before the
         // Gradio event sends the selection bridge to Python.
@@ -120,6 +125,32 @@ def snapshot_board_state_js(selection_index, label_text='Loading…'):
 HIDE_LOADING_JS = """() => {
     document.getElementById('global-loading')?.classList.remove('is-visible');
 }"""
+
+FONT_LOADING_DONE_JS = f"""() => {{
+    const overlay = document.getElementById('global-loading');
+    const hide = () => overlay?.classList.remove('is-visible');
+    const contentPanel = document.getElementById('content-editor');
+    if (!overlay || !contentPanel || contentPanel.getClientRects().length === 0) {{
+        hide();
+        return;
+    }}
+
+    const textField = contentPanel.querySelector('.han-nom-text textarea');
+    const sample = textField?.value || '漢字';
+    const families = {json.dumps(list(FONT_FILES), ensure_ascii=False)};
+    const specs = families.map(family => `20px "${{family}}"`);
+    if (specs.every(spec => document.fonts.check(spec, sample))) {{
+        hide();
+        return;
+    }}
+
+    const label = overlay.querySelector('span:not(.global-loading-spinner)');
+    if (label) label.textContent = 'Loading Hán/Nôm fonts…';
+    overlay.classList.add('is-visible');
+    Promise.all(specs.map(spec => document.fonts.load(spec, sample)))
+        .catch(() => {{}}) // Continue with the browser's normal fallback if a font fails.
+        .finally(hide);
+}}"""
 
 
 def _config_relative(config_path, value, field):
@@ -223,15 +254,39 @@ def create_app(options):
         if not images: startup='The image folder is empty.'
     except (ValueError,OSError) as exc:
         images=[]; startup=str(exc)
+
+    def has_saved_image_records():
+        output=Path(options.output_dir)
+        return any(
+            (output/(image.stem+'.json')).is_file()
+            or (output/'source_mismatches'/(image.stem+'.json')).is_file()
+            for image in images
+        )
+
     initial=dict(active=new_state(), drafts={})
     with gr.Blocks(title='Sino-Nôm Annotation Tool', fill_width=True, analytics_enabled=False) as app:
         session=gr.State(initial)
         with gr.Column(elem_id='header-stack', scale=0):
             with gr.Row(elem_id='topbar', scale=0):
                 progress=gr.HTML(app_identity(initial['active']), elem_id='app-chrome')
-                save_all=gr.Button('Download All', variant='primary', scale=0, elem_id='save-all')
+                with gr.Row(elem_id='header-actions', scale=0):
+                    history_open=gr.Button('History', elem_id='history-open',
+                                           elem_classes=['icon-button'], scale=0)
+                    save_all=gr.Button('Download All', variant='primary', scale=0,
+                                        elem_id='save-all',
+                                        interactive=has_saved_image_records())
             workflow_chrome=gr.HTML(workflow_progress(initial['active']),
                                     elem_id='workflow-chrome')
+        with gr.Group(visible=False, elem_id='history-modal') as history_modal:
+            with gr.Column(elem_id='history-modal-card'):
+                with gr.Row(elem_id='history-modal-heading'):
+                    gr.Markdown('### Image History')
+                    history_close=gr.Button('×', elem_id='history-close',
+                                            elem_classes=['icon-button'], scale=0)
+                history_search=gr.Textbox(
+                    placeholder='Search image name…', show_label=False,
+                    elem_id='history-search', container=False)
+                history_results=gr.HTML(elem_id='history-results')
         message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
         download_payload=gr.Textbox(visible=False)
         # This remains mounted across every callback, so only one loading modal is shown.
@@ -255,7 +310,6 @@ def create_app(options):
                               elem_classes=['section','sidebar-section','sidebar-component','content-tools']) as content_actions:
                     gr.Markdown('### Content actions')
                     with gr.Column(elem_classes=['button-group','sidebar-action-stack']):
-                        save_content=gr.Button('Save Content',variant='primary',min_width=0)
                         undo=gr.Button('Undo changes',min_width=0)
                 with gr.Group(visible=False, elem_classes=['section','sidebar-step-stack']) as box_group:
                     box_id=gr.Dropdown(visible=False)
@@ -313,6 +367,8 @@ def create_app(options):
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','sidebar-component','selection-section']) as status_group:
                     gr.Markdown('### Selected region')
+                    hide_canvas_overlays=gr.Checkbox(
+                        value=False,label='Show image only',elem_id='show-image-only')
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
                     unknown_status=gr.Radio(['False','True'],value='False',label='Unknown character (Damaged only)',interactive=True,elem_id='unknown-radio')
@@ -331,8 +387,8 @@ def create_app(options):
                 source_text_group=gr.HTML(
                     value='', visible=False, elem_id='sidebar-source-text',
                     elem_classes=['section','sidebar-section','sidebar-component'])
-                apply_order=gr.Button('Apply Changes',variant='primary',visible=False,
-                                      elem_id='apply-reading-order')
+                # Retain the legacy output slot; text sequence is committed by Next.
+                apply_order=gr.State(None)
                 order_text=gr.State('[]')
                 with gr.Group(visible=False, elem_classes=['section','sidebar-section','sidebar-component']) as crop_group:
                     gr.Markdown('### Crop')
@@ -340,7 +396,7 @@ def create_app(options):
                                 elem_classes='sidebar-help')
                     crop_coords=gr.Textbox(label='Coordinates [x1, y1, x2, y2]',
                                            elem_id='crop-coordinates')
-                    apply_crop=gr.Button('Apply crop',variant='primary')
+                    apply_crop=gr.State(None)
             with gr.Column(visible=False, elem_id='main-workspace', min_width=0, scale=1,
                            elem_classes='panel') as main_workspace:
                 with gr.Column(elem_id='workspace-body'):
@@ -399,6 +455,7 @@ def create_app(options):
             final_json_group,suspicious_preview,suspicious_json_section,
             source_mismatches_preview,source_mismatches_json_section,
         ])
+        outputs.append(save_all)
 
         def render(ctx, msg=''):
             s=ctx['active']; step=s['current_step']; has=bool(s.get('image'))
@@ -419,7 +476,8 @@ def create_app(options):
             },ensure_ascii=False)
             region_ids=list(s['regions'])
             selected_region=(s['selected_region_uid'] if s['selected_region_uid'] in region_ids
-                             else (region_ids[0] if region_ids else None))
+                             else (None if s.get('selection_cleared')
+                                   else (region_ids[0] if region_ids else None)))
             region_box=s['regions'].get(selected_region,dict(bbox=[0,0,1,1],status='intact'))
             box_ids=list(s['bounding_boxes'])
             selected_box=(s['selected_box_id'] if s['selected_box_id'] in box_ids
@@ -450,13 +508,13 @@ def create_app(options):
                     ] + [final]
             issue=s.get('source_mismatch') or {}
             counts_differ=bool(has and len(s['regions']) != count_annotation_characters(s['annotation_text']))
-            return [ctx,app_identity(s),gr.update(value=msg,visible=bool(msg)),
+            rendered=[ctx,app_identity(s),gr.update(value=msg,visible=bool(msg)),
                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
                     gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected_region),*region_box['bbox'],
                     gr.update(visible=step==4),gr.update(choices=box_ids,value=selected_box),
                     gr.update(choices=status_choices,value=('intact' if status_box['status']=='unknown' else status_box['status']),interactive=True),
-                    gr.update(visible=step==4),json.dumps(s['reading_order']),gr.update(value=final),
-                    gr.update(visible=step==6),json.dumps(s.get('crop')),gr.update(visible=step==7),
+                    None,json.dumps(s['reading_order']),gr.update(value=final),
+                    None,json.dumps(s.get('crop')),gr.update(visible=step==7),
                     panel_heading(s),panel_summary(s),footer(s),gr.update(visible=step==2 and has),
                     gr.update(interactive=has and step>1),gr.update(interactive=has and step<7,visible=step<7),
                     status_rows(s),gr.update(visible=step==3 and has),
@@ -477,13 +535,16 @@ def create_app(options):
                     gr.update(visible=step==7 and bool(suspicious_json)),
                     gr.update(value=source_mismatch_json),
                     gr.update(visible=step==7 and bool(source_mismatch_json))]
+            rendered.append(gr.update(interactive=has_saved_image_records()))
+            return rendered
 
         def run(ctx, action, payload=None, auto_detect=True):
             try:
                 updated=engine.apply(ctx['active'],action,payload)
                 ctx=dict(ctx,active=updated)
                 msg=''
-                if action in ('save','save_content'):gr.Info('Saved.')
+                if action == 'save':gr.Info('Saved.')
+                elif action == 'save_content':gr.Info('Updated for this session.')
                 if action == 'save':
                     saved_path=updated.get('image_path')
                     if saved_path:
@@ -525,9 +586,8 @@ def create_app(options):
                 ctx=deepcopy(ctx)
                 old=ctx['active']
                 if old.get('image_path'):ctx['drafts'][old['image_path']]=old
-                # Starting from the Image screen always reflects durable data.
-                # Drafts are only for Back/Next within the currently open image.
-                state=engine.open_image(path)
+                # Unsaved edits are kept per image in this Gradio session.
+                state=ctx['drafts'].get(path) or engine.open_image(path)
                 state['revision']=old['revision']+1
                 ctx['active']=state
                 return render(ctx)
@@ -542,22 +602,37 @@ def create_app(options):
             fn=None, inputs=[box_color], outputs=None, show_progress='hidden',
             js="""(color) => {
                 document.querySelector('#annotation-board')?.dispatchEvent(
-                    new CustomEvent('bbox-color-change', {detail: color, bubbles: true})
+                new CustomEvent('bbox-color-change', {detail: color, bubbles: true})
+            );
+            }""")
+        hide_canvas_overlays.change(
+            fn=None, inputs=[hide_canvas_overlays], outputs=None,
+            show_progress='hidden',
+            js="""(showImageOnly) => {
+                document.querySelector('#annotation-board')?.dispatchEvent(
+                    new CustomEvent('canvas-image-only-change', {
+                        detail: Boolean(showImageOnly), bubbles: true
+                    })
                 );
             }""")
         def clear_loading_when_done(event):
             # The returned loading HTML is normally identical to its initial value,
-            # so Gradio may skip patching the DOM after a completed action. Clear
-            # the class explicitly on both completion paths instead.
-            event.success(fn=None,inputs=None,outputs=None,js=HIDE_LOADING_JS)
+            # so Gradio may skip patching the DOM after a completed action. On
+            # Content Verification, keep the shared overlay up until its web fonts load.
+            event.success(fn=None,inputs=None,outputs=None,js=FONT_LOADING_DONE_JS)
             event.failure(fn=None,inputs=None,outputs=None,js=HIDE_LOADING_JS)
             return event
 
         def save_folder():
             try:
                 annotations=collect_annotations(images,options.output_dir,allow_empty=True)
+                committed_images=[
+                    image for image in images
+                    if ((Path(options.output_dir)/(Path(image).stem+'.json')).exists()
+                        or (Path(options.output_dir)/'source_mismatches'/(Path(image).stem+'.json')).exists())
+                ]
                 content=collect_content_documents(
-                    images,options.output_dir,allow_empty=True,
+                    committed_images,options.output_dir,allow_empty=True,
                     titles=engine.verification_titles)
                 mismatches=collect_source_mismatches(images,options.output_dir,allow_empty=True)
                 suspicious=collect_suspicious_details(images,options.output_dir)
@@ -567,6 +642,44 @@ def create_app(options):
                                    'content':base64.b64encode(archive.read_bytes()).decode('ascii')})
             except (ValueError,OSError,KeyError,TypeError) as exc:
                 raise gr.Error(str(exc)) from exc
+
+        def history_markup(query=''):
+            needle=(query or '').strip().casefold()
+            items=[]
+            processed_count=0
+            for image in images:
+                path=Path(image)
+                is_processed=(Path(options.output_dir)/(path.stem+'.json')).is_file() or (
+                    Path(options.output_dir)/'source_mismatches'/(path.stem+'.json')).is_file()
+                processed_count += int(is_processed)
+                if needle and needle not in path.name.casefold():
+                    continue
+                state_label='Đã xử lý' if is_processed else 'Chưa xử lý'
+                badge='processed' if is_processed else 'pending'
+                items.append(
+                    f'<li class="history-item {badge}"><span class="history-image-name">'
+                    f'{html.escape(path.name)}</span><span class="history-status">'
+                    f'{state_label}</span></li>')
+            if not items:
+                items=['<li class="history-empty">Không tìm thấy ảnh phù hợp.</li>']
+            shown=len([image for image in images
+                       if not needle or needle in Path(image).name.casefold()])
+            return (
+                f'<div class="history-count">Đã xử lý {processed_count}/{len(images)} ảnh'
+                f' · Hiển thị {shown}</div><ul class="history-list">'
+                + ''.join(items) + '</ul>')
+
+        history_open.click(
+            fn=lambda: (gr.update(visible=True), history_markup()),
+            inputs=[], outputs=[history_modal,history_results],
+            show_progress='hidden')
+        history_close.click(
+            fn=lambda: gr.update(visible=False), inputs=[], outputs=[history_modal],
+            show_progress='hidden')
+        history_search.input(
+            fn=history_markup, inputs=[history_search], outputs=[history_results],
+            show_progress='hidden')
+
         save_all.click(save_folder,[],[download_payload],concurrency_id='annotation-actions',concurrency_limit=1,
                        show_progress='hidden',js=SHOW_LOADING_JS).success(
             fn=None,inputs=[download_payload],outputs=None,js="""(payload) => {
@@ -631,14 +744,6 @@ def create_app(options):
                 return dict(ctx,active=updated)
             except (ValueError,TypeError,AttributeError) as exc:
                 raise ValueError(str(exc)) from exc
-
-        def save_content_draft(ctx,draft):
-            try:
-                return run(commit_frontend_content(ctx,draft),'save_content')
-            except Exception as exc:
-                return render(ctx,WARNING+' '+html.escape(str(exc)))
-        clear_loading_when_done(save_content.click(
-            save_content_draft,[session,content_bridge],**event_args))
 
         def next_step(ctx, content_draft=None, auto_detect=True,
                       issue_type=None, mismatch_note_value='', selection='{}',
@@ -776,7 +881,8 @@ def create_app(options):
                 return boxes
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local bounding boxes are invalid.')
-        def commit_frontend_boxes(ctx,selection,coordinates=(None,None,None,None)):
+        def commit_frontend_boxes(ctx,selection,coordinates=(None,None,None,None),
+                                  materialize_alignment=True,deselect=False):
             """Commit live canvas geometry plus the active sidebar coordinates."""
             boxes=frontend_boxes(selection)
             active,selected=frontend_selection(selection)
@@ -803,7 +909,15 @@ def create_app(options):
                     if active not in selected:selected=[*selected,active]
             updated=engine.apply(ctx['active'],'commit_boxes',{
                 'boxes':boxes,'active':active,'selected':selected,
+                'materialize_alignment':materialize_alignment,
+                'selection_cleared':deselect,
             })
+            if deselect:
+                updated['selected_region_uid']=None
+                updated['selected_region_uids']=[]
+                updated['selection_cleared']=True
+            else:
+                updated['selection_cleared']=False
             ctx=dict(ctx,active=updated)
             return ctx,active,selected
         def frontend_crop(value):
@@ -934,7 +1048,8 @@ def create_app(options):
             try:
                 # A mismatch confirmation belongs to an exact box count. Commit
                 # the authoritative localBoxes snapshot before recording it.
-                ctx,_,_=commit_frontend_boxes(ctx,selection)
+                ctx,_,_=commit_frontend_boxes(
+                    ctx,selection,materialize_alignment=False,deselect=True)
                 return run(ctx,'confirm_source_mismatch',dict(
                     issue_type=issue_type,note=note))
             except Exception as exc:
@@ -943,7 +1058,8 @@ def create_app(options):
             try:
                 # Clearing mismatch metadata must not reload the older backend
                 # box collection. Persist the exact localBoxes draft first.
-                ctx,_,_=commit_frontend_boxes(ctx,selection)
+                ctx,_,_=commit_frontend_boxes(
+                    ctx,selection,materialize_alignment=False,deselect=True)
                 result=run(ctx,'clear_source_mismatch')
                 result[8]['value']['clearMismatchConfirmed'] = True
                 return result
@@ -952,37 +1068,12 @@ def create_app(options):
         clear_loading_when_done(confirm_mismatch.click(
             confirm_source_mismatch,
             [session,mismatch_type,mismatch_note,selection_bridge],
-            **dict(event_args,js=snapshot_board_state_js(3))))
+            **dict(event_args,js=snapshot_board_state_js(3,deselect=True))))
         clear_loading_when_done(clear_mismatch.click(
             clear_source_mismatch,[session,selection_bridge],
-            **dict(event_args,js=snapshot_board_state_js(1))))
+            **dict(event_args,js=snapshot_board_state_js(1,deselect=True))))
         for selector in (box_id,status_id):
             clear_loading_when_done(selector.input(lambda c,i:run(c,'select',dict(id=i)),[session,selector],**event_args))
-        def parse_action(c,a,key,value):
-            try:return run(c,a,{key:json.loads(value)})
-            except ValueError as exc:return render(c,'Invalid JSON: '+str(exc))
-        clear_loading_when_done(apply_crop.click(lambda c,v:parse_action(c,'crop','bbox',v),[session,crop_coords],**event_args))
-        def apply_reading_order(ctx,selection,status_value='intact'):
-            sequence,token_order,suspicious_token_ids=frontend_text_sequence(selection)
-            try:
-                if sequence is not None and (sequence or ctx['active']['annotations']):
-                    updated=engine.apply(ctx['active'],'reorder_text',{
-                        'sequence':sequence,'token_order':token_order,
-                        'suspicious_token_ids':suspicious_token_ids})
-                    ctx=dict(ctx,active=updated)
-                elif suspicious_token_ids is not None:
-                    updated=engine.apply(ctx['active'],'reorder_text',{
-                        'sequence':list(ctx['active'].get('text_sequence',[])),
-                        'token_order':list(map(str,ctx['active'].get('text_token_ids',[]))),
-                        'suspicious_token_ids':suspicious_token_ids})
-                    ctx=dict(ctx,active=updated)
-                ctx=commit_statuses(ctx,selection,status_value)
-                return render(ctx)
-            except Exception as exc:
-                return render(ctx,WARNING+' '+html.escape(str(exc)))
-        clear_loading_when_done(apply_order.click(
-            apply_reading_order,[session,selection_bridge,status],
-            **dict(event_args,js=snapshot_board_state_js(1))))
         def on_action(ctx,evt:gr.EventData):
             if evt._data['action'] == 'sort_boxes_calc':
                 try:
@@ -990,6 +1081,23 @@ def create_app(options):
                     raw=payload.get('boxes')
                     if not isinstance(raw,dict):
                         raise ValueError('Sort requires the current frontend box snapshot.')
+                    transient=deepcopy(ctx['active'])
+                    all_boxes=payload.get('allBoxes')
+                    if not isinstance(all_boxes,dict):
+                        raise ValueError('Sort requires the complete box state.')
+                    transient['regions']={
+                        str(uid):dict(box) for uid,box in all_boxes.items()
+                        if isinstance(box,dict)
+                    }
+                    if len(transient['regions']) != len(all_boxes):
+                        raise ValueError('The box state is invalid.')
+                    refresh_bbox_validation(transient)
+                    if not transient['workflow']['content_verified']:
+                        raise ValueError('Verify the content before sorting boxes.')
+                    if not (transient['workflow']['bbox_valid']
+                            or source_mismatch_confirmed(transient)):
+                        raise ValueError(
+                            'Confirm the source mismatch before sorting when box and character counts differ.')
                     boxes={
                         str(uid):(box.get('bbox') if isinstance(box,dict) else box)
                         for uid,box in raw.items()
@@ -1000,20 +1108,13 @@ def create_app(options):
                     log.info('SORT: frontend count=%d sent IDs=%s returned IDs=%s',
                              len(boxes),list(boxes),ordered)
                     result=render(ctx)
-                    transient=deepcopy(ctx['active'])
-                    all_boxes=payload.get('allBoxes')
-                    if isinstance(all_boxes,dict):
-                        transient['regions']={
-                            str(uid):dict(box) for uid,box in all_boxes.items()
-                            if isinstance(box,dict)
-                        }
-                        transient['selected_region_uids']=[
-                            uid for uid in payload.get('selectedIds',[])
-                            if uid in transient['regions']
-                        ]
-                        transient['selected_region_uid']=(
-                            transient['selected_region_uids'][-1]
-                            if transient['selected_region_uids'] else None)
+                    transient['selected_region_uids']=[
+                        uid for uid in payload.get('selectedIds',[])
+                        if uid in transient['regions']
+                    ]
+                    transient['selected_region_uid']=(
+                        transient['selected_region_uids'][-1]
+                        if transient['selected_region_uids'] else None)
                     board_value=snapshot(transient)
                     board_value['calcSortedBoxIds']=ordered
                     result[8]=gr.update(value=board_value,visible=True)

@@ -464,7 +464,7 @@ Open the local URL printed by Gradio (normally `http://127.0.0.1:7860`; a later 
 6. **✂️ Crop** — Adjust the orange crop frame on the original image; when its longest side exceeds 4096 pixels, export scales it down proportionally and records the scale factors
 7. **✅ Review** — Inspect the annotated canvas, final text/JSON and save the image object
 
-The browser keeps transient geometry, selection, text-sequence and crop edits for responsive interaction; **Next** validates and commits the relevant local snapshot to the authoritative Python state. Detection and Reading Order deliberately render every box with a neutral white outline, regardless of the detector's stored status; condition colors are revealed only in Status and Review. Before Reading Order, every editable region has a hidden `region_uid`, so edits do not depend on unstable public Box IDs. Entering Reading Order spatially sorts the committed regions with the detection-stage algorithm and assigns contiguous Box IDs from `1` to `n`. The editor renders only the annotation text as compact, horizontally flowing cards that wrap across rows; Box IDs are not shown on the cards. Dragging moves the text card itself and reflows nearby cards locally, with no Python callback during pointer movement. Dropping synchronizes the visible character sequence to the Gradio bridge. **Apply Changes** assigns that sequence to the spatially sorted boxes and redraws the canvas, while **Next** also commits the visible sequence before continuing.
+The browser keeps transient geometry, selection, text-sequence and crop edits for responsive interaction; **Next** validates and commits the relevant local snapshot to the authoritative Python session state. Detection and Reading Order deliberately render every box with a neutral white outline, regardless of the detector's stored status; condition colors are revealed only in Status and Review. Before Reading Order, every editable region has a hidden `region_uid`, so edits do not depend on unstable public Box IDs. Entering Reading Order spatially sorts the committed regions with the detection-stage algorithm and assigns contiguous Box IDs from `1` to `n`. The editor renders only the annotation text as compact, horizontally flowing cards that wrap across rows; Box IDs are not shown on the cards. Dragging moves the text card itself and reflows nearby cards locally, with no Python callback during pointer movement. Dropping synchronizes the visible character sequence to the Gradio bridge. **Next** commits that sequence before continuing.
 
 The normal path requires exactly one source character per box. In **Box-Content Mismatch**, **Missing Content** creates enough `MISS` tags to make the tag count equal the box count, while **Extra Content** handles extra source characters. Press **Confirm Mismatch** to confirm the selected issue; **Clear** removes that confirmation. These tags can be reordered with normal characters and are written to `annotations`. A box currently assigned `MISS` is always given the derived status `unknown` and is rendered yellow from the Status stage onward. **Other** requires a note. After it is confirmed, pressing **Next** skips the character-mapping stages and opens Review because an `other` record deliberately has no character annotations.
 
@@ -476,7 +476,7 @@ Bounding-box manipulation is frontend-first. Selection, Ctrl/Cmd multi-selection
 
 After Reading Order is fixed, changing `intact`/`damaged` immediately switches the selected ordinary box between a solid green and dashed red outline and persists that edit to the Python session. A `MISS` box shows a disabled `unknown` status and a dotted yellow outline. Next atomically reconciles the complete canonical status map before Crop; there is no Update Status button.
 
-Crop dragging follows the same model: moving, resizing, or drawing the orange frame updates only local state and never opens a loading modal. **Next** snapshots the live frame and also submits the coordinate textbox directly, so it has the same persistence behavior as **Apply crop**. The desktop and mobile layouts use normal page scrolling rather than clipping long content into a fixed-height application shell.
+Crop dragging follows the same model: moving, resizing, or drawing the orange frame updates only local state and never opens a loading modal. **Next** snapshots the live frame and submits the coordinate textbox directly. The desktop and mobile layouts use normal page scrolling rather than clipping long content into a fixed-height application shell.
 
 Review renders the cropped image viewport from the accepted crop coordinates after drawing the annotation overlays. Bounding boxes retain their original image-space coordinates and are clipped together with the source image at the crop boundary; export data is not rewritten into crop-relative coordinates.
 
@@ -488,23 +488,24 @@ Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengX
 - **Reset All** restores the currently open image to its initial server snapshot
 - **Save change** applies the currently displayed Content editor value to the selected section
 - **Undo changes** restores the current Content draft
-- **Save Content** updates the source JSON and adds or updates that image in the internal content registry. It does not download a file
+- Content edits stay in the current Gradio session until **Save Annotation**
 - **Back** returns to the preceding applicable workflow step
-- **Next** on Content (Step 2) applies the currently displayed editor text and saves all draft content before entering Bounding Boxes (Step 3). If saving fails, it stays on Step 2 with the editor text preserved. Use **Save change** before switching sections; **Next** also includes previously applied edits.
+- **Next** on Content (Step 2) applies the currently displayed editor text to session state before entering Bounding Boxes (Step 3). Use **Save change** before switching sections; **Next** also includes previously applied edits.
 - **Next** on Bounding Boxes commits the final locally dragged/resized geometry, validates the box/character relationship and auto-confirms the selected mismatch type when needed
 - **Next** on Reading Order assigns the visible text-card sequence to spatially sorted boxes before Status review
 - **Next** on Status commits the complete canonical status map before entering Crop
 - **Next** on Crop commits the current local orange frame; oversized crops are scaled only when the output document is built
-- **Save Annotation** on Review commits either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image
-- **Download All** creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
+- **Save Annotation** on Review is the only action that writes durable image data. It commits verified content to the source JSON and internal registry, then saves either a normal annotation or a source-mismatch record. The two forms are mutually exclusive for each image
+- **Download All** is enabled only after an annotation or source-mismatch record has been saved. Existing records from earlier app launches count. When enabled, it creates `annotations.zip` in `gradio.output_dir` and downloads the same archive in the browser. The archive contains:
   - `text_annotations.json` for images committed with **Save Annotation**
-  - `inscription_content.json` for images committed with **Save Content**
+  - `inscription_content.json` for images committed with **Save Annotation**
   - `source_mismatches.json` for images explicitly confirmed as source errors
   - `suspicious_details.json` for saved images containing suspicious Box IDs
+- **History** opens a searchable list showing which configured images have a saved annotation or source-mismatch record
 
 > **Note**
 >
-> Drafts are never included until their corresponding Save action is used.
+> Drafts stay in the current Gradio session and are never included until **Save Annotation** is used.
 
 ### Gradio Output Format
 
@@ -635,7 +636,7 @@ This optional object is keyed by the existing inscription identifier. It contain
 
 #### `inscription_content.json`
 
-This file contains only images committed with **Save Content**. It stores the image name, matching inscription/face code and the five supported content sections. A section absent from the extracted source is represented by `null`.
+This file contains only images committed with **Save Annotation**. It stores the image name, matching inscription/face code and the five supported content sections. A section absent from the extracted source is represented by `null`.
 
 ```json
 [
