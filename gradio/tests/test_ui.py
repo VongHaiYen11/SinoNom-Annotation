@@ -26,6 +26,46 @@ from PIL import Image
 
 
 class GradioCallbacks(unittest.TestCase):
+    def test_reopen_image_after_back_and_switch_preserves_image_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder).resolve()
+            image_a=root/'1.png';image_b=root/'2.png'
+            Image.new('RGB',(100,100),'white').save(image_a)
+            Image.new('RGB',(100,100),'white').save(image_b)
+            source=root/'source.json'
+            atomic_write(source,[
+                {'noi_dung':[{'ky_hieu':'1','chuyen_muc':[
+                    {'tieu_de':'Nguyên văn chữ Hán Nôm','van_ban':'甲'}]}]},
+                {'noi_dung':[{'ky_hieu':'2','chuyen_muc':[
+                    {'tieu_de':'Nguyên văn chữ Hán Nôm','van_ban':'乙'}]}]},
+            ])
+            options=parser().parse_args([
+                '--image-dir',str(root),'--source-json',str(source),
+                '--output-dir',str(root/'out'),'--skip-detection'])
+            app=create_app(options)
+            functions=[f.fn for f in app.fns.values() if f.fn]
+            open_image=next(f for f in functions if f.__name__=='open_image')
+            back_action=next(f for f in functions
+                             if f.__name__=='<lambda>' and f.__defaults__==('back',))
+
+            ctx=dict(active=new_state(),drafts={})
+            for path in (image_a,image_a,image_b,image_b,image_a):
+                opened=open_image(ctx,str(path))
+                ctx=opened[0]
+                self.assertEqual(ctx['active']['image_path'],str(path))
+                self.assertEqual(ctx['active']['current_step'],2)
+                self.assertNotIn(str(path),ctx['drafts'])
+                self.assertEqual(ctx['active']['draft_content']['noi_dung'][0]['chuyen_muc'][0]['van_ban'],
+                                 '甲' if path==image_a else '乙')
+                ctx=back_action(ctx)[0]
+                self.assertEqual(ctx['active']['current_step'],1)
+
+    def test_fonts_exclude_pmingliu(self):
+        from ui.fonts import FONT_CSS, FONT_FILES, DEFAULT_FONT_STACK
+        self.assertNotIn('PMingLiU',FONT_FILES)
+        self.assertNotIn('PMingLiU',FONT_CSS)
+        self.assertNotIn('PMingLiU',DEFAULT_FONT_STACK)
+
     def test_miss_box_is_derived_unknown_and_rendered_yellow(self):
         state=new_state();state.update(image='12305.png',image_size=[100,100],
                                       image_url='image.jpg',current_step=4)

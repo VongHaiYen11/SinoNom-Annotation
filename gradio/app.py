@@ -68,11 +68,13 @@ FONT_PRELOAD_JS = f"""() => {{
 }}"""
 SHOW_LOADING_JS = """(...args) => {
     const el = document.getElementById('global-loading');
+    const image = document.querySelector('#current-image-name')?.textContent?.trim() || 'picker';
     if (el) {
         const label = el.querySelector('span:not(.global-loading-spinner)');
         if (label) label.textContent = 'Loading…';
         el.classList.add('is-visible');
     }
+    console.info('[verification-ui] loading shown', {image, visible: Boolean(el?.classList.contains('is-visible'))});
     return args;
 }"""
 HISTORY_FILTER_JS = """(...args) => {
@@ -189,7 +191,10 @@ def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=F
 
 
 HIDE_LOADING_JS = """() => {
-    document.getElementById('global-loading')?.classList.remove('is-visible');
+    const el = document.getElementById('global-loading');
+    const image = document.querySelector('#current-image-name')?.textContent?.trim() || 'picker';
+    el?.classList.remove('is-visible');
+    console.info('[verification-ui] loading hidden', {image, visible: Boolean(el?.classList.contains('is-visible'))});
 }"""
 
 FONT_LOADING_DONE_JS = HIDE_LOADING_JS
@@ -601,6 +606,13 @@ def create_app(options):
             return rendered
 
         def run(ctx, action, payload=None, auto_detect=True):
+            active_before=ctx.get('active', {})
+            log.info('action start action=%s image_path=%s image=%s step=%s revision=%s detection_loaded=%s content_verified=%s drafts=%s',
+                     action,active_before.get('image_path'),active_before.get('image'),
+                     active_before.get('current_step'),active_before.get('revision'),
+                     active_before.get('detection_loaded'),
+                     active_before.get('workflow',{}).get('content_verified'),
+                     sorted(Path(key).name for key in ctx.get('drafts',{})))
             try:
                 updated=engine.apply(ctx['active'],action,payload)
                 ctx=dict(ctx,active=updated)
@@ -643,18 +655,34 @@ def create_app(options):
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
 
         def open_image(ctx,path):
+            active=ctx.get('active',{})
+            cached=path in ctx.get('drafts',{})
+            log.info('open start requested_path=%s active_path=%s active_image=%s active_step=%s active_revision=%s cache_hit=%s cache_paths=%s',
+                     path,active.get('image_path'),active.get('image'),
+                     active.get('current_step'),active.get('revision'),cached,
+                     sorted(Path(key).name for key in ctx.get('drafts',{})))
             try:
                 if path not in {str(p.resolve()) for p in images}:raise ValueError('Select an image from the list.')
                 ctx=deepcopy(ctx)
                 old=ctx['active']
-                if old.get('image_path'):ctx['drafts'][old['image_path']]=old
+                # Step 1 is the image picker. Keep drafts for states that have
+                # progressed into the annotation workflow, but do not overwrite
+                # a valid cached draft with the transient picker state.
+                if old.get('image_path') and old.get('current_step',1)>1:
+                    ctx['drafts'][old['image_path']]=deepcopy(old)
                 # Unsaved edits are kept per image in this Gradio session.
-                state=ctx['drafts'].get(path) or engine.open_image(path)
+                state=deepcopy(ctx['drafts'][path]) if path in ctx['drafts'] else engine.open_image(path)
                 state['revision']=old['revision']+1
                 ctx['active']=state
+                log.info('open success requested_path=%s resolved_image_path=%s image=%s step=%s revision=%s detection_loaded=%s content_verified=%s cache_hit=%s',
+                         path,state.get('image_path'),state.get('image'),
+                         state.get('current_step'),state.get('revision'),
+                         state.get('detection_loaded'),
+                         state.get('workflow',{}).get('content_verified'),cached)
                 return render(ctx)
             except Exception as exc:
-                log.exception('Cannot open image')
+                log.exception('Cannot open image requested_path=%s active_path=%s active_step=%s',
+                              path,active.get('image_path'),active.get('current_step'))
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
 
         # Hide Gradio's per-component timers/spinners and show one centered modal instead.

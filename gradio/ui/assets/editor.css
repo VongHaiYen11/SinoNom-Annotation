@@ -16,7 +16,7 @@
 .tile-character,
 .order-chip,
 .review-text p,
-.table-character { font-family: var(--han-nom-font, "Vietnamica NomNaTong", "Vietnamica DengXian", "Vietnamica PMingLiU", sans-serif) !important; font-weight: 400; }
+.table-character { font-family: var(--han-nom-font, "Vietnamica NomNaTong", "Vietnamica DengXian", sans-serif) !important; font-weight: 400; }
 
 .sidebar-source-text p {
   background-color: var(--color-panel);
