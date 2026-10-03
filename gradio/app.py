@@ -1184,15 +1184,6 @@ def create_app(options):
                     all_boxes=payload.get('allBoxes')
                     if not isinstance(all_boxes,dict):
                         raise ValueError('Sort requires the complete box state.')
-                    active_region_ids=set(ctx['active'].get('regions',{}))
-                    frontend_region_ids=set(map(str,all_boxes))
-                    # A confirmed mismatch belongs to the backend's accepted
-                    # box set. Clearing/reassigning order changes only draft
-                    # order metadata, so it must not invalidate that decision.
-                    # Membership changes still require a new confirmation.
-                    confirmed_mismatch=(
-                        frontend_region_ids == active_region_ids
-                        and source_mismatch_confirmed(ctx['active']))
                     transient['regions']={
                         str(uid):dict(box) for uid,box in all_boxes.items()
                         if isinstance(box,dict)
@@ -1202,8 +1193,10 @@ def create_app(options):
                     refresh_bbox_validation(transient)
                     if not transient['workflow']['content_verified']:
                         raise ValueError('Verify the content before sorting boxes.')
+                    # Check the submitted boxes against the recorded count and
+                    # text. Order metadata does not affect mismatch approval.
                     if not (transient['workflow']['bbox_valid']
-                            or confirmed_mismatch):
+                            or source_mismatch_confirmed(transient)):
                         raise ValueError(
                             'Confirm the source mismatch before sorting when box and character counts differ.')
                     boxes={

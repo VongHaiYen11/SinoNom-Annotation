@@ -7,6 +7,7 @@ def new_state():
     return dict(image=None, image_path=None, image_size=None, image_url=None,
                 content_preview_url=None, source_content=None,
                 verified_content=None, draft_content=None, annotation_text='',
+                saved_annotation_text='',
                 regions={}, selected_region_uid=None, selected_region_uids=[],
                 selection_cleared=False,
                 bounding_boxes={}, annotations={}, reading_order=[],
@@ -50,6 +51,7 @@ def source_mismatch_confirmed(state):
     character_count = count_annotation_characters(state['annotation_text'])
     return bool(
         issue
+        and not issue.get('invalidated')
         and (box_count != character_count or issue.get('issue_type') == 'other')
         and issue.get('source_text') == state['annotation_text']
         and issue.get('source_character_count') == character_count

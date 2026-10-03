@@ -80,11 +80,13 @@ def sync_draft_boxes(state, payload, materialize_alignment=True):
 
     log.info('APPLY: frontend/Python received count=%d IDs=%s', len(boxes), list(boxes))
 
-    previous_ids = set(state['regions'])
+    previous_count = len(state['regions'])
     update_bboxes(state, boxes, payload.get('active'), payload.get('selected'))
-    if set(state['regions']) != previous_ids:
-        # A confirmation belongs to the exact set of boxes it was made for.
-        state['source_mismatch'] = None
+    if len(state['regions']) != previous_count:
+        # Keep the draft issue, but a changed count requires a new
+        # confirmation even if the user later restores the original count.
+        if state.get('source_mismatch'):
+            state['source_mismatch']['invalidated'] = True
 
     statuses = payload.get('statuses', {})
     unknowns = payload.get('unknowns', {})

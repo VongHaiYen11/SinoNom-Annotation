@@ -98,8 +98,6 @@ class GradioCallbacks(unittest.TestCase):
                 'middle':dict(bbox=[40,0,50,10],status='intact',unknown=False,order=None),
                 'right':dict(bbox=[70,0,80,10],status='intact',unknown=False,order=None),
             }
-            # Clear Order clears only order metadata; it must retain the
-            # confirmed mismatch for the subsequent selected-box sort.
             boxes={uid:dict(box) for uid,box in state['regions'].items()}
             sort_payload={
                 'boxes':{uid:boxes[uid]['bbox'] for uid in ('left','middle')},
@@ -107,16 +105,32 @@ class GradioCallbacks(unittest.TestCase):
                 'selectedIds':['left','middle'],
             }
             responses=[]
-            for request_id in ('sort-1','sort-2'):
-                payload=dict(sort_payload,sortRequestId=request_id)
-                response=on_action(ctx,gr.EventData(None,{
-                    'action':'sort_boxes_calc','payload':payload}))
-                responses.append(response[8]['value'])
+            first=on_action(ctx,gr.EventData(None,{
+                'action':'sort_boxes_calc',
+                'payload':dict(sort_payload,sortRequestId='sort-1')}))
+            responses.append(first[8]['value'])
+            for index,uid in enumerate(first[8]['value']['calcSortedBoxIds'],1):
+                boxes[uid]['order']=index
+            # Clear Order changes only draft order metadata.
+            for box in boxes.values():
+                box['order']=None
+            second=on_action(ctx,gr.EventData(None,{
+                'action':'sort_boxes_calc',
+                'payload':dict(sort_payload,sortRequestId='sort-2')}))
+            responses.append(second[8]['value'])
             self.assertEqual(responses[0]['calcSortedBoxIds'],['middle','left'])
             self.assertEqual(responses[1]['calcSortedBoxIds'],['middle','left'])
             self.assertEqual([value['sortRequestId'] for value in responses],
                              ['sort-1','sort-2'])
             self.assertNotEqual(responses[0],responses[1])
+            same_count_boxes=dict(boxes)
+            same_count_boxes['replacement']=same_count_boxes.pop('right')
+            same_count=on_action(ctx,gr.EventData(None,{
+                'action':'sort_boxes_calc',
+                'payload':dict(sort_payload,allBoxes=same_count_boxes,
+                               sortRequestId='sort-same-count')}))
+            self.assertEqual(same_count[8]['value']['calcSortedBoxIds'],
+                             ['middle','left'])
             changed_membership=dict(
                 sort_payload,allBoxes={key:boxes[key] for key in ('left','middle')},
                 sortRequestId='sort-changed-membership')

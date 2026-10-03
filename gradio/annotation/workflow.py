@@ -83,8 +83,16 @@ def _load_regions(state, document):
         state['region_uid_by_box_id'][box_id] = uid
     state['bounding_boxes'] = deepcopy(document['bounding_boxes'])
     state['annotations'] = deepcopy(document.get('annotations', {}))
+    state['saved_annotation_text'] = annotations_to_text(state['annotations'])
     # Saved `annotations` contain the final character -> Box mapping.
     state['reading_order'] = sorted(map(int, document['bounding_boxes']))
+
+
+def annotations_to_text(annotations):
+    """Concatenate saved annotation values in Box ID order."""
+    if not isinstance(annotations, dict) or not annotations:
+        return ''
+    return ''.join(str(annotations[key]) for key in sorted(annotations, key=int))
 
 
 class Workflow:
@@ -239,8 +247,10 @@ class Workflow:
                 state['text_sequence'] = (
                     list(doc.get('text_sequence', []))
                     if is_mismatch and source_mismatch_type(doc) == 'extra_text'
-                    else [doc['annotations'][str(box_id)]
-                          for box_id in state['reading_order']]
+                    else ([doc['annotations'][str(box_id)]
+                           for box_id in state['reading_order']]
+                          if is_mismatch and source_mismatch_type(doc) == 'missing_text'
+                          else characters(state['saved_annotation_text']))
                 )
                 state['text_token_ids'] = [str(index) for index in
                                            range(1, len(state['text_sequence']) + 1)]
@@ -342,13 +352,16 @@ class Workflow:
                     s['bounding_boxes'] = document['bounding_boxes']
                     s['reading_order'] = sorted(map(int, document['bounding_boxes']))
                     s['annotations'] = document.get('annotations', {})
+                s['saved_annotation_text'] = annotations_to_text(s['annotations'])
                 s['region_uid_by_box_id'] = loaded_mapping
                 s['box_id_by_region'] = {uid: box_id for box_id, uid in loaded_mapping.items()}
                 s['text_sequence']=(
                     list(document.get('text_sequence', []))
                     if mismatch_type == 'extra_text'
-                    else [s['annotations'][str(box_id)]
-                          for box_id in s['reading_order']]
+                    else ([s['annotations'][str(box_id)]
+                           for box_id in s['reading_order']]
+                          if mismatch_type == 'missing_text'
+                          else characters(s['saved_annotation_text']))
                     if s['annotations'] else [])
                 s['text_token_ids']=[str(index) for index in range(1,len(s['text_sequence'])+1)]
                 # Keep the saved character-to-box mapping as the starting
@@ -396,13 +409,17 @@ class Workflow:
                 if text_matches and mapping_matches and mismatch_type != 'other':
                     s['bounding_boxes'] = deepcopy(loaded_alignment['bounding_boxes'])
                     s['annotations'] = deepcopy(saved_annotations)
+                    s['saved_annotation_text'] = annotations_to_text(saved_annotations)
                     s['reading_order'] = list(map(int, box_ids))
                     s['region_uid_by_box_id'] = deepcopy(loaded_mapping)
                     s['box_id_by_region'] = {
                         uid: box_id for box_id, uid in loaded_mapping.items()
                     }
-                    s['text_sequence'] = (saved_text if mismatch_type == 'extra_text'
-                                          else [saved_annotations[key] for key in box_ids])
+                    s['text_sequence'] = (
+                        saved_text if mismatch_type == 'extra_text'
+                        else ([saved_annotations[key] for key in box_ids]
+                              if mismatch_type == 'missing_text'
+                              else characters(s['saved_annotation_text'])))
                     s['text_token_ids'] = [str(index) for index in
                                            range(1, len(s['text_sequence']) + 1)]
                     if mismatch_type:

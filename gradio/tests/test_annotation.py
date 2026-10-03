@@ -21,7 +21,7 @@ from annotation.io import (atomic_write, final_document,
                            final_source_mismatch_document, load_annotation,
                            load_source_mismatch, read_json, save_annotation)
 from annotation.text_extraction import extract_source_content, save_source_content
-from annotation.workflow import Workflow
+from annotation.workflow import Workflow, annotations_to_text
 from ui.editor import snapshot
 from crop.crop import (auto_scale_crop, save_crop_coordinates, crop_document,
                        default_crop, MAX_CROP_SIDE)
@@ -44,6 +44,9 @@ def aligned_state(text='永寺樂', n=3):
 
 
 class Invariants(unittest.TestCase):
+    def test_saved_annotations_are_concatenated_in_numeric_box_order(self):
+        self.assertEqual(annotations_to_text({'10':'庚','2':'乙','1':'甲'}),'甲乙庚')
+
     def test_count_cases(self):
         self.assertTrue(state()['workflow']['bbox_valid'])
         self.assertFalse(state()['workflow']['alignment_valid'])
@@ -136,12 +139,54 @@ class Invariants(unittest.TestCase):
             'note':'draft',
         }
         self.assertTrue(source_mismatch_confirmed(s))
+        original=deepcopy(s['regions'])
         remaining=dict(list(s['regions'].items())[:2])
         sync_draft_boxes(s,{'boxes':remaining,'active':None,'selected':[]})
         self.assertIsNotNone(s['source_mismatch'])
         self.assertFalse(source_mismatch_confirmed(s))
+        sync_draft_boxes(s,{'boxes':original,'active':None,'selected':[]},
+                         materialize_alignment=False)
+        self.assertFalse(source_mismatch_confirmed(s))
+
+    def test_clearing_order_preserves_confirmed_mismatch(self):
+        s=state('永寺樂文',n=3)
+        s['source_mismatch']={
+            'source_text':s['annotation_text'],
+            'source_character_count':4,
+            'bounding_box_count':3,
+            'issue_type':'extra_text',
+            'note':'',
+        }
+        boxes={uid:dict(box,order=index) for index,(uid,box)
+               in enumerate(s['regions'].items(),1)}
+        sync_draft_boxes(s,{'boxes':boxes,'active':None,'selected':[]},
+                         materialize_alignment=False)
+        self.assertTrue(source_mismatch_confirmed(s))
+        confirmed=deepcopy(s['source_mismatch'])
+        cleared={uid:dict(box,order=None) for uid,box in boxes.items()}
+        sync_draft_boxes(s,{'boxes':cleared,'active':None,'selected':[]},
+                         materialize_alignment=False)
+        self.assertEqual(s['source_mismatch'],confirmed)
+        self.assertTrue(source_mismatch_confirmed(s))
+        self.assertFalse(s['workflow']['bbox_valid'])
+
+    def test_replacing_box_at_same_count_preserves_mismatch(self):
+        s=state('永寺樂文',n=3)
+        s['source_mismatch']={
+            'source_text':s['annotation_text'],
+            'source_character_count':4,
+            'bounding_box_count':3,
+            'issue_type':'extra_text',
+            'note':'',
+        }
+        boxes=dict(list(s['regions'].items())[1:])
+        boxes['replacement']=dict(bbox=[40,0,49,9],status='intact',unknown=False)
+        sync_draft_boxes(s,{'boxes':boxes,'active':None,'selected':[]},
+                         materialize_alignment=False)
+        self.assertTrue(source_mismatch_confirmed(s))
 
     def test_clear_source_mismatch_disables_sort_until_counts_match_or_reconfirm(self):
+        engine=Workflow.__new__(Workflow)
         s=state('永寺樂文',n=3)
         s['current_step']=3
         s['source_mismatch']={
@@ -152,11 +197,11 @@ class Invariants(unittest.TestCase):
             'note':'',
         }
         self.assertTrue(source_mismatch_confirmed(s))
-        cleared=self.engine.apply(s,'clear_source_mismatch')
+        cleared=engine.apply(s,'clear_source_mismatch')
         self.assertFalse(source_mismatch_confirmed(cleared))
         self.assertFalse(cleared['workflow']['bbox_valid'])
         with self.assertRaisesRegex(ValueError,'confirm a source mismatch'):
-            self.engine.apply(cleared,'sort_boxes')
+            engine.apply(cleared,'sort_boxes')
 
     def test_complete_mismatch_order_materializes_character_tokens(self):
         s=state('永寺',n=3)
@@ -369,6 +414,23 @@ class Integration(unittest.TestCase):
 
     def tearDown(self):self.tmp.cleanup()
 
+    def test_reopened_saved_annotations_become_character_alignment_text(self):
+        from crop.crop import crop_document, image_resize
+        out=self.root/'out';out.mkdir(parents=True)
+        boxes={str(index):{
+            'bbox':[index*10,0,index*10+9,9],'status':'intact'}
+            for index in range(1,4)}
+        atomic_write(out/'12305.json',{
+            'image':'12305.png','bounding_boxes':boxes,
+            # Deliberately serialize keys out of order; Box ID defines sequence.
+            'annotations':{'2':'樂','1':'永','3':'寺'},
+            'image_resize':image_resize([100,100],[100,100]),
+            'crop':crop_document('12305.png',[0,0,100,100],[100,100])['crop'],
+        })
+        reopened=self.engine.open_image(self.image)
+        self.assertEqual(reopened['saved_annotation_text'],'永樂寺')
+        self.assertEqual(reopened['text_sequence'],list('永樂寺'))
+
     def test_extraction_and_source_conflict(self):
         located=extract_source_content('12305.jpg',self.source,'Nguyên văn chữ Hán Nôm')
         self.assertEqual(located['record'],self.record)
@@ -446,6 +508,8 @@ class Integration(unittest.TestCase):
         doc=read_json(self.root/'out/12305.json')
         self.assertNotIn('region_uid',json.dumps(doc))
         loaded=e.open_image(self.image);self.assertEqual(loaded['annotations'],doc['annotations'])
+        self.assertEqual(loaded['saved_annotation_text'],'永樂寺')
+        self.assertEqual(loaded['text_sequence'],list('永樂寺'))
         loaded=e.apply(loaded,'save_content');self.assertEqual(loaded['reading_order'],[1,2,3])
         self.assertEqual(loaded['annotations'],{'1':'永','2':'樂','3':'寺'})
         self.assertTrue(loaded['crop_saved'])
