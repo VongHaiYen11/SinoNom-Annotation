@@ -370,9 +370,9 @@ body,
 #history-search-clear button { display: flex !important; align-items: center; justify-content: center; width: 28px !important; height: 28px !important; min-width: 28px !important; min-height: 28px !important; margin: 0 !important; padding: 0 !important; border: 0 !important; border-radius: 50%; background: transparent !important; color: var(--color-muted); font-size: 18px; line-height: 1; }
 #history-search-clear:hover, #history-search-clear button:hover { background: transparent !important; color: var(--color-text); }
 #history-search-clear[hidden] { display: none !important; }
-#history-modal-card .history-filter-label { display: block; margin: 0; color: var(--color-muted); font-size: 12px; font-weight: 600; }
-#history-modal-card > *:has(.history-filter-label) + #history-filter-row { margin-top: 8px !important; }
-#history-filter-row { display: flex !important; align-items: center; justify-content: flex-start; gap: 8px; }
+#history-filter-row { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; align-items: center !important; justify-content: space-between !important; gap: 12px; }
+#history-filter-row > :has(.history-filter-label) { flex: 0 0 auto; width: auto; }
+#history-filter-row .history-filter-label { display: block; margin: 0; color: var(--color-muted); font-size: 12px; font-weight: 600; }
 #history-filter { flex: 0 0 auto; width: auto; min-width: 0; margin: 0 !important; }
 #history-filter > .wrap,
 #history-filter > .form,
