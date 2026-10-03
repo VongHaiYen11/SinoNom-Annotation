@@ -331,14 +331,14 @@ def create_app(options):
                     gr.Markdown('### Image History')
                     history_close=gr.Button('×', elem_id='history-close',
                                             elem_classes=['icon-button'], scale=0)
-                with gr.Column(elem_id='history-search-wrap', min_width=0):
+                with gr.Group(elem_id='history-search-wrap'):
                     history_search=gr.Textbox(
                         placeholder='Search image name…', show_label=False,
                         elem_id='history-search', container=False)
                     history_clear=gr.Button('×', elem_id='history-search-clear',
                                             min_width=0, size='sm')
+                gr.HTML('<span class="history-filter-label">Filter</span>')
                 with gr.Row(elem_id='history-filter-row'):
-                    gr.HTML('<span class="history-filter-label">Filter</span>')
                     history_filter=gr.CheckboxGroup(
                         ['Done', 'Not Done'], value=['Done', 'Not Done'],
                         show_label=False, container=False,
