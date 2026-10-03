@@ -4,6 +4,7 @@ import json
 import logging
 import shutil
 import tempfile
+from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
@@ -16,7 +17,7 @@ from .text_extraction import (annotation_text, edit_content_field,
                               content_fields, content_document, save_content_document,
                               validate_content_document,
                               normalize_content_titles, normalize_metadata_fields)
-from .text_alignment import count_annotation_characters
+from .text_alignment import MISSING_ANNOTATION, characters, count_annotation_characters
 from .bbox import add_bbox, update_bbox, update_bboxes, delete_bbox, sync_draft_boxes
 from .status import (update_status, replace_statuses, confirm_status,
                      synchronize_missing_statuses)
@@ -365,15 +366,48 @@ class Workflow:
             s.pop('loaded_document', None)
             if loaded_alignment:
                 s['saved_alignment_document'] = loaded_alignment
-                if (loaded_alignment.get('annotations')
-                        and set(loaded_alignment['annotations']) == set(s['bounding_boxes'])):
-                    s['annotations'] = deepcopy(loaded_alignment['annotations'])
-                    s['text_sequence'] = (list(loaded_alignment.get('text_sequence', []))
-                                          or [s['annotations'][key]
-                                              for key in s['bounding_boxes']])
+                mismatch_type = (source_mismatch_type(loaded_alignment)
+                                 if s.get('loaded_is_mismatch') else None)
+                saved_annotations = loaded_alignment.get('annotations', {})
+                box_ids = sorted(saved_annotations, key=int) if saved_annotations else []
+                saved_text = list(loaded_alignment.get('text_sequence', []))
+                source_chars = characters(text)
+                if mismatch_type == 'extra_text':
+                    text_matches = Counter(saved_text) == Counter(source_chars)
+                elif mismatch_type == 'missing_text':
+                    text_matches = Counter(
+                        value for value in
+                        (saved_annotations[key] for key in box_ids)
+                        if value != MISSING_ANNOTATION
+                    ) == Counter(source_chars)
+                else:
+                    text_matches = Counter(saved_annotations[key] for key in box_ids) == Counter(source_chars)
+                mapping_matches = bool(
+                    saved_annotations
+                    and set(saved_annotations) == set(loaded_alignment['bounding_boxes'])
+                    and set(loaded_mapping) == set(loaded_alignment['bounding_boxes'])
+                    and set(loaded_mapping.values()).issubset(s['regions'])
+                )
+                if text_matches and mapping_matches and mismatch_type != 'other':
+                    s['bounding_boxes'] = deepcopy(loaded_alignment['bounding_boxes'])
+                    s['annotations'] = deepcopy(saved_annotations)
+                    s['reading_order'] = list(map(int, box_ids))
+                    s['region_uid_by_box_id'] = deepcopy(loaded_mapping)
+                    s['box_id_by_region'] = {
+                        uid: box_id for box_id, uid in loaded_mapping.items()
+                    }
+                    s['text_sequence'] = (saved_text if mismatch_type == 'extra_text'
+                                          else [saved_annotations[key] for key in box_ids])
                     s['text_token_ids'] = [str(index) for index in
                                            range(1, len(s['text_sequence']) + 1)]
+                    if mismatch_type:
+                        s['source_mismatch'] = _source_mismatch_from_document(
+                            loaded_alignment)
+                        if mismatch_type == 'extra_text':
+                            s['source_mismatch']['excluded_characters'] = list(
+                                loaded_alignment['excluded_characters'])
                     s['workflow']['alignment_valid'] = True
+                    synchronize_missing_statuses(s)
             s.pop('loaded_region_uid_by_box_id', None)
             s.pop('loaded_is_mismatch', None)
             s.pop('loaded_suspicious_box_ids', None)
