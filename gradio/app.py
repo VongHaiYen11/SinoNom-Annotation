@@ -1162,8 +1162,21 @@ def create_app(options):
             clear_loading_when_done(selector.input(lambda c,i:run(c,'select',dict(id=i)),[session,selector],**event_args))
         def on_action(ctx,evt:gr.EventData):
             if evt._data['action'] == 'sort_boxes_calc':
+                payload=evt._data.get('payload') or {}
+                request_id=payload.get('sortRequestId')
+
+                def sort_response(board_state=None, ordered=None, message=''):
+                    result=render(ctx,message)
+                    board_value=snapshot(board_state or ctx['active'])
+                    # Even a rejected sort must update the editor so its pending
+                    # flag and progress surface are released. An empty result
+                    # consumes any selected-sort range without changing orders.
+                    board_value['calcSortedBoxIds']=ordered if ordered is not None else []
+                    board_value['sortRequestId']=request_id
+                    result[8]=gr.update(value=board_value,visible=True)
+                    return result
+
                 try:
-                    payload=evt._data.get('payload') or {}
                     raw=payload.get('boxes')
                     if not isinstance(raw,dict):
                         raise ValueError('Sort requires the current frontend box snapshot.')
@@ -1171,6 +1184,15 @@ def create_app(options):
                     all_boxes=payload.get('allBoxes')
                     if not isinstance(all_boxes,dict):
                         raise ValueError('Sort requires the complete box state.')
+                    active_region_ids=set(ctx['active'].get('regions',{}))
+                    frontend_region_ids=set(map(str,all_boxes))
+                    # A confirmed mismatch belongs to the backend's accepted
+                    # box set. Clearing/reassigning order changes only draft
+                    # order metadata, so it must not invalidate that decision.
+                    # Membership changes still require a new confirmation.
+                    confirmed_mismatch=(
+                        frontend_region_ids == active_region_ids
+                        and source_mismatch_confirmed(ctx['active']))
                     transient['regions']={
                         str(uid):dict(box) for uid,box in all_boxes.items()
                         if isinstance(box,dict)
@@ -1181,7 +1203,7 @@ def create_app(options):
                     if not transient['workflow']['content_verified']:
                         raise ValueError('Verify the content before sorting boxes.')
                     if not (transient['workflow']['bbox_valid']
-                            or source_mismatch_confirmed(transient)):
+                            or confirmed_mismatch):
                         raise ValueError(
                             'Confirm the source mismatch before sorting when box and character counts differ.')
                     boxes={
@@ -1194,7 +1216,6 @@ def create_app(options):
                     log.info('SORT: image=%s request_id=%s frontend count=%d sent IDs=%s returned IDs=%s',
                              ctx['active'].get('image_path'),payload.get('sortRequestId'),
                              len(boxes),list(boxes),ordered)
-                    result=render(ctx)
                     transient['selected_region_uids']=[
                         uid for uid in payload.get('selectedIds',[])
                         if uid in transient['regions']
@@ -1202,23 +1223,12 @@ def create_app(options):
                     transient['selected_region_uid']=(
                         transient['selected_region_uids'][-1]
                         if transient['selected_region_uids'] else None)
-                    board_value=snapshot(transient)
-                    board_value['calcSortedBoxIds']=ordered
-                    # Repeated sorts can produce the same IDs as an earlier
-                    # request. Carry a per-request token so Gradio still
-                    # delivers the update after a local Clear Order operation.
-                    board_value['sortRequestId']=payload.get('sortRequestId')
-                    result[8]=gr.update(value=board_value,visible=True)
-                    return result
+                    return sort_response(transient,ordered)
                 except Exception as exc:
-                    if str(exc) == (
-                        'Confirm the source mismatch before sorting when box and character counts differ.'
-                    ):
-                        # The browser can dispatch a stale sort snapshot just as
-                        # validation state is changing. Refresh the authoritative
-                        # board so it disables Sort instead of surfacing a warning.
-                        return render(ctx)
-                    return render(ctx,WARNING+' '+html.escape(str(exc)))
+                    log.exception('SORT rejected image=%s request_id=%s selected_ids=%s',
+                                  ctx['active'].get('image_path'),request_id,
+                                  payload.get('selectedIds'))
+                    return sort_response(message=WARNING+' '+html.escape(str(exc)))
             return run(ctx,evt._data['action'],evt._data['payload'])
         board.action(on_action,[session],outputs=outputs,concurrency_id='annotation-actions',
                      concurrency_limit=1,show_progress='hidden')

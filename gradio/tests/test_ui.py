@@ -83,17 +83,28 @@ class GradioCallbacks(unittest.TestCase):
             ctx=open_image(dict(active=new_state(),drafts={}),str(image))[0]
             state=ctx['active']
             state['current_step']=3
-            state['annotation_text']='甲乙'
+            state['annotation_text']='甲乙丙丁'
             state['workflow']['content_verified']=True
-            state['workflow']['bbox_valid']=True
+            state['workflow']['bbox_valid']=False
+            state['source_mismatch']={
+                'source_text':state['annotation_text'],
+                'source_character_count':4,
+                'bounding_box_count':3,
+                'issue_type':'extra_text',
+                'note':'',
+            }
             state['regions']={
                 'left':dict(bbox=[10,0,20,10],status='intact',unknown=False,order=None),
+                'middle':dict(bbox=[40,0,50,10],status='intact',unknown=False,order=None),
                 'right':dict(bbox=[70,0,80,10],status='intact',unknown=False,order=None),
             }
+            # Clear Order clears only order metadata; it must retain the
+            # confirmed mismatch for the subsequent selected-box sort.
             boxes={uid:dict(box) for uid,box in state['regions'].items()}
             sort_payload={
-                'boxes':{uid:box['bbox'] for uid,box in boxes.items()},
+                'boxes':{uid:boxes[uid]['bbox'] for uid in ('left','middle')},
                 'allBoxes':boxes,
+                'selectedIds':['left','middle'],
             }
             responses=[]
             for request_id in ('sort-1','sort-2'):
@@ -101,11 +112,24 @@ class GradioCallbacks(unittest.TestCase):
                 response=on_action(ctx,gr.EventData(None,{
                     'action':'sort_boxes_calc','payload':payload}))
                 responses.append(response[8]['value'])
-            self.assertEqual(responses[0]['calcSortedBoxIds'],['right','left'])
-            self.assertEqual(responses[1]['calcSortedBoxIds'],['right','left'])
+            self.assertEqual(responses[0]['calcSortedBoxIds'],['middle','left'])
+            self.assertEqual(responses[1]['calcSortedBoxIds'],['middle','left'])
             self.assertEqual([value['sortRequestId'] for value in responses],
                              ['sort-1','sort-2'])
             self.assertNotEqual(responses[0],responses[1])
+            changed_membership=dict(
+                sort_payload,allBoxes={key:boxes[key] for key in ('left','middle')},
+                sortRequestId='sort-changed-membership')
+            changed=on_action(ctx,gr.EventData(None,{
+                'action':'sort_boxes_calc','payload':changed_membership}))
+            self.assertEqual(changed[8]['value']['sortRequestId'],
+                             'sort-changed-membership')
+            self.assertEqual(changed[8]['value']['calcSortedBoxIds'],[])
+            invalid_payload=dict(sort_payload,boxes={},sortRequestId='sort-rejected')
+            rejected=on_action(ctx,gr.EventData(None,{
+                'action':'sort_boxes_calc','payload':invalid_payload}))
+            self.assertEqual(rejected[8]['value']['sortRequestId'],'sort-rejected')
+            self.assertEqual(rejected[8]['value']['calcSortedBoxIds'],[])
 
     def test_miss_box_is_derived_unknown_and_rendered_yellow(self):
         state=new_state();state.update(image='12305.png',image_size=[100,100],
