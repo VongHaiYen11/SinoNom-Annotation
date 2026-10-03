@@ -173,6 +173,16 @@ def snapshot(s):
             markup+=f'''<section class="review-editor"><div class="order-heading"><div><span class="eyebrow">REVIEW & VERIFICATION</span><h2>Final Result</h2></div></div>
                 <div class="review-detail">{review}</div></section>'''
     markup += '''
+    <div id="sort-overwrite-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="sort-overwrite-title">
+      <div class="modal-card">
+        <h3 id="sort-overwrite-title">Overwrite Existing Order?</h3>
+        <p id="sort-overwrite-message" class="modal-subtitle"></p>
+        <div class="modal-actions">
+          <button type="button" id="sort-overwrite-cancel" class="btn btn-secondary">Cancel</button>
+          <button type="button" id="sort-overwrite-confirm" class="btn btn-primary">Overwrite</button>
+        </div>
+      </div>
+    </div>
     <div id="sort-selected-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="sort-modal-title">
       <div class="modal-card">
         <h3 id="sort-modal-title">Sort Selected Boxes</h3>
@@ -209,8 +219,6 @@ def snapshot(s):
                 contentVerified=s['workflow'].get('content_verified', False),
                 characterCount=count_annotation_characters(s['annotation_text']),
                 mismatchConfirmed=source_mismatch,
-                mismatchIssueType=(s['source_mismatch']['issue_type']
-                                   if source_mismatch else None),
                 readingOrder=list(s['reading_order']),
                 spatialBoxOrder=(list(s.get('reading_order', [])) if s.get('bounding_boxes') else []),
                 suspiciousTokenIds=list(map(str,s.get('suspicious_token_ids',[]))),

@@ -63,18 +63,12 @@ def panel_summary(state):
         and state['source_mismatch']['issue_type'] == 'other') else state['bounding_boxes'])
     count = count_annotation_characters(state['annotation_text'])
     matched = state['workflow']['content_verified'] and len(boxes) == count and count > 0
-    mismatch = source_mismatch_confirmed(state)
-    issue_labels = {'missing_text': 'Missing Content',
-                    'extra_text': 'Extra Content', 'other': 'Other'}
-    confirmed_issue = (issue_labels.get(state['source_mismatch']['issue_type'], 'Source')
-                       if mismatch else None)
-    label = (f'{confirmed_issue} mismatch confirmed' if mismatch
-             else 'Counts match' if matched
+    label = ('Counts match' if matched
              else 'Content not verified' if not state['workflow']['content_verified']
              else 'Count mismatch')
     delta = len(boxes) - count
     return f'''<section class="section sidebar-section panel-summary"><h3>Validation</h3>
-      <div class="validation-badge">{CHECK if matched and not mismatch else ALERT}<span>{label}</span></div>
+      <div class="validation-badge{' is-count-match' if matched else ''}">{CHECK if matched else ALERT}<span>{label}</span></div>
       <dl><div><dt>Bounding boxes</dt><dd>{len(boxes)}</dd></div>
       <div><dt>Characters</dt><dd>{count}</dd></div>
       <div><dt>Difference (boxes − characters)</dt><dd>{delta:+d}</dd></div></dl></section>'''

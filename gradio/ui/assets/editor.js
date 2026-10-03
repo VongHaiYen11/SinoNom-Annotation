@@ -3,7 +3,7 @@ let pending = false, pendingAction = null, moving = null, orderDrag = null;
 let suppressAlignmentClick = false, alignmentClickTimer = null;
 let syncingStatusControl = false;
 let syncingCoordinateControls = false;
-let isDirty = false, pendingSortSelectedRange = null;
+let isDirty = false, pendingSortSelectedRange = null, pendingSortOverwrite = null;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId = null;
 let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
@@ -56,13 +56,6 @@ const updateValidationSummary = () => {
   const contentVerified = Boolean(props.value.contentVerified ?? true);
   const mismatchConfirmed = !mismatchConfirmationInvalidated
     && (Boolean(props.value.mismatchConfirmed) || localMismatchConfirmed);
-  const issueLabels = {
-    missing_text: 'Missing Content',
-    extra_text: 'Extra Content',
-    other: 'Other',
-  };
-  const confirmedIssueLabel = mismatchConfirmed
-    ? issueLabels[props.value.mismatchIssueType] || 'Source' : null;
   const matched = contentVerified && boxCount === charCount && charCount > 0;
   const canOrder = matched || mismatchConfirmed;
 
@@ -85,10 +78,9 @@ const updateValidationSummary = () => {
 
   const badge = summaryHost.querySelector('.validation-badge');
   if (badge) {
-    const label = mismatchConfirmed ? `${confirmedIssueLabel} mismatch confirmed`
-      : matched ? 'Counts match'
-        : !contentVerified ? 'Content not verified'
-          : 'Count mismatch';
+    const label = !contentVerified ? 'Content not verified'
+      : matched ? 'Counts match' : 'Count mismatch';
+    badge.classList.toggle('is-count-match', matched);
     const span = badge.querySelector('span');
     if (span) span.textContent = label;
 
@@ -97,14 +89,14 @@ const updateValidationSummary = () => {
 
     const svgContainer = badge.querySelector('svg');
     if (svgContainer) {
-      svgContainer.outerHTML = matched && !mismatchConfirmed ? svgCheck : svgAlert;
+      svgContainer.outerHTML = matched ? svgCheck : svgAlert;
     }
   }
 
   const mismatchGroup = root.querySelector('.mismatch-panel') || root.querySelector('#mismatch_group');
   if (mismatchGroup && props.value.step === 3) {
-    // Any confirmed issue remains visible until the user clears or invalidates it.
-    mismatchGroup.style.display = matched && !mismatchConfirmed ? 'none' : 'block';
+    // Matching counts still allow a confirmed Other source issue.
+    mismatchGroup.style.display = 'block';
   }
   root.querySelector('#clear-source-mismatch')?.classList.toggle(
     'mismatch-unconfirmed', !mismatchConfirmed);
@@ -1291,6 +1283,17 @@ const openSortSelectedModal = () => {
   updateSortModalPreview();
 };
 
+const sortAllBoxes = () => {
+  console.log('SORT REQUEST', {
+    frontendCount: Object.keys(localBoxes).length,
+    frontendIDs: Object.keys(localBoxes)
+  });
+  send('sort_boxes_calc', {
+    boxes: Object.fromEntries(Object.entries(localBoxes).map(([id, box]) => [id, box.bbox])),
+    allBoxes: serializeLocalBoxes()
+  });
+};
+
 const formatConflictOrderGroups = orders => {
   const groups = [];
   [...new Set(orders)].sort((a, b) => a - b).forEach(order => {
@@ -1409,21 +1412,53 @@ root.addEventListener('click', event => {
   }
   const sortBtn = event.target.closest('#sort-boxes');
   if (sortBtn) {
-    if (!canEditReadingOrder()) {
+    if (pending || !canEditReadingOrder()) {
       event.preventDefault();
       return;
     }
-    if (!selectedIds.size) {
-      console.log('SORT REQUEST', {
-        frontendCount: Object.keys(localBoxes).length,
-        frontendIDs: Object.keys(localBoxes)
-      });
-      send('sort_boxes_calc', {
-        boxes: Object.fromEntries(Object.entries(localBoxes).map(([id, b]) => [id, b.bbox])),
-        allBoxes: serializeLocalBoxes()
-      });
+    const scope = selectedIds.size ? 'selected' : 'all';
+    const targetIds = selectedIds.size ? [...selectedIds] : Object.keys(localBoxes);
+    const orderedCount = targetIds.filter(id => {
+      const order = localBoxes[id]?.order;
+      return order !== null && order !== undefined && order !== '';
+    }).length;
+    if (orderedCount) {
+      const modal = root.querySelector('#sort-overwrite-modal');
+      const message = modal?.querySelector('#sort-overwrite-message');
+      if (modal && message) {
+        pendingSortOverwrite = { scope, targetIds };
+        message.textContent = scope === 'all'
+          ? `${orderedCount} of ${targetIds.length} boxes already have order. Overwrite the order of all boxes?`
+          : `${orderedCount} of ${targetIds.length} selected boxes already have order. Continue to choose a starting number and overwrite their order?`;
+        modal.style.display = 'flex';
+      }
+    } else if (scope === 'all') {
+      sortAllBoxes();
     } else {
       openSortSelectedModal();
+    }
+    event.preventDefault();
+    return;
+  }
+  const cancelSortOverwrite = event.target.closest('#sort-overwrite-cancel');
+  if (cancelSortOverwrite) {
+    root.querySelector('#sort-overwrite-modal')?.style.setProperty('display', 'none');
+    pendingSortOverwrite = null;
+    event.preventDefault();
+    return;
+  }
+  const confirmSortOverwrite = event.target.closest('#sort-overwrite-confirm');
+  if (confirmSortOverwrite) {
+    root.querySelector('#sort-overwrite-modal')?.style.setProperty('display', 'none');
+    const request = pendingSortOverwrite;
+    pendingSortOverwrite = null;
+    const currentIds = request?.scope === 'selected'
+      ? [...selectedIds] : Object.keys(localBoxes);
+    const sameTargets = request && currentIds.length === request.targetIds.length
+      && currentIds.every(id => request.targetIds.includes(id));
+    if (!pending && canEditReadingOrder() && sameTargets) {
+      if (request.scope === 'all' && !selectedIds.size) sortAllBoxes();
+      else if (request.scope === 'selected' && selectedIds.size) openSortSelectedModal();
     }
     event.preventDefault();
     return;

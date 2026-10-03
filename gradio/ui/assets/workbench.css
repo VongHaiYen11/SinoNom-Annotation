@@ -823,6 +823,7 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   background: var(--color-page);
 }
 .validation-badge { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-sm); background: #302116; color: var(--color-accent); font-size: 12px; }
+.validation-badge.is-count-match { background: #123524; color: #4ade80; }
 .validation-badge .ui-icon { width: 16px; height: 16px; }
 .panel-summary dl { display: flex; flex-direction: column; gap: var(--space-3); margin: 0; }
 .panel-summary dl > div { display: flex; justify-content: space-between; font-size: 12px; }
@@ -866,10 +867,11 @@ button#clear-source-mismatch:hover { background: var(--color-panel-hover) !impor
   overflow: hidden;
 }
 .status-order-board .image-viewport {
-  height: max(1200px, 100%);
-  min-height: 1200px;
+  height: auto;
+  min-height: 0;
   max-height: none;
   min-width: 0;
+  align-self: stretch;
   overflow: auto;
   overscroll-behavior: contain;
 }

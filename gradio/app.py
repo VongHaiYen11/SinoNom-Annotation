@@ -347,7 +347,7 @@ def create_app(options):
                                      interactive=not skip_detection,elem_id='run-detection')
                     with gr.Group(visible=False,
                                   elem_classes=['section','sidebar-section','sidebar-component','mismatch-panel']) as mismatch_group:
-                        gr.Markdown('### Box-Content Mismatch')
+                        gr.Markdown('### Box-Content Validation')
                         summary=gr.HTML(panel_summary(initial['active']),
                                         elem_id='validation-summary-host')
                         mismatch_type=gr.Dropdown([
