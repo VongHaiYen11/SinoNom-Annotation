@@ -480,7 +480,7 @@ Crop dragging follows the same model: moving, resizing, or drawing the orange fr
 
 Review renders the cropped image viewport from the accepted crop coordinates after drawing the annotation overlays. Bounding boxes retain their original image-space coordinates and are clipped together with the source image at the crop boundary; export data is not rewritten into crop-relative coordinates.
 
-Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengXian and PMingLiU fonts. PMingLiU-ExtB is included as a fallback for extended CJK characters that may be missing from the primary fonts.
+Hán/Nôm text in the interface is rendered with locally served NomNaTong, DengXian and PMingLiU fonts.
 
 ### Saving
 

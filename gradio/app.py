@@ -61,8 +61,7 @@ HISTORY_FILTER_JS = """(...args) => {
     const root = document.querySelector('#history-modal');
     if (!root) return;
     const search = root.querySelector('#history-search input, #history-search textarea');
-    const query = (typeof args[0] === 'string' ? args[0] : (search?.value || ''))
-        .trim().toLocaleLowerCase();
+    const query = (search?.value || '').trim().toLocaleLowerCase();
     const selected = Array.isArray(args[1]) ? args[1] : ['Done', 'Not Done'];
     const showDone = selected.includes('Done');
     const showPending = selected.includes('Not Done');
@@ -81,13 +80,29 @@ HISTORY_FILTER_JS = """(...args) => {
     const clear = root.querySelector('#history-search-clear');
     if (clear) clear.hidden = !query;
 }"""
-HISTORY_CLEAR_JS = """() => {
+HISTORY_CLEAR_JS = """(selected) => {
     const root = document.querySelector('#history-modal');
     const input = root?.querySelector('#history-search input, #history-search textarea');
     if (input) {
-        input.value = '';
+        const prototype = input.tagName === 'TEXTAREA'
+            ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+        if (setter) setter.call(input, ''); else input.value = '';
         input.dispatchEvent(new Event('input', {bubbles: true}));
     }
+    let shown = 0;
+    root?.querySelectorAll('.history-item').forEach(item => {
+        const visible = item.classList.contains('processed')
+            ? selected.includes('Done') : selected.includes('Not Done');
+        item.hidden = !visible;
+        if (visible) shown++;
+    });
+    const count = root?.querySelector('#history-shown');
+    if (count) count.textContent = shown;
+    const empty = root?.querySelector('.history-empty');
+    if (empty) empty.hidden = shown > 0;
+    const clear = root?.querySelector('#history-search-clear');
+    if (clear) clear.hidden = true;
     return [''];
 }"""
 
@@ -316,15 +331,18 @@ def create_app(options):
                     gr.Markdown('### Image History')
                     history_close=gr.Button('×', elem_id='history-close',
                                             elem_classes=['icon-button'], scale=0)
-                with gr.Row(elem_id='history-controls'):
+                with gr.Column(elem_id='history-search-wrap', min_width=0):
                     history_search=gr.Textbox(
                         placeholder='Search image name…', show_label=False,
-                        elem_id='history-search', container=False, scale=1)
+                        elem_id='history-search', container=False)
                     history_clear=gr.Button('×', elem_id='history-search-clear',
-                                            min_width=0, scale=0)
+                                            min_width=0, size='sm')
+                with gr.Row(elem_id='history-filter-row'):
+                    gr.HTML('<span class="history-filter-label">Filter</span>')
                     history_filter=gr.CheckboxGroup(
                         ['Done', 'Not Done'], value=['Done', 'Not Done'],
-                        label='Filter', elem_id='history-filter')
+                        show_label=False, container=False,
+                        elem_id='history-filter')
                 history_results=gr.HTML(elem_id='history-results')
         message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
         download_payload=gr.Textbox(visible=False)
@@ -718,7 +736,7 @@ def create_app(options):
                               show_progress='hidden',js=HISTORY_FILTER_JS)
         history_search.input(fn=None,inputs=[history_search,history_filter],outputs=None,
                              show_progress='hidden',js=HISTORY_FILTER_JS)
-        history_clear.click(fn=None,inputs=[],outputs=[history_search],
+        history_clear.click(fn=None,inputs=[history_filter],outputs=[history_search],
                             show_progress='hidden',js=HISTORY_CLEAR_JS)
 
         save_all.click(save_folder,[],[download_payload],concurrency_id='annotation-actions',concurrency_limit=1,

@@ -305,9 +305,9 @@ body,
   z-index: 10002 !important;
   display: flex !important;
   width: min(92vw, 440px) !important;
-  height: min(68vh, 520px) !important;
+  height: min(85vh, 520px) !important;
   min-height: 280px !important;
-  max-height: 80vh !important;
+  max-height: 85vh !important;
   flex-direction: column !important;
   gap: 12px !important;
   margin: 0 !important;
@@ -322,19 +322,45 @@ body,
 #history-modal-heading { flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px; }
 #history-modal-heading .prose { margin: 0; }
 #history-modal-heading h3 { margin: 0; font-size: 17px; }
-#history-controls { position: relative; flex: 0 0 auto; align-items: end; gap: 10px; min-width: 0; }
-#history-search { flex: 1 1 auto; min-width: 0; margin: 0; }
-#history-search input, #history-search textarea { padding-right: 34px; }
-#history-search-clear { position: absolute; right: 126px; bottom: 5px; z-index: 2; width: 28px; min-width: 28px; height: 28px; margin: 0; }
-#history-search-clear button { width: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: var(--color-muted); font-size: 18px; }
+#history-search-wrap { position: relative; display: block !important; flex: 0 0 44px; width: 100%; min-width: 0; height: 44px; margin: 0; }
+#history-search { width: 100%; min-width: 0; height: 44px; margin: 0; }
+#history-search input, #history-search textarea { width: 100%; height: 44px; padding-right: 44px; box-sizing: border-box; }
+#history-search-clear {
+  position: absolute !important;
+  top: 50%;
+  right: 10px;
+  z-index: 2;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  flex: none !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: translateY(-50%);
+  border: 0 !important;
+  border-radius: 6px;
+  background: transparent !important;
+  color: var(--color-muted);
+  font-size: 18px;
+  cursor: pointer;
+}
+#history-search-clear button { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--color-muted); font-size: 18px; }
+#history-search-clear:hover, #history-search-clear button:hover { background: var(--color-panel-hover) !important; color: var(--color-text); }
 #history-search-clear[hidden] { display: none !important; }
-#history-filter { flex: 0 0 116px; min-width: 0; margin: 0; }
-#history-filter .wrap { gap: 4px; }
-#history-filter label { font-size: 11px; white-space: nowrap; }
-#history-results { flex: 1 1 auto; min-height: 0; overflow: hidden; }
-#history-results > .prose { height: 100%; margin: 0; overflow: hidden; }
-.history-count { padding: 2px 0 8px; color: var(--color-muted); font-size: 12px; }
-.history-list { max-height: calc(min(68vh, 520px) - 130px); overflow-y: auto; margin: 0 !important; padding: 0 !important; list-style: none !important; }
+#history-filter-row { flex: 0 0 auto; align-items: center; justify-content: flex-start; gap: 8px; min-height: 36px; margin: 0; }
+#history-filter-row > :has(.history-filter-label) { flex: 0 0 auto; width: auto; min-width: 0; }
+#history-filter-row .history-filter-label { color: var(--color-muted); font-size: 12px; font-weight: 600; }
+#history-filter { flex: 0 1 auto; min-width: 0; margin: 0; }
+#history-filter .wrap { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
+#history-filter label { display: inline-flex; align-items: center; min-height: 32px; padding: 4px 8px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 11px; white-space: nowrap; }
+#history-results { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden; }
+#history-results > .prose { display: flex; flex: 1 1 auto; flex-direction: column; height: 100%; min-height: 0; margin: 0; overflow: hidden; }
+.history-count { flex: 0 0 auto; padding: 2px 0 8px; color: var(--color-muted); font-size: 12px; }
+.history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 !important; padding: 0 !important; list-style: none !important; }
 .history-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px; border-bottom: 1px solid var(--color-border); list-style: none !important; }
 .history-item::before { content: none !important; }
 .history-item[hidden], .history-empty[hidden] { display: none !important; }
