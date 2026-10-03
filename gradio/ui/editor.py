@@ -11,6 +11,25 @@ SCRIPT = (Path(__file__).parent / 'assets/editor.js').read_text()
 CSS = (Path(__file__).parent / 'assets/editor.css').read_text()
 
 
+def _review_point(point, crop, scale_x, scale_y):
+    """Convert one original-image point into the processed Review image."""
+    return ((point[0] - crop[0]) * scale_x,
+            (point[1] - crop[1]) * scale_y)
+
+
+def _review_box(bbox, crop, scale_x, scale_y):
+    """Apply the shared Review transform to every corner of a rectangular box."""
+    x1,y1,x2,y2=bbox
+    points=(
+        _review_point((x1,y1),crop,scale_x,scale_y),
+        _review_point((x2,y1),crop,scale_x,scale_y),
+        _review_point((x2,y2),crop,scale_x,scale_y),
+        _review_point((x1,y2),crop,scale_x,scale_y),
+    )
+    return (min(point[0] for point in points),min(point[1] for point in points),
+            max(point[0] for point in points),max(point[1] for point in points))
+
+
 def source_text(s):
     """Render the Status & Order reference text for the sidebar."""
     if not s.get('image') or s.get('current_step') not in (4, 7):
@@ -36,13 +55,16 @@ def snapshot(s):
     canvas_x=canvas_y=0
     canvas_w,canvas_h=w,h
     review_image_url=s['image_url']
+    review_crop=None
     if step == 7:
         from annotation.io import crop_export_geometry
         scaled_crop,resized_size=crop_export_geometry(s)
         draw_w,draw_h=resized_size
         scale_x,scale_y=draw_w/w,draw_h/h
-        canvas_x,canvas_y,crop_x2,crop_y2=scaled_crop
-        canvas_w,canvas_h=crop_x2-canvas_x,crop_y2-canvas_y
+        review_crop=tuple(s.get('crop') or (0,0,w,h))
+        canvas_x=canvas_y=0
+        canvas_w=(review_crop[2]-review_crop[0])*scale_x
+        canvas_h=(review_crop[3]-review_crop[1])*scale_y
         # Review uses a real crop preview. The overlay coordinates are local
         # to that crop, while source boxes remain stored in original pixels.
         if s.get('image_path'):
@@ -88,17 +110,18 @@ def snapshot(s):
         <div class="toolbar-tools"><span class="zoom-label" aria-live="polite">100%</span>
         <button type="button" data-zoom="out" aria-label="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
         <button type="button" data-zoom="in" aria-label="Zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg></button></div></div>
-        <div class="image-viewport"><svg class="annotation-canvas" viewBox="{canvas_x} {canvas_y} {canvas_w} {canvas_h}" role="img" aria-label="{filename} · {'cropped review' if step == 7 else 'annotation canvas'}" style="aspect-ratio:{canvas_w}/{canvas_h}">
-        <image href="{html.escape(review_image_url, quote=True)}" x="{canvas_x}" y="{canvas_y}" width="{draw_w}" height="{draw_h}" preserveAspectRatio="none"/>
+        <div class="image-viewport"><svg class="annotation-canvas" viewBox="0 0 {canvas_w} {canvas_h}" role="img" aria-label="{filename} · {'cropped review' if step == 7 else 'annotation canvas'}" style="aspect-ratio:{canvas_w}/{canvas_h}">
+        <image href="{html.escape(review_image_url, quote=True)}" x="0" y="0" width="{canvas_w if step == 7 else draw_w}" height="{canvas_h if step == 7 else draw_h}" preserveAspectRatio="none"/>
         '''
     # Scale labels/handles to image size so full-resolution scans remain editable.
     unit=max(draw_w,draw_h)/900
     suspicious_boxes=set(suspicious_box_ids(s)) if step in (4,7) else set()
     for key,b in boxes.items():
-        x1,y1,x2,y2=b['bbox']
-        x1,y1,x2,y2=x1*scale_x,y1*scale_y,x2*scale_x,y2*scale_y
         if step == 7:
-            x1,y1,x2,y2=(x1-canvas_x,y1-canvas_y,x2-canvas_x,y2-canvas_y)
+            x1,y1,x2,y2=_review_box(b['bbox'],review_crop,scale_x,scale_y)
+        else:
+            x1,y1,x2,y2=b['bbox']
+            x1,y1,x2,y2=x1*scale_x,y1*scale_y,x2*scale_x,y2*scale_y
         selected=key==selected_id or step==6; multi_selected=key in selected_ids
         bw = x2 - x1; bh = y2 - y1
         miss_x1,miss_x2=x1+bw*0.2,x2-bw*0.2

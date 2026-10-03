@@ -170,7 +170,7 @@ class GradioCallbacks(unittest.TestCase):
         state['crop']=[10,15,80,90]
         state['current_step']=7
         cropped=snapshot(state)
-        self.assertIn('viewBox="10 15 70 75"',cropped['markup'])
+        self.assertIn('viewBox="0 0 70.0 75.0"',cropped['markup'])
         self.assertIn('cropped review',cropped['markup'])
         self.assertEqual((cropped['width'],cropped['height']),(70,75))
         scaled=new_state();scaled.update(image='large.png',image_path='/missing/large.png',
@@ -183,8 +183,8 @@ class GradioCallbacks(unittest.TestCase):
         scaled_render=snapshot(scaled)
         # The image is resized to fit a 4096 px crop. The box is scaled by
         # the same actual x/y resize factors before subtracting crop origin.
-        self.assertIn('viewBox="1638 819 4097 3277"',scaled_render['markup'])
-        self.assertIn('x="819.75" y="819.3333333333335"',scaled_render['markup'])
+        self.assertIn('viewBox="0 0 4096.25 3276.666666666667"',scaled_render['markup'])
+        self.assertIn('x="819.25" y="819.1666666666667"',scaled_render['markup'])
         css=(Path(__file__).resolve().parents[1]/'ui/assets/editor.css').read_text()
         self.assertIn('grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr)',css)
         self.assertIn('.status-order-board .image-viewport',css)
