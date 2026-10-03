@@ -412,6 +412,9 @@ def create_app(options):
                            elem_id='mismatch-issue-type')
                         mismatch_note=gr.Textbox(
                             label='Note (required only for Other)',lines=2,max_lines=3)
+                        reset_mismatch_ui=gr.Button(
+                            'Reset mismatch fields',elem_id='reset-mismatch-ui',
+                            elem_classes=['frontend-bridge'])
                         with gr.Row(elem_classes=['button-group','sidebar-action-row','mismatch-action-row']):
                             confirm_mismatch=gr.Button(
                                 'Confirm Mismatch', variant='primary', min_width=0,
@@ -1112,6 +1115,9 @@ def create_app(options):
             confirm_source_mismatch,
             [session,mismatch_type,mismatch_note,selection_bridge],
             **dict(event_args,js=snapshot_board_state_js(3,deselect=True))))
+        reset_mismatch_ui.click(
+            fn=None,inputs=[],outputs=[mismatch_type,mismatch_note],
+            show_progress='hidden',js="() => [null, '']")
         clear_loading_when_done(clear_mismatch.click(
             clear_source_mismatch,[session,selection_bridge],
             **dict(event_args,js=snapshot_board_state_js(1,deselect=True))))

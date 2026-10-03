@@ -138,17 +138,7 @@ const groupFor = id => [...element.querySelectorAll('.annotation-canvas [data-bo
 );
 const root = element.closest('.gradio-container') || document;
 const clearMismatchIssueSelection = () => {
-  const dropdown = root.querySelector('#mismatch-issue-type');
-  if (!dropdown) return;
-  const clear = dropdown.querySelector('button[aria-label*="Clear"], button[title*="Clear"], .clear-button');
-  if (clear) {
-    clear.click();
-    return;
-  }
-  const input = dropdown.querySelector('input');
-  if (input) {
-    setInputValue('#mismatch-issue-type', '');
-  }
+  root.querySelector('#reset-mismatch-ui button, button#reset-mismatch-ui')?.click();
 };
 const applyImageOnlyMode = (enabled) => {
   const svg = element.querySelector('.annotation-canvas');
@@ -720,6 +710,14 @@ const point = (event, svg, width = props.value.width, height = props.value.heigh
     y: Math.max(0, Math.min(at.y, height))
   };
 };
+const missMarkLines = ([x1, y1, x2, y2]) => {
+  const insetX = (x2 - x1) * 0.2;
+  const insetY = (y2 - y1) * 0.2;
+  return [
+    [x1 + insetX, y1 + insetY, x2 - insetX, y2 - insetY],
+    [x2 - insetX, y1 + insetY, x1 + insetX, y2 - insetY]
+  ];
+};
 const drawPreview = (group, box) => {
   const rect = group?.querySelector('rect:not([data-image-resize-handle])');
   if (!rect) return;
@@ -729,7 +727,7 @@ const drawPreview = (group, box) => {
   const missMark = group.querySelector('[data-miss-mark]');
   if (missMark) {
     const lines = missMark.querySelectorAll('line');
-    [[box[0], box[1], box[2], box[3]], [box[2], box[1], box[0], box[3]]]
+    missMarkLines(box)
       .forEach((coords, index) => {
         const line = lines[index];
         if (line) ['x1', 'y1', 'x2', 'y2'].forEach((attr, pos) => line.setAttribute(attr, coords[pos]));
@@ -873,14 +871,13 @@ element.addEventListener('apply-status-preview', () => {
     }
     group.querySelector('[data-miss-mark]')?.remove();
     if (missing) {
-      const [x1, y1, x2, y2] = box.bbox;
       const mark = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       mark.setAttribute('data-miss-mark', '1');
       mark.setAttribute('stroke', '#ef4444');
-      mark.setAttribute('stroke-width', String(Math.max(2 * Math.max(props.value.width, props.value.height) / 900, 2)));
-      mark.setAttribute('vector-effect', 'non-scaling-stroke');
+      mark.setAttribute('stroke-width', '2.25');
+      mark.setAttribute('stroke-linecap', 'round');
       mark.setAttribute('pointer-events', 'none');
-      [[x1, y1, x2, y2], [x2, y1, x1, y2]].forEach(coords => {
+      missMarkLines(box.bbox).forEach(coords => {
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         ['x1', 'y1', 'x2', 'y2'].forEach((key, index) => line.setAttribute(key, coords[index]));
         line.setAttribute('vector-effect', 'non-scaling-stroke');
