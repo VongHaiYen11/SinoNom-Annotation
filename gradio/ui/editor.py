@@ -3,7 +3,7 @@ import html
 import hashlib
 from pathlib import Path
 from annotation.reading_order import build_text_sequence, suspicious_box_ids
-from annotation.state import source_mismatch_confirmed, spatial_box_order
+from annotation.state import source_mismatch_confirmed
 from annotation.text_alignment import MISSING_ANNOTATION, count_annotation_characters
 from .icons import DOCUMENT
 
@@ -180,7 +180,9 @@ def snapshot(s):
                     [s['annotations'][str(box_id)] for box_id in s['reading_order']]
                     if s['annotations'] else [])
             excluded_count=(len(values)-len(s['bounding_boxes']) if extra else 0)
-            spatial_ids=list(map(str,spatial_box_order(s)))
+            # Alignment chips and their box targets follow the saved annotation
+            # order; recomputing a spatial order here would silently reassign them.
+            spatial_ids=list(map(str,s.get('reading_order', [])))
             token_ids=list(map(str,s.get('text_token_ids',[])))
             suspicious_tokens=set(map(str,s.get('suspicious_token_ids',[])))
             for position,value in enumerate(values,1):

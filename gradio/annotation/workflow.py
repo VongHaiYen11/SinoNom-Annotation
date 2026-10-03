@@ -84,7 +84,7 @@ def _load_regions(state, document):
     state['bounding_boxes'] = deepcopy(document['bounding_boxes'])
     state['annotations'] = deepcopy(document.get('annotations', {}))
     # Saved `annotations` contain the final character -> Box mapping.
-    state['reading_order'] = list(map(int, document['bounding_boxes']))
+    state['reading_order'] = sorted(map(int, document['bounding_boxes']))
 
 
 class Workflow:
@@ -210,7 +210,7 @@ class Workflow:
                         key:{'bbox':list(box['bbox']),'status':'intact'}
                         for key,box in doc['bounding_boxes'].items()},
                     'annotations':{},
-                    'reading_order':list(map(int,doc['bounding_boxes'])),
+                    'reading_order':sorted(map(int,doc['bounding_boxes'])),
                 }
             saved_crop = doc.get('crop')
             if doc.get('image_resize'):
@@ -236,9 +236,12 @@ class Workflow:
             if (doc.get('annotations')
                     and set(doc['annotations']) == set(state['bounding_boxes'])):
                 state['workflow']['alignment_valid'] = True
-                state['text_sequence'] = (list(doc.get('text_sequence', []))
-                                          or [doc['annotations'][key]
-                                              for key in state['bounding_boxes']])
+                state['text_sequence'] = (
+                    list(doc.get('text_sequence', []))
+                    if is_mismatch and source_mismatch_type(doc) == 'extra_text'
+                    else [doc['annotations'][str(box_id)]
+                          for box_id in state['reading_order']]
+                )
                 state['text_token_ids'] = [str(index) for index in
                                            range(1, len(state['text_sequence']) + 1)]
             state['loaded_is_mismatch'] = is_mismatch
@@ -333,18 +336,20 @@ class Workflow:
                 if mismatch_type == 'other':
                     s['bounding_boxes']={key:{'bbox':list(box['bbox']),'status':'intact'}
                                              for key,box in document['bounding_boxes'].items()}
-                    s['reading_order']=list(map(int,document['bounding_boxes']))
+                    s['reading_order']=sorted(map(int,document['bounding_boxes']))
                     s['annotations']={}
                 else:
                     s['bounding_boxes'] = document['bounding_boxes']
-                    s['reading_order'] = list(map(int, document['bounding_boxes']))
+                    s['reading_order'] = sorted(map(int, document['bounding_boxes']))
                     s['annotations'] = document.get('annotations', {})
                 s['region_uid_by_box_id'] = loaded_mapping
                 s['box_id_by_region'] = {uid: box_id for box_id, uid in loaded_mapping.items()}
-                s['text_sequence']=(list(document.get('text_sequence',[]))
-                                    or [s['annotations'][str(box_id)]
-                                        for box_id in s['reading_order']]
-                                    if s['annotations'] else [])
+                s['text_sequence']=(
+                    list(document.get('text_sequence', []))
+                    if mismatch_type == 'extra_text'
+                    else [s['annotations'][str(box_id)]
+                          for box_id in s['reading_order']]
+                    if s['annotations'] else [])
                 s['text_token_ids']=[str(index) for index in range(1,len(s['text_sequence'])+1)]
                 # Keep the saved character-to-box mapping as the starting
                 # assignment when an existing annotation is reopened.
@@ -603,10 +608,13 @@ class Workflow:
                     )
                     if saved_text_matches or mismatch_type is None:
                         s['annotations'] = deepcopy(document['annotations'])
-                        s['reading_order'] = list(map(int, s['bounding_boxes']))
-                        s['text_sequence'] = (list(document.get('text_sequence', []))
-                                              or [s['annotations'][str(box_id)]
-                                                  for box_id in s['reading_order']])
+                        s['reading_order'] = sorted(map(int, s['bounding_boxes']))
+                        s['text_sequence'] = (
+                            list(document.get('text_sequence', []))
+                            if mismatch_type == 'extra_text'
+                            else [s['annotations'][str(box_id)]
+                                  for box_id in s['reading_order']]
+                        )
                         s['text_token_ids'] = [str(index) for index in
                                                range(1, len(s['text_sequence']) + 1)]
                         s['workflow']['alignment_valid'] = True
