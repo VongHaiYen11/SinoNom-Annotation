@@ -1,0 +1,112 @@
+"""Build glyph profiles and extract PDFs using their per-volume configs."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CONFIG_DIR = ROOT / "configs"
+INPUT_DIR = ROOT / "input"
+OUTPUT_DIR = ROOT / "output"
+PROFILE_DIR = ROOT / "data" / "glyph_profiles"
+SUMMARY_PATH = OUTPUT_DIR / "extraction_summary.txt"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--only", help="Optional filename fragment; for example --only Tap-3",
+    )
+    args = parser.parse_args()
+
+    pdfs = sorted(INPUT_DIR.glob("*.pdf"))
+    if args.only:
+        pdfs = [pdf for pdf in pdfs if args.only.casefold() in pdf.name.casefold()]
+    if not pdfs:
+        print(f"No PDF files found in {INPUT_DIR}", file=sys.stderr)
+        return 1
+
+    summaries: list[str] = []
+    for pdf in pdfs:
+        tap_match = re.match(r"Tap-(\d+)", pdf.stem, flags=re.IGNORECASE)
+        if not tap_match:
+            print(f"Skipping {pdf.name}: cannot determine tap number", file=sys.stderr)
+            continue
+        config_path = CONFIG_DIR / f"tap_{tap_match.group(1)}.json"
+        if not config_path.is_file():
+            print(f"Skipping {pdf.name}: missing config {config_path.name}", file=sys.stderr)
+            continue
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        configured_pdf = (config_path.parent / config["input_pdf_path"]).resolve()
+        if configured_pdf != pdf.resolve():
+            print(
+                f"Skipping {pdf.name}: {config_path.name} points to {configured_pdf}",
+                file=sys.stderr,
+            )
+            continue
+        profile = (config_path.parent / config["paths"]["glyph_profile"]).resolve()
+        output = (config_path.parent / config["paths"]["output_json"]).resolve()
+
+        try:
+            if profile.is_file() and profile.stat().st_size:
+                print(f"\n=== {pdf.name}: reusing profile {profile.name} ===", flush=True)
+            else:
+                print(f"\n=== {pdf.name}: building glyph profile ===", flush=True)
+                subprocess.run(
+                    [sys.executable, "-m", "text_extraction.glyph_profile",
+                     "--config", str(config_path)], cwd=ROOT, check=True,
+                )
+            print(f"=== {pdf.name}: extracting text ===", flush=True)
+            subprocess.run(
+                [sys.executable, "-m", "text_extraction.main",
+                 "--config", str(config_path)], cwd=ROOT, check=True,
+            )
+            records = json.loads(output.read_text(encoding="utf-8"))
+            issues_path = output.with_name(f"{output.stem}_invalid.json")
+            issues = json.loads(issues_path.read_text(encoding="utf-8"))
+            invalid_numbers = sorted({
+                item["so_van_bia"] for item in issues
+                if item.get("so_van_bia") is not None
+            })
+            missing_han_nom_numbers = sorted({
+                item["so_van_bia"] for item in issues
+                if item.get("so_van_bia") is not None
+                and any("thiếu hoặc không có nội dung mục 'Nguyên văn chữ Hán Nôm'"
+                        in error for error in item.get("loi", []))
+            })
+            unassigned_issue_count = sum(
+                item.get("so_van_bia") is None for item in issues
+            )
+            invalid_count = len(invalid_numbers)
+            valid_count = len(records)
+            total_records = valid_count + invalid_count
+            summary = (
+                f"{pdf.name}: tổng record {total_records} "
+                f"(JSON chính: {valid_count}, file _invalid: {invalid_count}); "
+                f"record trong _invalid: "
+                f"{', '.join(map(str, invalid_numbers)) if invalid_numbers else 'không có'}"
+                f"; thiếu Nguyên văn chữ Hán Nôm: "
+                f"{', '.join(map(str, missing_han_nom_numbers)) if missing_han_nom_numbers else 'không có'}"
+            )
+            if unassigned_issue_count:
+                summary += f"; issue không gắn với record: {unassigned_issue_count}"
+            summaries.append(summary)
+            print(summary)
+        except subprocess.CalledProcessError as exc:
+            print(f"Extraction failed for {pdf.name} (exit {exc.returncode})", file=sys.stderr)
+            return exc.returncode or 1
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    SUMMARY_PATH.write_text("\n".join(summaries) + "\n", encoding="utf-8")
+    print(f"Wrote extraction summary to {SUMMARY_PATH}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

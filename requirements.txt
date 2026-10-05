@@ -1,0 +1,30 @@
+# Complete repository runtime for Kaggle Linux x86_64, Python 3.11 and CUDA 12.1.
+# Install this file in an isolated virtual environment. It covers PDF text
+# extraction, Gradio annotation, OCR-box detection and damaged-box detection.
+
+# PyTorch and MMCV must use the same Torch/CUDA build.
+--extra-index-url https://download.pytorch.org/whl/cu121
+--find-links https://download.openmmlab.com/mmcv/dist/cu121/torch2.1/index.html
+--only-binary=mmcv
+
+# PDF extraction and embedded-font decoding.
+fonttools==4.65.0
+pymupdf==1.28.2
+
+# Gradio application.
+gradio==6.28.0
+Pillow==12.3.0
+regex>=2024.11.6
+
+# Detection runtime.
+torch==2.1.0+cu121
+torchvision==0.16.0+cu121
+mmcv==2.1.0
+mmengine==0.10.5
+mmdet==3.3.0
+numpy==1.26.4
+scipy==1.13.1
+matplotlib==3.8.4
+opencv-python-headless==4.10.0.84
+shapely>=2.0,<3
+pycocotools==2.0.8

@@ -1,0 +1,21 @@
+[project]
+name = "vietnamica-alignment"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fonttools==4.65.0",
+    "pymupdf==1.28.2",
+]
+
+[project.optional-dependencies]
+# The AutoHDR adapter remains optional: PDF extraction and JSON post-processing
+# never import this ML stack. MMDetection is installed separately because the
+# correct MMCV build depends on the external DINO config, Torch, and accelerator.
+text-detection = [
+    "torch>=2.6",
+    "torchvision>=0.21",
+    "opencv-python-headless>=4.10",
+    "shapely>=2.0",
+]

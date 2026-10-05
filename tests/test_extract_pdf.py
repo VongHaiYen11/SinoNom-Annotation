@@ -1,0 +1,342 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from text_extraction.main import (
+    ExtractConfig,
+    ExtractionError,
+    EncodedFont,
+    GlyphDecoder,
+    MetadataSpec,
+    TextLine,
+    atomic_write,
+    clean_extracted_text,
+    normalize_line,
+    parse_records,
+    prepare_records_for_output,
+    serialize_json,
+    serialize_pretty_json,
+)
+from text_extraction.parser import parse_records_with_issues
+
+
+def line(text: str, page: int = 1) -> TextLine:
+    return TextLine(text=text, page_number=page)
+
+
+def config(**overrides) -> ExtractConfig:
+    values = {
+        "input_pdf_path": Path("input.pdf"),
+        "output_json": Path("output.json"),
+        "glyph_profile": Path("profile.json"),
+        "metadata": (
+            MetadataSpec("Tên bia", "ten_bia", "string", True),
+            MetadataSpec("Địa điểm", "dia_diem", "string", True),
+            MetadataSpec("Niên đại", "nien_dai", "string", True),
+            MetadataSpec("Kí hiệu VNCHN", "ky_hieu_vnchn", "identifiers", True),
+        ),
+        "title_pattern": r"^VĂN BIA SỐ\s+(?P<number>\d+)\s*$",
+        "content_start": "Nguyên văn chữ Hán Nôm",
+        "content_sections": (
+            "Nguyên văn chữ Hán Nôm",
+            "Phiên âm Hán Việt",
+            "Dịch nghĩa",
+            "Toát yếu",
+            "Chú thích",
+        ),
+        "marker_pattern": r"^\s*<\s*(?P<id>\d+)\s*>?\s*(?P<rest>.*)$",
+        "encoded_fonts": (
+            EncodedFont("NomNaTong", Path("fonts/NomNaTong.ttf")),
+        ),
+        "top_margin": 40.0,
+        "bottom_margin": 45.0,
+        "footnote_start_pattern": None,
+        "footnote_max_font_size": None,
+        "require_consecutive_numbers": True,
+    }
+    values.update(overrides)
+    return ExtractConfig(**values)
+
+
+class ParserTests(unittest.TestCase):
+    def test_missing_han_nom_section_is_an_error_issue(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1"), line("Tên bia: A"), line("Địa điểm: B"),
+            line("Niên đại: C"), line("Kí hiệu VNCHN: <10><11>"),
+            line("Nguyên văn chữ Hán Nôm:"), line("<10> 有正文"),
+            line("Phiên âm Hán Việt:"), line("<11> phiên âm"),
+        ]
+
+        records, _, issues = parse_records_with_issues(source, config())
+
+        self.assertEqual(1, len(records))
+        issue = next(item for item in issues if item["so_van_bia"] == 1)
+        self.assertTrue(issue["loi"])
+        self.assertIn("<11>", issue["loi"][0])
+
+    def test_pdf_control_characters_are_removed_before_serialization(self) -> None:
+        # TimesNewRoman is intentionally not in encoded_fonts, so it takes
+        # the PyMuPDF fallback path that previously returned U+0001 unchanged.
+        decoder = GlyphDecoder.__new__(GlyphDecoder)
+        decoder.encoded_fonts = ("NomNaTong",)
+        fallback = decoder.decode_span(
+            "Times\x01New\ufffdRoman", "TimesNewRoman", {}, 1
+        )
+
+        self.assertEqual("TimesNewRoman", fallback)
+        self.assertEqual("AB", clean_extracted_text("A\x01B\ufffd"))
+        self.assertEqual("AB", normalize_line("A\x01B\ufffd"))
+        self.assertEqual(
+            '[{"noi_dung":"TimesNewRoman"}]\n',
+            serialize_json([{"noi_dung": fallback}]),
+        )
+
+    def test_fallback_logging_sorts_missing_and_known_xrefs(self) -> None:
+        decoder = GlyphDecoder.__new__(GlyphDecoder)
+        decoder._fallbacks = {}
+        decoder._record_fallback(1, "NomNaTong", None, "a", "a", "fallback", "ambiguous font resource")
+        decoder._record_fallback(1, "NomNaTong", 56, "b", "□", "unresolved", "glyph signature missing from profile")
+
+        with self.assertLogs("text_extraction.decoder", level="WARNING") as captured:
+            decoder.log_fallbacks()
+
+        self.assertEqual(2, len(captured.output))
+        self.assertIn("xref=None", captured.output[0])
+        self.assertIn("xref=56", captured.output[1])
+
+    def test_metadata_faces_sections_and_missing_closing_bracket(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1"),
+            line("Tên bia: Phúc Giao tự Hậu Phật bí"),
+            line("Địa điểm: Bia gồm 03 mặt khắc chữ, dựng tại xã An Tiêm,"),
+            line("huyện Tây Quan, phủ Thái Bình."),
+            line("Niên đại: Vĩnh Tộ 10 (1628)"),
+            line("Kí hiệu VNCHN: <4349><4350><4351>"),
+            line("Nguyên văn chữ Hán Nôm:"),
+            line("<4349>"),
+            line("原文一"),
+            line("<4350"),
+            line("原文二"),
+            line("Phiên âm Hán Việt:"),
+            line("<4349>"),
+            line("Phiên âm một"),
+            line("<4350> Phiên âm hai"),
+            line("Toát yếu:"),
+            line("<4349>"),
+            line("Tóm tắt"),
+        ]
+
+        records, warnings = parse_records(source, config())
+
+        self.assertEqual(1, len(records))
+        record = records[0]
+        self.assertEqual(
+            "Bia gồm 03 mặt khắc chữ, dựng tại xã An Tiêm, huyện Tây Quan, phủ Thái Bình.",
+            record["dia_diem"],
+        )
+        self.assertEqual(["4349", "4350", "4351"], record["ky_hieu_vnchn"])
+        self.assertEqual(["4349", "4350", "4351"], [x["ky_hieu"] for x in record["noi_dung"]])
+        first_sections = record["noi_dung"][0]["chuyen_muc"]
+        self.assertEqual(
+            ["Nguyên văn chữ Hán Nôm", "Phiên âm Hán Việt", "Toát yếu"],
+            [item["tieu_de"] for item in first_sections],
+        )
+        self.assertEqual("Phiên âm hai", record["noi_dung"][1]["chuyen_muc"][1]["van_ban"])
+        self.assertIn(
+            "metadata khai báo marker <4351> nhưng không có dòng nội dung nào",
+            "\n".join(warnings),
+        )
+
+    def test_identifier_values_accept_slash_separated_numbers_and_prefixes(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1"),
+            line("Tên bia: A"),
+            line("Địa điểm: B"),
+            line("Niên đại: C"),
+            line("Kí hiệu VNCHN: 8460/8461; N°12940/12941"),
+            line("Nguyên văn chữ Hán Nôm:"),
+            line("<8460> Mặt thứ nhất"),
+        ]
+
+        records, _ = parse_records(source, config())
+
+        self.assertEqual(
+            ["8460", "8461", "12940", "12941"],
+            records[0]["ky_hieu_vnchn"],
+        )
+
+    def test_unmarked_content_is_preserved_and_warned(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1"),
+            line("Tên bia: A"),
+            line("Địa điểm: B"),
+            line("Niên đại: C"),
+            line("Kí hiệu VNCHN: <10>"),
+            line("Nguyên văn chữ Hán Nôm:"),
+            line("Đoạn chưa có marker"),
+            line("<10>"),
+            line("Nội dung mặt bia"),
+        ]
+
+        records, warnings = parse_records(source, config())
+
+        self.assertEqual(None, records[0]["noi_dung"][-1]["ky_hieu"])
+        self.assertEqual(
+            "Đoạn chưa có marker",
+            records[0]["noi_dung"][-1]["chuyen_muc"][0]["van_ban"],
+        )
+        warning = next(item for item in warnings if "không thuộc marker" in item)
+        self.assertIn("trang 1", warning)
+        self.assertIn("Nội dung chưa gán: 'Đoạn chưa có marker'", warning)
+
+    def test_unknown_marker_warning_includes_source_and_metadata(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1"),
+            line("Tên bia: A"),
+            line("Địa điểm: B"),
+            line("Niên đại: C"),
+            line("Kí hiệu VNCHN: <10>"),
+            line("Nguyên văn chữ Hán Nôm:"),
+            line("<11> Nội dung ngoài metadata", page=7),
+        ]
+
+        _, warnings = parse_records(source, config())
+
+        warning = next(item for item in warnings if "<11> không có" in item)
+        self.assertIn("danh sách marker metadata: <10>", warning)
+        self.assertIn("trang 7", warning)
+        self.assertIn("dòng: '<11> Nội dung ngoài metadata'", warning)
+
+    def test_abbreviated_and_accent_variant_labels(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1"),
+            line("Tên bia: A"),
+            line("Địa điểm: B"),
+            line("Niên đại: C"),
+            line("Ký hiệu: <10>"),
+            line("Nguyên văn chữ Hán:"),
+            line("<10>"),
+            line("原文"),
+            line("Phiên âm:"),
+            line("<10>"),
+            line("Phiên âm thử"),
+        ]
+
+        records, _ = parse_records(source, config())
+
+        self.assertEqual(["10"], records[0]["ky_hieu_vnchn"])
+        self.assertEqual(
+            ["Nguyên văn chữ Hán Nôm", "Phiên âm Hán Việt"],
+            [
+                section["tieu_de"]
+                for section in records[0]["noi_dung"][0]["chuyen_muc"]
+            ],
+        )
+
+    def test_eth_variant_of_vietnamese_d_matches_metadata_label(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1"),
+            line("Tên bia: A"),
+            line("Ðịa điểm: B"),
+            line("Niên đại: C"),
+            line("Kí hiệu VNCHN: <10>"),
+            line("Nguyên văn chữ Hán Nôm:"),
+            line("<10> Nội dung"),
+        ]
+
+        records, _ = parse_records(source, config())
+
+        self.assertEqual("B", records[0]["dia_diem"])
+
+    def test_non_consecutive_titles_fail(self) -> None:
+        source = [line("VĂN BIA SỐ 1"), line("VĂN BIA SỐ 3")]
+        with self.assertRaisesRegex(ExtractionError, "not consecutive"):
+            parse_records(source, config())
+
+    def test_malformed_record_is_collected_while_later_record_is_kept(self) -> None:
+        source = [
+            line("VĂN BIA SỐ 1", 3),
+            line("Tên bia: Thiếu phần nội dung", 3),
+            line("VĂN BIA SỐ 2", 4),
+            line("Tên bia: Hợp lệ", 4),
+            line("Địa điểm: A", 4),
+            line("Niên đại: B", 4),
+            line("Kí hiệu VNCHN: <20>", 4),
+            line("Nguyên văn chữ Hán Nôm:", 4),
+            line("<20> Nội dung", 4),
+        ]
+
+        records, warnings, issues = parse_records_with_issues(
+            source, config()
+        )
+
+        self.assertEqual([2], [record["so_van_bia"] for record in records])
+        self.assertEqual([], warnings)
+        self.assertEqual(1, issues[0]["so_van_bia"])
+        self.assertEqual([3], issues[0]["trang"])
+        self.assertIn("thiếu mốc", issues[0]["loi"][0])
+        self.assertIn("Tên bia: Thiếu phần nội dung", issues[0]["du_lieu_nguon"])
+
+    def test_json_is_deterministic_and_content_is_last(self) -> None:
+        record = {
+            "so_van_bia": 1,
+            "ten_bia": "Bia thử",
+            "noi_dung": [{"ky_hieu": "1", "chuyen_muc": []}],
+        }
+        first = serialize_json([record])
+        second = serialize_json([record])
+        self.assertEqual(first, second)
+        self.assertEqual(
+            ["so_van_bia", "ten_bia", "noi_dung"],
+            list(json.loads(first)[0].keys()),
+        )
+        pretty = serialize_pretty_json([record])
+        self.assertEqual([record], json.loads(pretty))
+        self.assertIn('\n    "so_van_bia": 1,', pretty)
+        with self.assertRaisesRegex(ExtractionError, r"U\+FFFD"):
+            serialize_json([{"noi_dung": "bad\ufffdtext"}])
+
+    def test_output_cleanup_is_explicit_and_only_changes_content(self) -> None:
+        records = [{
+            "so_van_bia": 1,
+            "ten_bia": "Tên\\bia",
+            "noi_dung": [{"ky_hieu": "1", "chuyen_muc": [{
+                "tieu_de": "Nguyên văn chữ Hán Nôm",
+                "van_ban": "Dòng một\\\nDòng hai\\thừa",
+            }]}],
+        }]
+
+        cleaned = prepare_records_for_output(records, "space", True)
+        self.assertEqual("Dòng một Dòng haithừa", cleaned[0]["noi_dung"][0]["chuyen_muc"][0]["van_ban"])
+        compact = prepare_records_for_output(records, "no-space", True)
+        self.assertEqual("Dòng mộtDòng haithừa", compact[0]["noi_dung"][0]["chuyen_muc"][0]["van_ban"])
+        self.assertEqual("Tên\\bia", cleaned[0]["ten_bia"])
+        self.assertEqual("Dòng một\\\nDòng hai\\thừa", records[0]["noi_dung"][0]["chuyen_muc"][0]["van_ban"])
+
+    def test_records_with_warnings_only_are_kept_in_output(self) -> None:
+        issues = [
+            {
+                "so_van_bia": 1,
+                "trang": [1],
+                "loi": [],
+                "canh_bao": ["Văn bia số 1: chứa ký tự chưa giải mã được '□'"],
+            },
+            {
+                "so_van_bia": 2,
+                "trang": [2],
+                "loi": ["thiếu mốc 'Nguyên văn chữ Hán Nôm'"],
+                "canh_bao": [],
+            },
+        ]
+        flagged_numbers = {
+            item["so_van_bia"] for item in issues
+            if item["so_van_bia"] is not None and item.get("loi")
+        }
+        self.assertEqual({2}, flagged_numbers)
+
+
+if __name__ == "__main__":
+    unittest.main()
