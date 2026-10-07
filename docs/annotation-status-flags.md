@@ -89,6 +89,14 @@ Giữ mapping 6 bước hiển thị hiện có: internal step 5 vẫn thuộc S
 
 Đã kiểm tra 7 internal steps × 2 bộ validation/save flags và state tối giản chỉ có current_step; cả trước/sau bước hiện tại đều theo quy tắc trên.
 
+### MISS trong Final Result
+
+Trong phần REVIEW & VERIFICATION → Final Result, `review_result_text` ở `gradio/ui/editor.py` chuyển **token** `MISS` thành `<miss>` để hiển thị, chèn một dấu cách giữa hai token MISS liên tiếp. Ví dụ: `永MISSMISS寺` hiển thị `永<miss> <miss>寺`; không thêm dấu cách vào giữa các ký tự thường.
+
+HTML được escape thành `&lt;miss&gt;` để trình duyệt hiển thị đầy đủ dấu `<` và `>` thay vì coi đó là thẻ HTML. Dữ liệu annotations/JSON/export vẫn dùng token `MISS`; tên thẻ ký tự, legend MISS content và dấu X trên box không đổi. Cả Final Result thường và missing/extra dùng cùng formatter; Other vẫn giữ thông báo không có character annotations.
+
+Test bổ sung kiểm tra MISS liên tiếp, xen kẽ với ký tự thường, HTML escape và không sửa annotations trong state.
+
 ## 4. File và dòng sửa
 
 Số dòng bên dưới tính trên commit gốc và code sau triển khai; mỗi cặp là **dòng đầu hunk trước sửa → dòng đầu hunk sau sửa**. Mốc tên hàm giúp tìm vị trí nếu repo copy đã lệch dòng. Nội dung chính xác của từng hunk nằm trong patch ở mục 8.
@@ -107,7 +115,7 @@ Số dòng bên dưới tính trên commit gốc và code sau triển khai; mỗ
 | `gradio/tests/test_status_flags.py` | 0 → 1 |
 | `gradio/ui/assets/editor.css` | 106 → 106, 463 → 476 |
 | `gradio/ui/assets/editor.js` | 75 → 75, 126 → 126, 156 → 158, 167 → 173, 208 → 214, 287 → 295, 327 → 346, 355 → 400, 387 → 432, 395 → 440, 644 → 689, 742 → 801, 892 → 951, 905 → 964, 1234 → 1284, 1263 → 1313 |
-| `gradio/ui/editor.py` | 131 → 131, 151 → 155, 171 → 177, 193 → 199 |
+| `gradio/ui/editor.py` | 3 → 3, 30 → 30, 131 → 148, 151 → 172, 171 → 194, 193 → 216, 215 → 241, 225 → 251 |
 | `gradio/ui/presentation.py` | 24 → 24 |
 
 ### Backend và export
@@ -129,7 +137,7 @@ Số dòng bên dưới tính trên commit gốc và code sau triển khai; mỗ
 
 ### Kiểm thử
 
-- `gradio/tests/test_status_flags.py` (mới): 8 test về defaults, loại trừ, Expert → intact, atomic validation, cả hai renderer step, MISS, geometry/order draft, Save/reopen/export normal/missing/extra và ZIP rỗng.
+- `gradio/tests/test_status_flags.py` (mới): 9 test về defaults, loại trừ, Expert → intact, atomic validation, cả hai renderer step, MISS, geometry/order draft, Save/reopen/export normal/missing/extra và ZIP rỗng.
 - `gradio/tests/test_status_flags.js` (mới): chạy handler và renderer **thực tế lấy từ editor.js** trong Node với SVG fixture; kiểm tra màu, dấu ?, loại trừ, kết hợp, intact override, MISS và palette.
 - `gradio/tests/test_annotation.py`: cập nhật fixture annotation đã lưu sang schema đủ ba cờ.
 - `gradio/tests/test_export.py`: kỳ vọng ZIP có đủ 4 member.
@@ -162,10 +170,10 @@ Patch dành cho repo copy từ commit gốc. Nếu `git apply --check` không qu
 | `gradio/tests/test_annotation.py` | `db6d022bfd6cbcfb78b9c6d130a45d7c1eb88e59607180ad9fe779bc2a29b34d` |
 | `gradio/tests/test_export.py` | `a6a8a0fb7144e2a9e809e797b893404bfec6bc307e6a6b7e3436bb3c9b66c2dd` |
 | `gradio/tests/test_status_flags.js` | `1d07e4ba54df4279efa43e4f2cf8d1e820a87d82607fb7af5bb0ab62e6149286` |
-| `gradio/tests/test_status_flags.py` | `9df0393830414d7ba86e13af56dd65436df7bb57a195f6aa7455dcc3a574a6ef` |
+| `gradio/tests/test_status_flags.py` | `8f4fe3181936925e044b7e4db10f52866c08daaccf3eb83e3ef247d27eca31ab` |
 | `gradio/ui/assets/editor.css` | `5d9636653fb2136cfa143439f133be2f6cda80796cee39bd47fb8ccd0dd6f340` |
 | `gradio/ui/assets/editor.js` | `e40e14068acdf802fed576762546668c63258b86628ba3abce04762a94090fff` |
-| `gradio/ui/editor.py` | `f2d590082083732e6860fe8b3e1139df6a7d4eaadd8c7bd960ae650703f89453` |
+| `gradio/ui/editor.py` | `c4643463852af4d0a5f6e4e58cc4f52285d7aaa1635a4fc2cf2f83f81013a26a` |
 | `gradio/ui/presentation.py` | `91c54815cf3e025bd20172e2c2ccb07fefd003abb5eb4c30a5fe9423f86563e4` |
 
 ## 6. Lệnh kiểm thử và kết quả
@@ -179,9 +187,9 @@ git diff --check
 .venv/bin/python -m unittest discover -s gradio/tests -q
 ```
 
-Kết quả: 8 test Python mới PASS; test JavaScript PASS (bao gồm renderer → selection và cập nhật nhãn); kiểm tra cú pháp Python/JavaScript và whitespace PASS. Test Python chứa vòng Save/reopen/export thật trên normal, missing_text, extra_text và kiểm tra SVG ở step 4/7, bao gồm crop/resize không đồng đều.
+Kết quả: 9 test Python mới PASS; test JavaScript PASS (bao gồm renderer → selection và cập nhật nhãn); kiểm tra cú pháp Python/JavaScript và whitespace PASS. Test Python chứa vòng Save/reopen/export thật trên normal, missing_text, extra_text và kiểm tra SVG ở step 4/7, bao gồm crop/resize không đồng đều.
 
-Bộ test cũ có lỗi sẵn: bản gốc chạy 76 test, 14 failures + 18 errors; sau thay đổi chạy 84 test, vẫn 14 failures + 18 errors, **không có tên test lỗi mới**. Các lỗi này gồm giả định reading order cũ, source editing và assertion UI cũ; chưa sửa trong phạm vi yêu cầu này.
+Bộ test cũ có lỗi sẵn: bản gốc chạy 76 test, 14 failures + 18 errors; sau thay đổi chạy 85 test, vẫn 14 failures + 18 errors, **không có tên test lỗi mới**. Các lỗi này gồm giả định reading order cũ, source editing và assertion UI cũ; chưa sửa trong phạm vi yêu cầu này.
 
 Chưa kiểm tra giao diện bằng Browser thật: Browser runtime lỗi khởi tạo `Cannot redefine property: process`. Test JS là kiểm thử DOM fixture, không thay thế kiểm tra layout/font thật. Checklist dưới đây cần kiểm tra trên giao diện khi Browser hoạt động.
 
@@ -715,10 +723,10 @@ index 0000000..721460e
 +console.log('PASS: radio handlers, all status visuals after selection in steps 4/7, label refresh and cropped/scaled question mark');
 diff --git a/gradio/tests/test_status_flags.py b/gradio/tests/test_status_flags.py
 new file mode 100644
-index 0000000..5619fbe
+index 0000000..9e97fa5
 --- /dev/null
 +++ b/gradio/tests/test_status_flags.py
-@@ -0,0 +1,180 @@
+@@ -0,0 +1,202 @@
 +"""New annotation schema, flag transitions, overlays and committed exports."""
 +import json
 +import sys
@@ -738,7 +746,7 @@ index 0000000..5619fbe
 +from annotation.io import atomic_write, load_annotation, read_json
 +from annotation.export import collect_annotations, collect_source_mismatches, save_export_archive
 +from annotation.workflow import Workflow
-+from ui.editor import snapshot
++from ui.editor import snapshot, review_result_text
 +
 +
 +class StatusFlags(unittest.TestCase):
@@ -836,6 +844,28 @@ index 0000000..5619fbe
 +                self.assertEqual(float(mark.get('x')),float(rect.get('x'))+5)
 +                self.assertEqual(float(mark.get('y')),float(rect.get('y'))+2.5)
 +                self.assertEqual(mark.get('font-weight'),'700')
++
++    def test_review_miss_display_is_escaped_and_preserves_annotations(self):
++        s=self.state()
++        cases = [(['MISS','MISS'],'<miss> <miss>'),
++                 (['永','MISS'],'永<miss>'),
++                 (['MISS','寺'],'<miss>寺'),
++                 (['永','寺'],'永寺')]
++        for tokens,expected in cases:
++            s['annotations']=dict(zip(('1','2'),tokens))
++            original=deepcopy(s['annotations'])
++            self.assertEqual(review_result_text(s),expected)
++            s['current_step']=7
++            markup=snapshot(s)['markup']
++            import html
++            self.assertIn('<p>'+html.escape(expected)+'</p>',markup)
++            self.assertEqual(s['annotations'],original)
++        s['annotations']={'1':'MISS','2':'MISS','3':'永','4':'MISS','5':'MISS'}
++        s['bounding_boxes']['3']=deepcopy(s['bounding_boxes']['1'])
++        s['bounding_boxes']['4']=deepcopy(s['bounding_boxes']['1'])
++        s['bounding_boxes']['5']=deepcopy(s['bounding_boxes']['1'])
++        s['reading_order']=[1,2,3,4,5]
++        self.assertEqual(review_result_text(s),'<miss> <miss>永<miss> <miss>')
 +
 +    def test_miss_clears_all_character_flags(self):
 +        s=self.state();uid=s['region_uid_by_box_id']['1']
@@ -1171,10 +1201,43 @@ index 57b5b31..dbdba52 100644
        text.setAttribute('font-size', fontSize);
        text.setAttribute('stroke', '#17191c');
 diff --git a/gradio/ui/editor.py b/gradio/ui/editor.py
-index 9bf6928..a0f35f8 100644
+index 9bf6928..08ecfed 100644
 --- a/gradio/ui/editor.py
 +++ b/gradio/ui/editor.py
-@@ -131,13 +131,17 @@ def snapshot(s):
+@@ -3,7 +3,7 @@ import html
+ import hashlib
+ from pathlib import Path
+ from annotation.reading_order import build_text_sequence, suspicious_box_ids
+-from annotation.state import source_mismatch_confirmed
++from annotation.state import source_mismatch_confirmed, spatial_box_order
+ from annotation.text_alignment import MISSING_ANNOTATION, count_annotation_characters
+ from .icons import DOCUMENT
+
+@@ -30,6 +30,23 @@ def _review_box(bbox, crop, scale_x, scale_y):
+             max(point[0] for point in points),max(point[1] for point in points))
+
+
++
++def review_result_text(state):
++    """Format MISS tokens for display without changing persisted annotations."""
++    build_text_sequence(state)  # Keep the existing reading-order validation.
++    order = state.get('reading_order') or spatial_box_order(state)
++    parts = []
++    previous_missing = False
++    for box_id in order:
++        token = state['annotations'][str(box_id)]
++        missing = token == MISSING_ANNOTATION
++        if missing and previous_missing:
++            parts.append(' ')
++        parts.append('<miss>' if missing else token)
++        previous_missing = missing
++    return ''.join(parts)
++
++
+ def source_text(s):
+     """Render the Status & Order reference text for the sidebar."""
+     if not s.get('image') or s.get('current_step') not in (4, 7):
+@@ -131,13 +148,17 @@ def snapshot(s):
          suspicious = key in suspicious_boxes
          reveal_status = step >= 4 and not other_mismatch
          is_unknown = bool(b.get('unknown', False)) and b['status'] == 'damaged'
@@ -1194,7 +1257,7 @@ index 9bf6928..a0f35f8 100644
                          '.20' if suspicious else
                          '.30' if missing_annotation else
                          '.04')
-@@ -151,16 +155,18 @@ def snapshot(s):
+@@ -151,16 +172,18 @@ def snapshot(s):
          identity_attr = (f'data-box-id="{key}" data-region-uid="{key}"'
                           if step == 3 else f'data-box-id="{key}"')
          identity_attr += f' data-status="{b["status"]}" data-unknown="{str(is_unknown).lower()}"'
@@ -1215,7 +1278,7 @@ index 9bf6928..a0f35f8 100644
          # Handles are pre-rendered for local selection changes; CSS exposes
          # them only on the browser-local active region.
          if step in (3, 6):
-@@ -171,7 +177,7 @@ def snapshot(s):
+@@ -171,7 +194,7 @@ def snapshot(s):
      if step in (4, 5) or (step == 7 and not other_mismatch):
          suspicious_legend=('<span class="suspicious">Suspicious content</span>'
                             if suspicious_boxes else '')
@@ -1224,7 +1287,7 @@ index 9bf6928..a0f35f8 100644
      if step in (4,7) and not (step==7 and other_mismatch):
          if step == 4:
              chips=[]
-@@ -193,10 +199,13 @@ def snapshot(s):
+@@ -193,10 +216,13 @@ def snapshot(s):
                  box_id=(spatial_ids[position-1] if position<=len(spatial_ids) else '')
                  token_id=(token_ids[position-1] if position<=len(token_ids) else str(position))
                  suspicious=' suspicious' if token_id in suspicious_tokens else ''
@@ -1239,6 +1302,24 @@ index 9bf6928..a0f35f8 100644
              title='Character Assignment'
              help_text=('Drag the text cards into the sequence that should be assigned to the spatially sorted boxes.'
                         if chips else 'This confirmed source mismatch has no character mapping to arrange.')
+@@ -215,7 +241,7 @@ def snapshot(s):
+                 note=(f'<small>Note: {html.escape(issue["note"])}</small>'
+                       if issue['note'] else '')
+                 final_result=issue['issue_type'] in ('missing_text','extra_text')
+-                mismatch_text = (html.escape(build_text_sequence(s))
++                mismatch_text = (html.escape(review_result_text(s))
+                                  if issue['issue_type'] in ('missing_text','extra_text') else
+                                  'No character annotations will be generated for this image.')
+                 review_label='FINAL RESULT' if final_result else 'SOURCE MISMATCH'
+@@ -225,7 +251,7 @@ def snapshot(s):
+                     <small>{html.escape(issue['issue_type'])} · {issue['source_character_count']} characters · {issue['bounding_box_count']} boxes</small>
+                     {note}</div>'''
+             else:
+-                review='<div class="review-text"><p>'+html.escape(build_text_sequence(s))+'</p></div>'
++                review='<div class="review-text"><p>'+html.escape(review_result_text(s))+'</p></div>'
+             markup+=f'''<section class="review-editor"><div class="order-heading"><div><span class="eyebrow">REVIEW & VERIFICATION</span><h2>Final Result</h2></div></div>
+                 <div class="review-detail">{review}</div></section>'''
+     markup += '''
 diff --git a/gradio/ui/presentation.py b/gradio/ui/presentation.py
 index 4d6cde8..029d305 100644
 --- a/gradio/ui/presentation.py

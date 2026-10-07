@@ -17,7 +17,7 @@ from annotation.status import FLAGS, update_status, replace_statuses, confirm_st
 from annotation.io import atomic_write, load_annotation, read_json
 from annotation.export import collect_annotations, collect_source_mismatches, save_export_archive
 from annotation.workflow import Workflow
-from ui.editor import snapshot
+from ui.editor import snapshot, review_result_text
 
 
 class StatusFlags(unittest.TestCase):
@@ -115,6 +115,28 @@ class StatusFlags(unittest.TestCase):
                 self.assertEqual(float(mark.get('x')),float(rect.get('x'))+5)
                 self.assertEqual(float(mark.get('y')),float(rect.get('y'))+2.5)
                 self.assertEqual(mark.get('font-weight'),'700')
+
+    def test_review_miss_display_is_escaped_and_preserves_annotations(self):
+        s=self.state()
+        cases = [(['MISS','MISS'],'<miss> <miss>'),
+                 (['永','MISS'],'永<miss>'),
+                 (['MISS','寺'],'<miss>寺'),
+                 (['永','寺'],'永寺')]
+        for tokens,expected in cases:
+            s['annotations']=dict(zip(('1','2'),tokens))
+            original=deepcopy(s['annotations'])
+            self.assertEqual(review_result_text(s),expected)
+            s['current_step']=7
+            markup=snapshot(s)['markup']
+            import html
+            self.assertIn('<p>'+html.escape(expected)+'</p>',markup)
+            self.assertEqual(s['annotations'],original)
+        s['annotations']={'1':'MISS','2':'MISS','3':'永','4':'MISS','5':'MISS'}
+        s['bounding_boxes']['3']=deepcopy(s['bounding_boxes']['1'])
+        s['bounding_boxes']['4']=deepcopy(s['bounding_boxes']['1'])
+        s['bounding_boxes']['5']=deepcopy(s['bounding_boxes']['1'])
+        s['reading_order']=[1,2,3,4,5]
+        self.assertEqual(review_result_text(s),'<miss> <miss>永<miss> <miss>')
 
     def test_miss_clears_all_character_flags(self):
         s=self.state();uid=s['region_uid_by_box_id']['1']

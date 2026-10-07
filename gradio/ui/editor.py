@@ -3,7 +3,7 @@ import html
 import hashlib
 from pathlib import Path
 from annotation.reading_order import build_text_sequence, suspicious_box_ids
-from annotation.state import source_mismatch_confirmed
+from annotation.state import source_mismatch_confirmed, spatial_box_order
 from annotation.text_alignment import MISSING_ANNOTATION, count_annotation_characters
 from .icons import DOCUMENT
 
@@ -28,6 +28,23 @@ def _review_box(bbox, crop, scale_x, scale_y):
     )
     return (min(point[0] for point in points),min(point[1] for point in points),
             max(point[0] for point in points),max(point[1] for point in points))
+
+
+
+def review_result_text(state):
+    """Format MISS tokens for display without changing persisted annotations."""
+    build_text_sequence(state)  # Keep the existing reading-order validation.
+    order = state.get('reading_order') or spatial_box_order(state)
+    parts = []
+    previous_missing = False
+    for box_id in order:
+        token = state['annotations'][str(box_id)]
+        missing = token == MISSING_ANNOTATION
+        if missing and previous_missing:
+            parts.append(' ')
+        parts.append('<miss>' if missing else token)
+        previous_missing = missing
+    return ''.join(parts)
 
 
 def source_text(s):
@@ -224,7 +241,7 @@ def snapshot(s):
                 note=(f'<small>Note: {html.escape(issue["note"])}</small>'
                       if issue['note'] else '')
                 final_result=issue['issue_type'] in ('missing_text','extra_text')
-                mismatch_text = (html.escape(build_text_sequence(s))
+                mismatch_text = (html.escape(review_result_text(s))
                                  if issue['issue_type'] in ('missing_text','extra_text') else
                                  'No character annotations will be generated for this image.')
                 review_label='FINAL RESULT' if final_result else 'SOURCE MISMATCH'
@@ -234,7 +251,7 @@ def snapshot(s):
                     <small>{html.escape(issue['issue_type'])} · {issue['source_character_count']} characters · {issue['bounding_box_count']} boxes</small>
                     {note}</div>'''
             else:
-                review='<div class="review-text"><p>'+html.escape(build_text_sequence(s))+'</p></div>'
+                review='<div class="review-text"><p>'+html.escape(review_result_text(s))+'</p></div>'
             markup+=f'''<section class="review-editor"><div class="order-heading"><div><span class="eyebrow">REVIEW & VERIFICATION</span><h2>Final Result</h2></div></div>
                 <div class="review-detail">{review}</div></section>'''
     markup += '''
