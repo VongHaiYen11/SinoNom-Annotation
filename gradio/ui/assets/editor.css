@@ -106,9 +106,20 @@
 .annotation-canvas [data-corner="3"] { cursor: nesw-resize; }
 .selection-marquee { fill: rgb(255 122 26 / 10%); stroke: var(--color-accent, #ff7a1a); stroke-width: 1.5; stroke-dasharray: 6 4; pointer-events: none; }
 
-.status-legend { display: flex; justify-content: flex-end; gap: var(--space-6, 24px); padding: var(--space-4, 16px); border-top: 1px solid var(--color-border, #303237); font-size: 12px; }
-.status-legend span { display: inline-flex; align-items: center; gap: var(--space-2, 8px); }
-.status-legend span::before { width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
+.status-legend {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3, 12px) var(--space-4, 16px);
+  min-width: 0;
+  padding: var(--space-4, 16px);
+  border-top: 1px solid var(--color-border, #303237);
+  font-size: 12px;
+}
+/* Optional seventh label shares the second row with MISS. */
+.status-legend:has(.suspicious) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.status-legend:has(.suspicious) .unknown { grid-column: 3 / 5; }
+.status-legend span { display: inline-flex; align-items: center; gap: var(--space-2, 8px); min-width: 0; overflow-wrap: anywhere; }
+.status-legend span::before { flex-shrink: 0; width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
 .status-legend .intact { color: #22c55e; }
 .status-legend .damaged { color: #ef4444; }
 .status-legend .unknown { color: #ef4444; }

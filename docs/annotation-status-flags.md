@@ -65,6 +65,30 @@ Nguyên nhân fill Font khó thấy: Python render màu hồng với opacity 20%
 - Test JavaScript chạy renderer **rồi renderSelection** ở cả step 4/7, kiểm tra bình thường intact/damaged, Font, Expert, kết hợp hai cờ, Unknown, MISS và suspicious. Kiểm tra thêm màu chữ sau cập nhật nhãn và dấu hỏi trên geometry đã crop/resize.
 - Test Python bổ sung Review crop/resize với scale_x/scale_y khác nhau: fill hồng, viền Expert, dấu hỏi giữa box và kích thước theo cạnh ngắn đã transform.
 
+### Legend chia hai hàng
+
+`gradio/ui/assets/editor.css` đổi `.status-legend` từ flex một hàng sang grid 3 cột, mỗi cột `minmax(0, 1fr)`:
+
+- Hàng 1: Intact, Damaged, Unknown (?).
+- Hàng 2: Unavailable Font, Expert Prediction, MISS content.
+- Khi có Suspicious content: dùng grid 4 cột, Unknown chiếm hai cột cuối hàng 1; bốn nhãn còn lại nằm trên hàng 2. Vẫn chỉ hai hàng mục legend.
+- Text có `min-width: 0` và `overflow-wrap: anywhere` để xuống dòng trong ô khi hẹp; icon `flex-shrink: 0` giữ kích thước. Gap dọc 12px, ngang 16px theo token hiện có.
+- Cùng CSS áp dụng cho Status & Order và Review; không thay đổi màu, ký hiệu hoặc dữ liệu lưu.
+
+### Thanh tiến trình theo bước hiện tại
+
+Trong `gradio/ui/presentation.py`, hàm `workflow_progress` chỉ dùng `display_step(state['current_step'])` để quyết định hiển thị:
+
+- `index < bước hiện tại`: `is-complete`, hiển thị dấu check.
+- `index == bước hiện tại`: `is-active`, hiển thị số bước và `aria-current="step"`.
+- `index > bước hiện tại`: không có class active/complete, hiển thị số bước, chưa hoàn thành.
+
+Bỏ danh sách `complete` từng phụ thuộc vào image, các workflow validation flags, crop_saved và saved. Đến Review thì cả Image, Content, Bounding Boxes & Sort, Status & Order và Crop đều có check. Quay về Content thì chỉ Image có check; tất cả bước sau Content trở lại chưa hoàn thành, kể cả dữ liệu đã lưu.
+
+Giữ mapping 6 bước hiển thị hiện có: internal step 5 vẫn thuộc Status & Order (bước 4), internal step 6 là Crop (bước 5), internal step 7 là Review (bước 6). Chỉ thay biểu diễn progress; không đổi gate/validation chuyển bước, dữ liệu state, lưu/load hoặc nút Save. Bước hiện tại vẫn active kể cả khi đã Save.
+
+Đã kiểm tra 7 internal steps × 2 bộ validation/save flags và state tối giản chỉ có current_step; cả trước/sau bước hiện tại đều theo quy tắc trên.
+
 ## 4. File và dòng sửa
 
 Số dòng bên dưới tính trên commit gốc và code sau triển khai; mỗi cặp là **dòng đầu hunk trước sửa → dòng đầu hunk sau sửa**. Mốc tên hàm giúp tìm vị trí nếu repo copy đã lệch dòng. Nội dung chính xác của từng hunk nằm trong patch ở mục 8.
@@ -81,9 +105,10 @@ Số dòng bên dưới tính trên commit gốc và code sau triển khai; mỗ
 | `gradio/tests/test_export.py` | 160 → 160 |
 | `gradio/tests/test_status_flags.js` | 0 → 1 |
 | `gradio/tests/test_status_flags.py` | 0 → 1 |
-| `gradio/ui/assets/editor.css` | 111 → 111, 463 → 465 |
+| `gradio/ui/assets/editor.css` | 106 → 106, 463 → 476 |
 | `gradio/ui/assets/editor.js` | 75 → 75, 126 → 126, 156 → 158, 167 → 173, 208 → 214, 287 → 295, 327 → 346, 355 → 400, 387 → 432, 395 → 440, 644 → 689, 742 → 801, 892 → 951, 905 → 964, 1234 → 1284, 1263 → 1313 |
 | `gradio/ui/editor.py` | 131 → 131, 151 → 155, 171 → 177, 193 → 199 |
+| `gradio/ui/presentation.py` | 24 → 24 |
 
 ### Backend và export
 
@@ -98,7 +123,9 @@ Số dòng bên dưới tính trên commit gốc và code sau triển khai; mỗ
 - `gradio/app.py`: thêm radio với elem_id `unavailable-font-radio`/`expert-prediction-radio`; mở rộng DOM snapshot fallback, parsing và commit hai maps mới; bảng màu chỉ visible bước 3; bỏ chuyển legacy status unknown sang intact.
 - `gradio/ui/editor.py`: tách outline/text/fill, thêm data attributes hai cờ, tooltip/legend, dấu ? đỏ và màu thẻ ký tự. Review dùng cùng bảng màu, giữ phép biến đổi tọa độ resize/crop hiện có.
 - `gradio/ui/assets/editor.js`: clone/serialize đủ cờ, đồng bộ controls khi chọn box; handler bật/tắt đảm bảo loại trừ; `renderLocalStatus` cập nhật outline, nhãn, dấu ?, fill và màu thẻ. `renderSuspiciousPreview` dùng lại renderer để tránh ghi đè màu Font/Expert. Selector nhãn dùng `[data-box-order-label]` để không nhầm dấu ? là nhãn. Bảng màu thủ công chỉ áp bước 3.
-- `gradio/ui/assets/editor.css`: màu legend mới; chữ thẻ mặc định trắng, màu đặc biệt dùng inline style theo cờ.
+- `gradio/ui/assets/editor.css`: màu legend mới; chữ thẻ mặc định trắng, màu đặc biệt dùng inline style theo cờ; legend grid hai hàng với text tự xuống dòng và icon không co.
+
+- `gradio/ui/presentation.py`: đơn giản hóa `workflow_progress`, trạng thái hoàn thành chỉ dựa vào vị trí so với bước hiện tại.
 
 ### Kiểm thử
 
@@ -118,7 +145,7 @@ git apply docs/annotation-status-flags.patch
 
 Nếu chỉ có tài liệu Markdown, lưu nội dung nguyên vẹn trong block diff mục 8 thành `annotation-status-flags.patch`, dùng đường dẫn đó trong hai lệnh trên. Không chép dấu ``` bao quanh block.
 
-Đã kiểm tra `git apply --check`, áp dụng patch trên bản gốc trong thư mục tạm và so sánh byte: cả 13 file code/test đều giống hệt bản triển khai.
+Đã kiểm tra `git apply --check`, áp dụng patch trên bản gốc trong thư mục tạm và so sánh byte: cả 14 file code/test đều giống hệt bản triển khai.
 
 Patch dành cho repo copy từ commit gốc. Nếu `git apply --check` không qua, dùng tên hàm + các hunk để áp dụng có chủ đích; không bỏ qua các thay đổi state, snapshot hoặc validator. Không xóa output có sẵn: yêu cầu này giả định repo chưa chạy, không cung cấp cơ chế nâng cấp annotation cũ.
 
@@ -136,9 +163,10 @@ Patch dành cho repo copy từ commit gốc. Nếu `git apply --check` không qu
 | `gradio/tests/test_export.py` | `a6a8a0fb7144e2a9e809e797b893404bfec6bc307e6a6b7e3436bb3c9b66c2dd` |
 | `gradio/tests/test_status_flags.js` | `1d07e4ba54df4279efa43e4f2cf8d1e820a87d82607fb7af5bb0ab62e6149286` |
 | `gradio/tests/test_status_flags.py` | `9df0393830414d7ba86e13af56dd65436df7bb57a195f6aa7455dcc3a574a6ef` |
-| `gradio/ui/assets/editor.css` | `84a7e33180259ffba63722634abe9684e0ec3df392b0441dd68a91cb1edaf7ef` |
+| `gradio/ui/assets/editor.css` | `5d9636653fb2136cfa143439f133be2f6cda80796cee39bd47fb8ccd0dd6f340` |
 | `gradio/ui/assets/editor.js` | `e40e14068acdf802fed576762546668c63258b86628ba3abce04762a94090fff` |
 | `gradio/ui/editor.py` | `f2d590082083732e6860fe8b3e1139df6a7d4eaadd8c7bd960ae650703f89453` |
+| `gradio/ui/presentation.py` | `91c54815cf3e025bd20172e2c2ccb07fefd003abb5eb4c30a5fe9423f86563e4` |
 
 ## 6. Lệnh kiểm thử và kết quả
 
@@ -158,6 +186,8 @@ Bộ test cũ có lỗi sẵn: bản gốc chạy 76 test, 14 failures + 18 erro
 Chưa kiểm tra giao diện bằng Browser thật: Browser runtime lỗi khởi tạo `Cannot redefine property: process`. Test JS là kiểm thử DOM fixture, không thay thế kiểm tra layout/font thật. Checklist dưới đây cần kiểm tra trên giao diện khi Browser hoạt động.
 
 ## 7. Checklist giao diện
+
+Thanh tiến trình: đến Review phải có check ở cả 5 bước trước; Back về Content thì chỉ Image có check và toàn bộ bước sau chưa hoàn thành. Kiểm tra cả khi saved/crop_saved hoặc validation flags là true.
 
 1. Mở ảnh mới, xác minh box mới có đủ cờ false. Chữ thường trắng trên Status & Order.
 2. Bật Font trên intact: chữ/STT hồng, fill hồng 20%, viền xanh.
@@ -186,7 +216,7 @@ index 9625c60..7b519b0 100644
 +    state['regions'][uid] = dict(bbox=coords, status='intact', unknown=False, unavailable_font=False, expert_prediction=False)
      invalidate(state, clear=True)
      return uid
- 
+
 @@ -52,13 +52,15 @@ def update_bboxes(state, boxes, active=None, selected=None):
      for uid, value in boxes.items():
          if not isinstance(uid, str) or not uid:
@@ -205,11 +235,11 @@ index 9625c60..7b519b0 100644
 -        box['unknown'] = bool(box['unknown']) if box['status'] == 'damaged' else False
 +        normalize_flags(box)
          normalized[uid] = box
- 
+
      # Replacement semantics are deliberate: deleted frontend IDs stay deleted.
 @@ -89,13 +91,16 @@ def sync_draft_boxes(state, payload, materialize_alignment=True):
              state['source_mismatch']['invalidated'] = True
- 
+
      statuses = payload.get('statuses', {})
 -    unknowns = payload.get('unknowns', {})
      for uid, status in statuses.items():
@@ -226,7 +256,7 @@ index 9625c60..7b519b0 100644
 +                state['regions'][uid][flag] = value
 +    for uid, box in state['regions'].items():
 +        normalize_flags(box)
- 
+
      # Orders are draft metadata and may be incomplete.  Apply saves progress;
      # only a complete 1..N set materializes the public alignment mapping.
 diff --git a/gradio/annotation/export.py b/gradio/annotation/export.py
@@ -254,7 +284,7 @@ index 8e77cd9..1e14ee6 100644
 +        'source_mismatches.json': source_mismatches or [],
 +        'suspicious_details.json': suspicious_details or [],
 +    }
- 
+
      output = Path(output_dir)
      output.mkdir(parents=True, exist_ok=True)
 diff --git a/gradio/annotation/io.py b/gradio/annotation/io.py
@@ -282,8 +312,8 @@ index 8e9f53a..1b90ade 100644
 --- a/gradio/annotation/status.py
 +++ b/gradio/annotation/status.py
 @@ -3,56 +3,76 @@ from .text_alignment import MISSING_ANNOTATION
- 
- 
+
+
  EDITABLE_STATUSES = ('intact', 'damaged')
 -UNKNOWN_STATUS = 'unknown'
 +FLAGS = ('unknown', 'unavailable_font', 'expert_prediction')
@@ -304,8 +334,8 @@ index 8e9f53a..1b90ade 100644
 +    elif box['status'] != 'damaged':
 +        box['unknown'] = False
 +    validate_flags(box)
- 
- 
+
+
  def synchronize_missing_statuses(state):
 -    """Keep legacy unknown statuses editable as intact/damaged and ensure unknown flag exists."""
 +    """Synchronize all flags and clear character flags on MISS boxes."""
@@ -322,8 +352,8 @@ index 8e9f53a..1b90ade 100644
 +        box = state['regions'][region_uid]
 +        normalize_flags(box, state.get('annotations', {}).get(str(box_id)) == MISSING_ANNOTATION)
 +        state['bounding_boxes'][box_id].update({key: box[key] for key in ('status', *FLAGS)})
- 
- 
+
+
 -def update_status(state, region_uid, status, unknown=False):
 -    if region_uid not in state['regions']:
 +def update_status(state, region_uid, status, unknown=None, unavailable_font=None, expert_prediction=None, *, default_expert_damage=True):
@@ -358,8 +388,8 @@ index 8e9f53a..1b90ade 100644
 +    if box_id in state['bounding_boxes']:
 +        state['bounding_boxes'][box_id].update({key: box[key] for key in ('status', *FLAGS)})
      state['saved'] = False
- 
- 
+
+
 -def replace_statuses(state, statuses, unknowns=None):
 -    """Atomically replace the status and unknown flag of every editable region."""
 +def replace_statuses(state, statuses, unknowns=None, unavailable_fonts=None, expert_predictions=None):
@@ -392,8 +422,8 @@ index 8e9f53a..1b90ade 100644
 +                  else candidate['regions'][uid][flag] for flag, mapping in zip(FLAGS, maps)]
 +        update_status(candidate, uid, status, *values, default_expert_damage=False)
 +    state.update(candidate)
- 
- 
+
+
  def confirm_status(state):
 @@ -71,4 +91,6 @@ def confirm_status(state):
              is_unknown = bool(state['regions'][region_uid].get('unknown', False)) if status == 'damaged' else False
@@ -568,7 +598,7 @@ index 572259f..92789c8 100644
              self.assertEqual(set(bundle.namelist()),{
 -                'text_annotations.json','inscription_content.json','source_mismatches.json'})
 +                'text_annotations.json','inscription_content.json','source_mismatches.json','suspicious_details.json'})
- 
+
      def test_suspicious_details_are_exported_as_fourth_document(self):
          e=self.engine;s=e.open_image(self.images[0])
 diff --git a/gradio/tests/test_status_flags.js b/gradio/tests/test_status_flags.js
@@ -870,11 +900,30 @@ index 0000000..5619fbe
 +
 +if __name__=='__main__':unittest.main()
 diff --git a/gradio/ui/assets/editor.css b/gradio/ui/assets/editor.css
-index ec02b0e..2dad078 100644
+index ec02b0e..7b21cbc 100644
 --- a/gradio/ui/assets/editor.css
 +++ b/gradio/ui/assets/editor.css
-@@ -111,7 +111,9 @@
- .status-legend span::before { width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
+@@ -106,12 +106,25 @@
+ .annotation-canvas [data-corner="3"] { cursor: nesw-resize; }
+ .selection-marquee { fill: rgb(255 122 26 / 10%); stroke: var(--color-accent, #ff7a1a); stroke-width: 1.5; stroke-dasharray: 6 4; pointer-events: none; }
+
+-.status-legend { display: flex; justify-content: flex-end; gap: var(--space-6, 24px); padding: var(--space-4, 16px); border-top: 1px solid var(--color-border, #303237); font-size: 12px; }
+-.status-legend span { display: inline-flex; align-items: center; gap: var(--space-2, 8px); }
+-.status-legend span::before { width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
++.status-legend {
++  display: grid;
++  grid-template-columns: repeat(3, minmax(0, 1fr));
++  gap: var(--space-3, 12px) var(--space-4, 16px);
++  min-width: 0;
++  padding: var(--space-4, 16px);
++  border-top: 1px solid var(--color-border, #303237);
++  font-size: 12px;
++}
++/* Optional seventh label shares the second row with MISS. */
++.status-legend:has(.suspicious) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
++.status-legend:has(.suspicious) .unknown { grid-column: 3 / 5; }
++.status-legend span { display: inline-flex; align-items: center; gap: var(--space-2, 8px); min-width: 0; overflow-wrap: anywhere; }
++.status-legend span::before { flex-shrink: 0; width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
  .status-legend .intact { color: #22c55e; }
  .status-legend .damaged { color: #ef4444; }
 -.status-legend .unknown { color: #f59e0b; }
@@ -884,7 +933,7 @@ index ec02b0e..2dad078 100644
  .status-legend .missing { color: #a1a1aa; }
  .status-legend .missing::before {
    border-color: #a1a1aa;
-@@ -463,3 +465,6 @@ button:focus-visible { outline: 2px solid var(--color-accent, #ff7a1a); outline-
+@@ -463,3 +476,6 @@ button:focus-visible { outline: 2px solid var(--color-accent, #ff7a1a); outline-
    color: #ef4444;
    font-size: 11px;
  }
@@ -1112,7 +1161,7 @@ index 57b5b31..dbdba52 100644
 +      localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, unavailable_font: false, expert_prediction: false, order: null };
        mismatchConfirmationInvalidated = true;
        clearMismatchIssueSelection();
- 
+
 @@ -1263,6 +1313,7 @@ element.addEventListener('pointerup', event => {
        text.setAttribute('x', centerX);
        text.setAttribute('y', Math.max(fontSize, bbox[1] - 3 * unit));
@@ -1190,4 +1239,25 @@ index 9bf6928..a0f35f8 100644
              title='Character Assignment'
              help_text=('Drag the text cards into the sequence that should be assigned to the spatially sorted boxes.'
                         if chips else 'This confirmed source mismatch has no character mapping to arrange.')
+diff --git a/gradio/ui/presentation.py b/gradio/ui/presentation.py
+index 4d6cde8..029d305 100644
+--- a/gradio/ui/presentation.py
++++ b/gradio/ui/presentation.py
+@@ -24,14 +24,10 @@ def app_identity(state):
+
+
+ def workflow_progress(state):
+-    step = display_step(state['current_step']); workflow = state['workflow']
+-    complete = [bool(state['image']), workflow['content_verified'],
+-                workflow['content_verified'] and (workflow['bbox_valid'] or source_mismatch_confirmed(state)),
+-                workflow['content_verified'] and workflow['reading_order_valid'] and workflow['status_valid'],
+-                state['crop_saved'], state['saved']]
++    step = display_step(state['current_step'])
+     steps = []
+     for index, label in enumerate(LABELS, 1):
+-        active = index == step; done = complete[index - 1]
++        active = index == step; done = index < step
+         cls = ' is-active' if active else ' is-complete' if done else ''
+         current = ' aria-current="step"' if active else ''
+         mark = CHECK if done and not active else str(index)
 ```

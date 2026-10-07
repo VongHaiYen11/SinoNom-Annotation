@@ -24,14 +24,10 @@ def app_identity(state):
 
 
 def workflow_progress(state):
-    step = display_step(state['current_step']); workflow = state['workflow']
-    complete = [bool(state['image']), workflow['content_verified'],
-                workflow['content_verified'] and (workflow['bbox_valid'] or source_mismatch_confirmed(state)),
-                workflow['content_verified'] and workflow['reading_order_valid'] and workflow['status_valid'],
-                state['crop_saved'], state['saved']]
+    step = display_step(state['current_step'])
     steps = []
     for index, label in enumerate(LABELS, 1):
-        active = index == step; done = complete[index - 1]
+        active = index == step; done = index < step
         cls = ' is-active' if active else ' is-complete' if done else ''
         current = ' aria-current="step"' if active else ''
         mark = CHECK if done and not active else str(index)

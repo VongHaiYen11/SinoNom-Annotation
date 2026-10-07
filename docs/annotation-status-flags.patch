@@ -10,7 +10,7 @@ index 9625c60..7b519b0 100644
 +    state['regions'][uid] = dict(bbox=coords, status='intact', unknown=False, unavailable_font=False, expert_prediction=False)
      invalidate(state, clear=True)
      return uid
- 
+
 @@ -52,13 +52,15 @@ def update_bboxes(state, boxes, active=None, selected=None):
      for uid, value in boxes.items():
          if not isinstance(uid, str) or not uid:
@@ -29,11 +29,11 @@ index 9625c60..7b519b0 100644
 -        box['unknown'] = bool(box['unknown']) if box['status'] == 'damaged' else False
 +        normalize_flags(box)
          normalized[uid] = box
- 
+
      # Replacement semantics are deliberate: deleted frontend IDs stay deleted.
 @@ -89,13 +91,16 @@ def sync_draft_boxes(state, payload, materialize_alignment=True):
              state['source_mismatch']['invalidated'] = True
- 
+
      statuses = payload.get('statuses', {})
 -    unknowns = payload.get('unknowns', {})
      for uid, status in statuses.items():
@@ -50,7 +50,7 @@ index 9625c60..7b519b0 100644
 +                state['regions'][uid][flag] = value
 +    for uid, box in state['regions'].items():
 +        normalize_flags(box)
- 
+
      # Orders are draft metadata and may be incomplete.  Apply saves progress;
      # only a complete 1..N set materializes the public alignment mapping.
 diff --git a/gradio/annotation/export.py b/gradio/annotation/export.py
@@ -78,7 +78,7 @@ index 8e77cd9..1e14ee6 100644
 +        'source_mismatches.json': source_mismatches or [],
 +        'suspicious_details.json': suspicious_details or [],
 +    }
- 
+
      output = Path(output_dir)
      output.mkdir(parents=True, exist_ok=True)
 diff --git a/gradio/annotation/io.py b/gradio/annotation/io.py
@@ -106,8 +106,8 @@ index 8e9f53a..1b90ade 100644
 --- a/gradio/annotation/status.py
 +++ b/gradio/annotation/status.py
 @@ -3,56 +3,76 @@ from .text_alignment import MISSING_ANNOTATION
- 
- 
+
+
  EDITABLE_STATUSES = ('intact', 'damaged')
 -UNKNOWN_STATUS = 'unknown'
 +FLAGS = ('unknown', 'unavailable_font', 'expert_prediction')
@@ -128,8 +128,8 @@ index 8e9f53a..1b90ade 100644
 +    elif box['status'] != 'damaged':
 +        box['unknown'] = False
 +    validate_flags(box)
- 
- 
+
+
  def synchronize_missing_statuses(state):
 -    """Keep legacy unknown statuses editable as intact/damaged and ensure unknown flag exists."""
 +    """Synchronize all flags and clear character flags on MISS boxes."""
@@ -146,8 +146,8 @@ index 8e9f53a..1b90ade 100644
 +        box = state['regions'][region_uid]
 +        normalize_flags(box, state.get('annotations', {}).get(str(box_id)) == MISSING_ANNOTATION)
 +        state['bounding_boxes'][box_id].update({key: box[key] for key in ('status', *FLAGS)})
- 
- 
+
+
 -def update_status(state, region_uid, status, unknown=False):
 -    if region_uid not in state['regions']:
 +def update_status(state, region_uid, status, unknown=None, unavailable_font=None, expert_prediction=None, *, default_expert_damage=True):
@@ -182,8 +182,8 @@ index 8e9f53a..1b90ade 100644
 +    if box_id in state['bounding_boxes']:
 +        state['bounding_boxes'][box_id].update({key: box[key] for key in ('status', *FLAGS)})
      state['saved'] = False
- 
- 
+
+
 -def replace_statuses(state, statuses, unknowns=None):
 -    """Atomically replace the status and unknown flag of every editable region."""
 +def replace_statuses(state, statuses, unknowns=None, unavailable_fonts=None, expert_predictions=None):
@@ -216,8 +216,8 @@ index 8e9f53a..1b90ade 100644
 +                  else candidate['regions'][uid][flag] for flag, mapping in zip(FLAGS, maps)]
 +        update_status(candidate, uid, status, *values, default_expert_damage=False)
 +    state.update(candidate)
- 
- 
+
+
  def confirm_status(state):
 @@ -71,4 +91,6 @@ def confirm_status(state):
              is_unknown = bool(state['regions'][region_uid].get('unknown', False)) if status == 'damaged' else False
@@ -392,7 +392,7 @@ index 572259f..92789c8 100644
              self.assertEqual(set(bundle.namelist()),{
 -                'text_annotations.json','inscription_content.json','source_mismatches.json'})
 +                'text_annotations.json','inscription_content.json','source_mismatches.json','suspicious_details.json'})
- 
+
      def test_suspicious_details_are_exported_as_fourth_document(self):
          e=self.engine;s=e.open_image(self.images[0])
 diff --git a/gradio/tests/test_status_flags.js b/gradio/tests/test_status_flags.js
@@ -694,11 +694,30 @@ index 0000000..5619fbe
 +
 +if __name__=='__main__':unittest.main()
 diff --git a/gradio/ui/assets/editor.css b/gradio/ui/assets/editor.css
-index ec02b0e..2dad078 100644
+index ec02b0e..7b21cbc 100644
 --- a/gradio/ui/assets/editor.css
 +++ b/gradio/ui/assets/editor.css
-@@ -111,7 +111,9 @@
- .status-legend span::before { width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
+@@ -106,12 +106,25 @@
+ .annotation-canvas [data-corner="3"] { cursor: nesw-resize; }
+ .selection-marquee { fill: rgb(255 122 26 / 10%); stroke: var(--color-accent, #ff7a1a); stroke-width: 1.5; stroke-dasharray: 6 4; pointer-events: none; }
+
+-.status-legend { display: flex; justify-content: flex-end; gap: var(--space-6, 24px); padding: var(--space-4, 16px); border-top: 1px solid var(--color-border, #303237); font-size: 12px; }
+-.status-legend span { display: inline-flex; align-items: center; gap: var(--space-2, 8px); }
+-.status-legend span::before { width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
++.status-legend {
++  display: grid;
++  grid-template-columns: repeat(3, minmax(0, 1fr));
++  gap: var(--space-3, 12px) var(--space-4, 16px);
++  min-width: 0;
++  padding: var(--space-4, 16px);
++  border-top: 1px solid var(--color-border, #303237);
++  font-size: 12px;
++}
++/* Optional seventh label shares the second row with MISS. */
++.status-legend:has(.suspicious) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
++.status-legend:has(.suspicious) .unknown { grid-column: 3 / 5; }
++.status-legend span { display: inline-flex; align-items: center; gap: var(--space-2, 8px); min-width: 0; overflow-wrap: anywhere; }
++.status-legend span::before { flex-shrink: 0; width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
  .status-legend .intact { color: #22c55e; }
  .status-legend .damaged { color: #ef4444; }
 -.status-legend .unknown { color: #f59e0b; }
@@ -708,7 +727,7 @@ index ec02b0e..2dad078 100644
  .status-legend .missing { color: #a1a1aa; }
  .status-legend .missing::before {
    border-color: #a1a1aa;
-@@ -463,3 +465,6 @@ button:focus-visible { outline: 2px solid var(--color-accent, #ff7a1a); outline-
+@@ -463,3 +476,6 @@ button:focus-visible { outline: 2px solid var(--color-accent, #ff7a1a); outline-
    color: #ef4444;
    font-size: 11px;
  }
@@ -936,7 +955,7 @@ index 57b5b31..dbdba52 100644
 +      localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, unavailable_font: false, expert_prediction: false, order: null };
        mismatchConfirmationInvalidated = true;
        clearMismatchIssueSelection();
- 
+
 @@ -1263,6 +1313,7 @@ element.addEventListener('pointerup', event => {
        text.setAttribute('x', centerX);
        text.setAttribute('y', Math.max(fontSize, bbox[1] - 3 * unit));
@@ -1014,3 +1033,24 @@ index 9bf6928..a0f35f8 100644
              title='Character Assignment'
              help_text=('Drag the text cards into the sequence that should be assigned to the spatially sorted boxes.'
                         if chips else 'This confirmed source mismatch has no character mapping to arrange.')
+diff --git a/gradio/ui/presentation.py b/gradio/ui/presentation.py
+index 4d6cde8..029d305 100644
+--- a/gradio/ui/presentation.py
++++ b/gradio/ui/presentation.py
+@@ -24,14 +24,10 @@ def app_identity(state):
+
+
+ def workflow_progress(state):
+-    step = display_step(state['current_step']); workflow = state['workflow']
+-    complete = [bool(state['image']), workflow['content_verified'],
+-                workflow['content_verified'] and (workflow['bbox_valid'] or source_mismatch_confirmed(state)),
+-                workflow['content_verified'] and workflow['reading_order_valid'] and workflow['status_valid'],
+-                state['crop_saved'], state['saved']]
++    step = display_step(state['current_step'])
+     steps = []
+     for index, label in enumerate(LABELS, 1):
+-        active = index == step; done = complete[index - 1]
++        active = index == step; done = index < step
+         cls = ' is-active' if active else ' is-complete' if done else ''
+         current = ' aria-current="step"' if active else ''
+         mark = CHECK if done and not active else str(index)
