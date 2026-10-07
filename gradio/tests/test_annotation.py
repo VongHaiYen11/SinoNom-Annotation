@@ -418,7 +418,7 @@ class Integration(unittest.TestCase):
         from crop.crop import crop_document, image_resize
         out=self.root/'out';out.mkdir(parents=True)
         boxes={str(index):{
-            'bbox':[index*10,0,index*10+9,9],'status':'intact'}
+            'bbox':[index*10,0,index*10+9,9],'status':'intact','unknown':False,'unavailable_font':False,'expert_prediction':False}
             for index in range(1,4)}
         atomic_write(out/'12305.json',{
             'image':'12305.png','bounding_boxes':boxes,

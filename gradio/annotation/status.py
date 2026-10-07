@@ -3,56 +3,76 @@ from .text_alignment import MISSING_ANNOTATION
 
 
 EDITABLE_STATUSES = ('intact', 'damaged')
-UNKNOWN_STATUS = 'unknown'
+FLAGS = ('unknown', 'unavailable_font', 'expert_prediction')
+
+
+def validate_flags(box):
+    for flag in FLAGS:
+        if flag not in box or not isinstance(box[flag], bool):
+            raise ValueError(f'{flag} must be a boolean.')
+    if box['unknown'] and (box['status'] != 'damaged' or box['unavailable_font'] or box['expert_prediction']):
+        raise ValueError('Unknown requires damaged and cannot coexist with other flags.')
+
+
+def normalize_flags(box, missing=False):
+    if missing:
+        for flag in FLAGS:
+            box[flag] = False
+    elif box['status'] != 'damaged':
+        box['unknown'] = False
+    validate_flags(box)
 
 
 def synchronize_missing_statuses(state):
-    """Keep legacy unknown statuses editable as intact/damaged and ensure unknown flag exists."""
+    """Synchronize all flags and clear character flags on MISS boxes."""
     for box_id, region_uid in state['region_uid_by_box_id'].items():
-        current = state['regions'][region_uid]['status']
-        status = 'intact' if current == UNKNOWN_STATUS else current
-        is_unknown = bool(state['regions'][region_uid].get('unknown', False)) if status == 'damaged' else False
-        if state.get('annotations', {}).get(str(box_id)) == MISSING_ANNOTATION:
-            is_unknown = False
-        state['regions'][region_uid]['status'] = status
-        state['regions'][region_uid]['unknown'] = is_unknown
-        state['bounding_boxes'][box_id]['status'] = status
-        state['bounding_boxes'][box_id]['unknown'] = is_unknown
+        box = state['regions'][region_uid]
+        normalize_flags(box, state.get('annotations', {}).get(str(box_id)) == MISSING_ANNOTATION)
+        state['bounding_boxes'][box_id].update({key: box[key] for key in ('status', *FLAGS)})
 
 
-def update_status(state, region_uid, status, unknown=False):
-    if region_uid not in state['regions']:
+def update_status(state, region_uid, status, unknown=None, unavailable_font=None, expert_prediction=None, *, default_expert_damage=True):
+    if region_uid not in state['regions'] or status not in EDITABLE_STATUSES:
         raise ValueError('Invalid region or status.')
+    old = state['regions'][region_uid]
+    unknown = old['unknown'] if unknown is None else unknown
+    unavailable_font = old['unavailable_font'] if unavailable_font is None else unavailable_font
+    expert_prediction = old['expert_prediction'] if expert_prediction is None else expert_prediction
+    for value in (unknown, unavailable_font, expert_prediction):
+        if not isinstance(value, bool):
+            raise ValueError('Flags must be boolean.')
+    if unknown and not old['unknown']:
+        unavailable_font = expert_prediction = False
+    elif (unavailable_font and not old['unavailable_font']) or (expert_prediction and not old['expert_prediction']):
+        unknown = False
+    if default_expert_damage and expert_prediction and not old['expert_prediction']:
+        status = 'damaged'
+    box = dict(old, status=status, unknown=unknown if status == 'damaged' else False,
+               unavailable_font=unavailable_font, expert_prediction=expert_prediction)
     box_id = state['box_id_by_region'].get(region_uid)
-    if status not in EDITABLE_STATUSES:
-        raise ValueError('Every box must be intact or damaged.')
-    is_unknown = bool(unknown) if status == 'damaged' else False
-    state['regions'][region_uid]['status'] = status
-    state['regions'][region_uid]['unknown'] = is_unknown
-    if box_id and box_id in state.get('bounding_boxes', {}):
-        state['bounding_boxes'][box_id]['status'] = status
-        state['bounding_boxes'][box_id]['unknown'] = is_unknown
+    normalize_flags(box, state.get('annotations', {}).get(str(box_id)) == MISSING_ANNOTATION)
+    state['regions'][region_uid] = box
+    if box_id in state['bounding_boxes']:
+        state['bounding_boxes'][box_id].update({key: box[key] for key in ('status', *FLAGS)})
     state['saved'] = False
 
 
-def replace_statuses(state, statuses, unknowns=None):
-    """Atomically replace the status and unknown flag of every editable region."""
+def replace_statuses(state, statuses, unknowns=None, unavailable_fonts=None, expert_predictions=None):
+    """Validate the complete update before changing any region."""
     if not isinstance(statuses, dict) or set(statuses) != set(state['regions']):
         raise ValueError('Statuses must contain every region exactly once.')
-    if unknowns is not None and not isinstance(unknowns, dict):
-        raise ValueError('Unknowns must be a mapping of region IDs to boolean flags.')
-    for region_uid, status in statuses.items():
-        if status not in EDITABLE_STATUSES:
-            raise ValueError('Every box must be intact or damaged.')
-    for region_uid, status in statuses.items():
-        is_unknown = bool(unknowns.get(region_uid, False)) if (unknowns and status == 'damaged') else False
-        state['regions'][region_uid]['status'] = status
-        state['regions'][region_uid]['unknown'] = is_unknown
-        box_id = state['box_id_by_region'].get(region_uid)
-        if box_id in state['bounding_boxes']:
-            state['bounding_boxes'][box_id]['status'] = status
-            state['bounding_boxes'][box_id]['unknown'] = is_unknown
-    state['saved'] = False
+    maps = (unknowns, unavailable_fonts, expert_predictions)
+    for values in maps:
+        if values is not None and (not isinstance(values, dict) or
+                any(not isinstance(value, bool) for value in values.values())):
+            raise ValueError('Flags must be mappings of region IDs to booleans.')
+    from copy import deepcopy
+    candidate = deepcopy(state)
+    for uid, status in statuses.items():
+        values = [mapping.get(uid, candidate['regions'][uid][flag]) if mapping is not None
+                  else candidate['regions'][uid][flag] for flag, mapping in zip(FLAGS, maps)]
+        update_status(candidate, uid, status, *values, default_expert_damage=False)
+    state.update(candidate)
 
 
 def confirm_status(state):
@@ -71,4 +91,6 @@ def confirm_status(state):
             is_unknown = bool(state['regions'][region_uid].get('unknown', False)) if status == 'damaged' else False
             state['bounding_boxes'][box_id]['status'] = status
             state['bounding_boxes'][box_id]['unknown'] = is_unknown
+            for flag in FLAGS:
+                state['bounding_boxes'][box_id][flag] = state['regions'][region_uid][flag]
     state['workflow']['status_valid'] = True

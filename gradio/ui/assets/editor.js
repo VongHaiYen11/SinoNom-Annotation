@@ -75,7 +75,7 @@ const updateValidationSummary = () => {
     });
     if (hasOrder) {
       element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
-        const text = group.querySelector('text');
+        const text = group.querySelector('[data-box-order-label]');
         if (text) text.textContent = '';
       });
       isDirty = true;
@@ -126,6 +126,8 @@ const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map((
   const copy = structuredClone(box);
   copy.bbox = [...box.bbox];
   copy.unknown = Boolean(box.unknown);
+  copy.unavailable_font = Boolean(box.unavailable_font);
+  copy.expert_prediction = Boolean(box.expert_prediction);
   copy.order = box.order ?? null;
   return [String(id), copy];
 }));
@@ -156,9 +158,10 @@ const applyImageOnlyMode = (enabled) => {
 root.addEventListener('canvas-image-only-change', event => {
   applyImageOnlyMode(event.detail);
 });
-const statusColor = (status, unknown = false) => status === 'damaged' ? (unknown ? '#f59e0b' : '#ef4444') : '#22c55e';
+const statusColor = (status, expert = false) => expert ? '#facc15' : status === 'damaged' ? '#ef4444' : '#22c55e';
+const textColor = box => box.unavailable_font ? '#ec4899' : box.expert_prediction ? '#facc15' : '#ffffff';
 const applyAnnotationColor = () => {
-  if (![3, 4].includes(props.value.step)) return;
+  if (props.value.step !== 3) return;
   element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
     const rect = group.querySelector('rect:not([data-image-resize-handle])');
     if (rect) {
@@ -167,7 +170,7 @@ const applyAnnotationColor = () => {
         rect.setAttribute('stroke', annotationColor);
       }
     }
-    const label = group.querySelector('text');
+    const label = group.querySelector('[data-box-order-label]');
     if (label) label.setAttribute('fill', annotationColor);
   });
 };
@@ -208,6 +211,8 @@ const syncExternalControls = () => {
     unknowns: Object.fromEntries(Object.entries(localBoxes).map(
       ([id, box]) => [id, Boolean(box.status === 'damaged' && box.unknown)]
     )),
+    unavailable_fonts: Object.fromEntries(Object.entries(localBoxes).map(([id, box]) => [id, box.unavailable_font])),
+    expert_predictions: Object.fromEntries(Object.entries(localBoxes).map(([id, box]) => [id, box.expert_prediction])),
     boxes: serializeLocalBoxes(),
     orders: Object.fromEntries(Object.entries(localBoxes).map(
       ([id, box]) => [id, box.order ?? null]
@@ -287,6 +292,17 @@ const syncExternalControls = () => {
       active.unknown = false;
       renderLocalStatus(activeBoxId, active.status, false);
     }
+    for (const [flag, selector] of [['unavailable_font', '#unavailable-font-radio'], ['expert_prediction', '#expert-prediction-radio']]) {
+      if (isMissing) active[flag] = false;
+      root.querySelectorAll(`${selector} input`).forEach(input => {
+        const target = active[flag] ? 'True' : 'False';
+        if (input.value === target && !input.checked) {
+          syncingStatusControl = true;
+          try { input.click(); } finally { syncingStatusControl = false; }
+        }
+        input.disabled = isMissing;
+      });
+    }
     const unknownRadioInputs = root.querySelectorAll('#unknown-radio input');
     const unknownContainer = root.querySelector('#unknown-radio');
     const isDamaged = active.status === 'damaged';
@@ -327,20 +343,42 @@ const renderLocalStatus = (id, status, unknown = null) => {
     box.unknown = false;
   }
   group.dataset.status = status;
+  if (box.unknown) { box.unavailable_font = false; box.expert_prediction = false; }
+  if (group.querySelector('rect')?.dataset.missing === '1') {
+    box.unknown = false; box.unavailable_font = false; box.expert_prediction = false;
+  }
+  group.dataset.unavailableFont = String(box.unavailable_font);
+  group.dataset.expertPrediction = String(box.expert_prediction);
   group.dataset.unknown = String(Boolean(box.unknown));
   const revealStatus = props.value.step >= 4;
-  const color = !revealStatus ? annotationColor : statusColor(status, box.unknown);
+  const color = !revealStatus ? annotationColor : statusColor(status, box.expert_prediction);
   const rect = group.querySelector('rect:not([data-image-resize-handle])');
   if (rect) {
     const missing = rect.dataset.missing === '1';
     const suspicious = group.classList.contains('suspicious-region');
-    rect.setAttribute('fill', suspicious ? '#facc15' : missing ? '#e5e7eb' : color);
+    rect.setAttribute('fill', box.unavailable_font && revealStatus ? '#ec4899' : suspicious ? '#facc15' : missing ? '#e5e7eb' : color);
     rect.setAttribute('stroke', color);
     rect.removeAttribute('stroke-dasharray');
-    rect.setAttribute('fill-opacity', suspicious ? '.20' : missing ? '.30' : '.04');
+    rect.setAttribute('fill-opacity', box.unavailable_font && revealStatus ? '.20' : suspicious ? '.20' : missing ? '.30' : '.04');
   }
-  const label = group.querySelector('text');
-  if (label) label.setAttribute('fill', revealStatus ? color : annotationColor);
+  const label = group.querySelector('[data-box-order-label]');
+  if (label) label.setAttribute('fill', revealStatus ? textColor(box) : annotationColor);
+  let mark = group.querySelector('[data-unknown-mark]');
+  if (revealStatus && box.unknown) {
+    if (!mark) {
+      mark = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      mark.dataset.unknownMark = '1';
+      group.appendChild(mark);
+    }
+    const [x1,y1,x2,y2] = box.bbox;
+    const attrs = {x:(x1+x2)/2, y:(y1+y2)/2, 'text-anchor':'middle',
+      'dominant-baseline':'central', fill:'#ef4444', 'font-family':'sans-serif',
+      'font-size':Math.min(x2-x1,y2-y1)*0.65, 'pointer-events':'none'};
+    Object.entries(attrs).forEach(([key,value]) => mark.setAttribute(key,value));
+    mark.textContent = '?';
+  } else mark?.remove();
+  element.querySelectorAll(`[data-order-chip][data-assigned-box-id="${id}"] .tile-character`)
+    .forEach(chip => { chip.style.color = textColor(box); });
 };
 const renderSelection = (sync = true) => {
   const showResizeHandles = selectedIds.size === 1;
@@ -644,6 +682,20 @@ root.addEventListener('change', event => {
     syncExternalControls();
     return;
   }
+  for (const [flag, selector] of [['unavailable_font', '#unavailable-font-radio'], ['expert_prediction', '#expert-prediction-radio']]) {
+    const flagInput = event.target.closest(`${selector} input`);
+    if (flagInput && props.value.step === 4 && activeBoxId) {
+      const box = localBoxes[activeBoxId];
+      if (!box || groupFor(activeBoxId)?.querySelector('rect')?.dataset.missing === '1') return;
+      const enabled = flagInput.value.toLowerCase() === 'true';
+      if (flag === 'expert_prediction' && enabled && !box[flag]) box.status = 'damaged';
+      box[flag] = enabled;
+      if (enabled) box.unknown = false;
+      renderLocalStatus(activeBoxId, box.status, box.unknown);
+      syncExternalControls();
+      return;
+    }
+  }
   const unknownInput = event.target.closest('#unknown-radio input');
   if (unknownInput && props.value.step === 4 && activeBoxId) {
     const currentBox = localBoxes[activeBoxId];
@@ -742,7 +794,7 @@ const drawPreview = (group, box) => {
         if (line) ['x1', 'y1', 'x2', 'y2'].forEach((attr, pos) => line.setAttribute(attr, coords[pos]));
       });
   }
-  const label = group.querySelector('text');
+  const label = group.querySelector('[data-box-order-label]');
   if (label) {
     const bw = box[2] - box[0];
     const bh = box[3] - box[1];
@@ -892,7 +944,7 @@ element.addEventListener('apply-status-preview', () => {
         line.setAttribute('vector-effect', 'non-scaling-stroke');
         mark.appendChild(line);
       });
-      group.insertBefore(mark, group.querySelector('text'));
+      group.insertBefore(mark, group.querySelector('[data-box-order-label]'));
     }
     renderLocalStatus(id, box.status, box.unknown);
   });
@@ -905,17 +957,8 @@ function renderSuspiciousPreview() {
     const chip = element.querySelector(`[data-order-chip][data-assigned-box-id="${group.dataset.boxId}"]`);
     const suspicious = Boolean(chip?.classList.contains('suspicious'));
     group.classList.toggle('suspicious-region', suspicious);
-    const status = localBoxes[group.dataset.boxId]?.status || 'intact';
-    const unknown = Boolean(localBoxes[group.dataset.boxId]?.unknown);
-    const stroke = statusColor(status, unknown);
-    const rect = group.querySelector('rect:not([data-image-resize-handle])');
-    if (rect) {
-      const missing = rect.dataset.missing === '1';
-      rect.setAttribute('fill', suspicious ? '#facc15' : missing ? '#e5e7eb' : stroke);
-      rect.setAttribute('fill-opacity', suspicious ? '.20' : missing ? '.30' : '.04');
-      rect.setAttribute('stroke', stroke);
-    }
-    const label = group.querySelector('text'); if (label && props.value.step !== 4) label.setAttribute('fill', stroke);
+    const box = localBoxes[group.dataset.boxId];
+    if (box) renderLocalStatus(group.dataset.boxId, box.status, box.unknown);
   });
   applyAnnotationColor();
 }
@@ -1234,7 +1277,7 @@ element.addEventListener('pointerup', event => {
       const bbox = state.result;
       let newId;
       do { newId = `box_new_${nextTemporaryBoxId++}`; } while (localBoxes[newId]);
-      localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, order: null };
+      localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, unavailable_font: false, expert_prediction: false, order: null };
       mismatchConfirmationInvalidated = true;
       clearMismatchIssueSelection();
 
@@ -1263,6 +1306,7 @@ element.addEventListener('pointerup', event => {
       text.setAttribute('x', centerX);
       text.setAttribute('y', Math.max(fontSize, bbox[1] - 3 * unit));
       text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('data-box-order-label', '1');
       text.setAttribute('fill', annotationColor);
       text.setAttribute('font-size', fontSize);
       text.setAttribute('stroke', '#17191c');

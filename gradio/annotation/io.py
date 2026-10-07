@@ -94,10 +94,12 @@ def validate_document(doc, image, size):
         if not key.isdecimal() or int(key) < 1 or str(int(key)) != key:
             raise ValueError('Box IDs must be canonical positive integers.')
         validate_coordinates(box['bbox'], size)
-        if box['status'] not in ('intact', 'damaged', 'unknown'):
+        if box['status'] not in ('intact', 'damaged'):
             raise ValueError('Invalid status.')
-        if 'unknown' in box and not isinstance(box['unknown'], bool):
-            raise ValueError('Unknown attribute must be boolean.')
+        from .status import validate_flags
+        validate_flags(box)
+        if doc.get('annotations', {}).get(key) == MISSING_ANNOTATION and any(box[flag] for flag in ('unknown', 'unavailable_font', 'expert_prediction')):
+            raise ValueError('MISS boxes cannot have character flags.')
     expected_ids = {str(index) for index in range(1, len(doc['bounding_boxes']) + 1)}
     if set(doc['bounding_boxes']) != expected_ids:
         raise ValueError('Box IDs must be contiguous from 1 to n.')

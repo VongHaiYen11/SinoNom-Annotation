@@ -111,7 +111,9 @@
 .status-legend span::before { width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
 .status-legend .intact { color: #22c55e; }
 .status-legend .damaged { color: #ef4444; }
-.status-legend .unknown { color: #f59e0b; }
+.status-legend .unknown { color: #ef4444; }
+.status-legend .unavailable-font { color: #ec4899; }
+.status-legend .expert-prediction { color: #facc15; }
 .status-legend .missing { color: #a1a1aa; }
 .status-legend .missing::before {
   border-color: #a1a1aa;
@@ -463,3 +465,6 @@ button:focus-visible { outline: 2px solid var(--color-accent, #ff7a1a); outline-
   color: #ef4444;
   font-size: 11px;
 }
+
+/* Character text never inherits physical-condition colors. */
+.order-chip .tile-character { color: #ffffff; }

@@ -1,0 +1,1072 @@
+# Hướng dẫn triển khai các cờ annotation và Download All
+
+Ngày triển khai: 07/10/2026. Commit gốc: `98bcd7a9bb5468d9435901545342a7bd11985f74`.
+
+Tài liệu này mô tả code đã triển khai, gồm vị trí sửa và **patch đầy đủ** để một repo copy từ bản gốc có thể sửa giống hệt. Không sửa `README.md`; tài liệu này là nguồn mô tả mới cho thay đổi này.
+
+## 1. Yêu cầu có thể dán sang repo khác
+
+> Áp dụng toàn bộ thay đổi code và test trong patch ở cuối tài liệu (hoặc file `docs/annotation-status-flags.patch`). Assume app chưa từng chạy: không migration, không fallback đọc annotation theo schema cũ. Giữ ba cờ boolean trên từng box: `unknown` đã có; `unavailable_font` và `expert_prediction` là hai cờ mới. Đồng bộ frontend snapshot → regions → bounding_boxes → Save → History reopen → Download All. Unknown chỉ dùng với damaged và đứng riêng; Expert và Font có thể cùng bật. Expert mặc định damaged khi bật, nhưng cho đổi intact sau đó. Chữ thường luôn trắng; chữ Font hồng, chữ Expert vàng; Expert + Font có viền vàng, chữ hồng, fill hồng 20%. Unknown dùng dấu ? đỏ, outline vẫn theo damaged/intact. Download All luôn có đủ 4 JSON, nhóm rỗng là []. Chạy các test mới và đối chiếu lỗi test cũ với baseline; không thay đổi chức năng ngoài yêu cầu này.
+
+## 2. Schema và tác dụng của cờ
+
+`status` chỉ nhận `intact` hoặc `damaged`, mô tả tình trạng vật lý. Cờ không phải giá trị mới của `status`.
+
+| Key | Loại | Nhãn UI | Tác dụng |
+| --- | --- | --- | --- |
+| `unknown` | Cờ đã có | Unknown character (Damaged only) | Ký tự không xác định; damaged, dấu ? đỏ; không đi cùng hai cờ mới |
+| `unavailable_font` | **Cờ mới** | Unavailable Font | Ký tự không có font phù hợp; chữ hồng, fill hồng 20%; giữ được trên intact/damaged |
+| `expert_prediction` | **Cờ mới** | expert_prediction | Ký tự dự đoán bởi chuyên gia; viền vàng; khi bật từ false sang true mặc định damaged |
+
+```json
+{
+  "bbox": [120, 350, 180, 420],
+  "status": "intact",
+  "unknown": false,
+  "unavailable_font": true,
+  "expert_prediction": true
+}
+```
+
+Box tạo mới có đủ ba cờ false. Dữ liệu annotation lưu/load phải có đủ ba boolean thật, không dùng chuỗi `"true"`/`"false"`. Load không tự thêm key thiếu, không nhận `status: "unknown"` cũ. JSON đầu ra detector là dữ liệu trung gian: app khởi tạo ba cờ false trước khi tạo annotation, không phải migration file annotation cũ.
+
+- Bật Unknown: tắt Font và Expert. Bật Font/Expert: tắt Unknown, giữ cờ mới còn lại.
+- Chuyển intact: tắt Unknown, giữ Font/Expert.
+- Bật Expert rồi đổi intact **trước Apply/Next** phải giữ intact. Chỉ hành động bật cờ đặt mặc định damaged; snapshot cuối cùng, Save và Load không ép lại damaged.
+- Tắt cờ không khôi phục status/cờ trước đó.
+- MISS không có các cờ mô tả ký tự; vẫn có dấu X đỏ. Backend xóa cờ khi một box được gán MISS, validator không nhận JSON MISS có cờ true.
+- `Other` vẫn là document tối giản chỉ có bbox; khi mở lại, app khởi tạo state nội bộ đầy đủ. Không thêm cờ vào document Other vì không có annotation ký tự.
+
+## 3. Quy tắc màu
+
+Áp dụng trên ảnh Status & Order và Review. Thẻ ký tự ở Status & Order dùng cùng màu chữ. Không đổi nội dung ký tự sang đỏ/xanh theo physical status. Bảng màu chọn thủ công chỉ còn ở bước Bounding Boxes & Sort.
+
+| Trường hợp | Outline | Chữ + STT | Fill / dấu |
+| --- | --- | --- | --- |
+| Intact thường | Xanh `#22c55e` | Trắng `#ffffff` | Fill thông thường 4% |
+| Damaged thường | Đỏ `#ef4444` | Trắng | Fill thông thường 4% |
+| Unknown | Theo status (Unknown chỉ damaged) | Trắng | Dấu ? đỏ giữa box |
+| Unavailable Font | Theo status | Hồng `#ec4899` | Hồng 20% |
+| Expert | Vàng `#facc15` kể cả intact | Vàng | Fill thông thường 4% |
+| Expert + Font | Vàng | Hồng | Hồng 20% |
+| MISS | Theo status | Trắng | Fill xám 30%, dấu X đỏ |
+
+Suspicious vẫn có thông tin trên tooltip/UI; khi có Font, fill hồng 20% ưu tiên hơn fill suspicious. Màu legend và nhãn chọn status vẫn giải thích các trạng thái; không đổi màu nội dung ký tự thường.
+
+## 4. File và dòng sửa
+
+Số dòng bên dưới tính trên commit gốc và code sau triển khai; mỗi cặp là **dòng đầu hunk trước sửa → dòng đầu hunk sau sửa**. Mốc tên hàm giúp tìm vị trí nếu repo copy đã lệch dòng. Nội dung chính xác của từng hunk nằm trong patch ở mục 8.
+
+| File | Dòng trước → sau |
+| --- | --- |
+| `gradio/annotation/bbox.py` | 20 → 20, 52 → 52, 89 → 91 |
+| `gradio/annotation/export.py` | 15 → 15 |
+| `gradio/annotation/io.py` | 94 → 94 |
+| `gradio/annotation/status.py` | 3 → 3, 71 → 91 |
+| `gradio/annotation/workflow.py` | 215 → 215, 344 → 344, 447 → 447, 569 → 572 |
+| `gradio/app.py` | 167 → 167, 178 → 180, 185 → 189, 431 → 437, 577 → 585, 587 → 595, 1053 → 1061, 1065 → 1076, 1079 → 1094 |
+| `gradio/tests/test_annotation.py` | 418 → 418 |
+| `gradio/tests/test_export.py` | 160 → 160 |
+| `gradio/ui/assets/editor.css` | 111 → 111, 463 → 465 |
+| `gradio/ui/assets/editor.js` | 75 → 75, 126 → 126, 156 → 158, 167 → 170, 208 → 211, 287 → 292, 327 → 343, 644 → 682, 742 → 794, 892 → 944, 905 → 957, 1234 → 1277, 1263 → 1306 |
+| `gradio/ui/editor.py` | 131 → 131, 151 → 155, 171 → 177, 193 → 199 |
+| `gradio/tests/test_status_flags.py` | 0 → 1 |
+| `gradio/tests/test_status_flags.js` | 0 → 1 |
+
+### Backend và export
+
+- `gradio/annotation/status.py`: thêm `FLAGS`, `validate_flags`, `normalize_flags`; mở rộng `update_status`/`replace_statuses`; đồng bộ đủ cờ ở `synchronize_missing_statuses`/`confirm_status`. Cập nhật từng box giữ cờ không được yêu cầu đổi. Batch snapshot được validate trước khi thay state, không áp lại mặc định damaged cho Expert.
+- `gradio/annotation/bbox.py`: khởi tạo cờ khi vẽ box, giữ metadata khi snapshot chỉ sửa tọa độ; đồng bộ maps `unknowns`, `unavailable_fonts`, `expert_predictions` trong draft; giữ đủ cờ khi materialize alignment.
+- `gradio/annotation/io.py`: chỉ nhận intact/damaged; kiểm tra đủ boolean và tổ hợp hợp lệ; từ chối MISS có cờ true. Luồng lưu/hash hiện có tiếp tục dùng document đã chứa các cờ mới.
+- `gradio/annotation/workflow.py`: khởi tạo cờ cho detector và state Other; truyền cờ mới ở action `status`/`statuses`. Save/reopen dùng validator và document mới, không có migration.
+- `gradio/annotation/export.py`: `save_export_archive` xây dictionary đủ 4 member vô điều kiện, dữ liệu rỗng thành `[]`, bỏ lỗi archive rỗng. Giữ thao tác ghi ZIP tạm rồi replace. Collector vẫn chỉ lấy dữ liệu đã Save, vẫn báo lỗi nếu dữ liệu đã lưu không hợp lệ.
+
+### UI và frontend
+
+- `gradio/app.py`: thêm radio với elem_id `unavailable-font-radio`/`expert-prediction-radio`; mở rộng DOM snapshot fallback, parsing và commit hai maps mới; bảng màu chỉ visible bước 3; bỏ chuyển legacy status unknown sang intact.
+- `gradio/ui/editor.py`: tách outline/text/fill, thêm data attributes hai cờ, tooltip/legend, dấu ? đỏ và màu thẻ ký tự. Review dùng cùng bảng màu, giữ phép biến đổi tọa độ resize/crop hiện có.
+- `gradio/ui/assets/editor.js`: clone/serialize đủ cờ, đồng bộ controls khi chọn box; handler bật/tắt đảm bảo loại trừ; `renderLocalStatus` cập nhật outline, nhãn, dấu ?, fill và màu thẻ. `renderSuspiciousPreview` dùng lại renderer để tránh ghi đè màu Font/Expert. Selector nhãn dùng `[data-box-order-label]` để không nhầm dấu ? là nhãn. Bảng màu thủ công chỉ áp bước 3.
+- `gradio/ui/assets/editor.css`: màu legend mới; chữ thẻ mặc định trắng, màu đặc biệt dùng inline style theo cờ.
+
+### Kiểm thử
+
+- `gradio/tests/test_status_flags.py` (mới): 7 test về defaults, loại trừ, Expert → intact, atomic validation, cả hai renderer step, MISS, geometry/order draft, Save/reopen/export normal/missing/extra và ZIP rỗng.
+- `gradio/tests/test_status_flags.js` (mới): chạy handler và renderer **thực tế lấy từ editor.js** trong Node với SVG fixture; kiểm tra màu, dấu ?, loại trừ, kết hợp, intact override, MISS và palette.
+- `gradio/tests/test_annotation.py`: cập nhật fixture annotation đã lưu sang schema đủ ba cờ.
+- `gradio/tests/test_export.py`: kỳ vọng ZIP có đủ 4 member.
+
+## 5. Cách áp dụng chính xác trên repo copy
+
+Copy `docs/annotation-status-flags.patch` sang repo đích rồi chạy ở thư mục gốc:
+
+```sh
+git apply --check docs/annotation-status-flags.patch
+git apply docs/annotation-status-flags.patch
+```
+
+Nếu chỉ có tài liệu Markdown, lưu nội dung nguyên vẹn trong block diff mục 8 thành `annotation-status-flags.patch`, dùng đường dẫn đó trong hai lệnh trên. Không chép dấu ``` bao quanh block.
+
+Đã kiểm tra `git apply --check`, áp dụng patch trên bản gốc trong thư mục tạm và so sánh byte: cả 13 file code/test đều giống hệt bản triển khai.
+
+Patch dành cho repo copy từ commit gốc. Nếu `git apply --check` không qua, dùng tên hàm + các hunk để áp dụng có chủ đích; không bỏ qua các thay đổi state, snapshot hoặc validator. Không xóa output có sẵn: yêu cầu này giả định repo chưa chạy, không cung cấp cơ chế nâng cấp annotation cũ.
+
+Để so sánh code giống hệt, SHA-256 sau triển khai:
+
+| File | SHA-256 |
+| --- | --- |
+| `gradio/annotation/bbox.py` | `2727201be29bf95e0a50424685014273c95d6585d219d1b6983a91e31990d0ee` |
+| `gradio/annotation/export.py` | `698f1d1b9299c4fa18f6452f1eb4977df15b880f1c3e36a90524fe2fb43e2030` |
+| `gradio/annotation/io.py` | `14e739819184b5689790be1b61abaa6107999f7fba4f6d3222ba7146c467b1f6` |
+| `gradio/annotation/status.py` | `96d60d1cc1815c2960cb5f65fa195a92bf96dae86794151f67f37f715d925bff` |
+| `gradio/annotation/workflow.py` | `ca869b405122200638a8fe0c76fadc0aca72ce89b40f3fac089fba5c3f0a11d5` |
+| `gradio/app.py` | `8c9f4a2da4677c79ce10336a9be8fa24c18b773070c2206c0191b7ff94b00fe3` |
+| `gradio/tests/test_annotation.py` | `db6d022bfd6cbcfb78b9c6d130a45d7c1eb88e59607180ad9fe779bc2a29b34d` |
+| `gradio/tests/test_export.py` | `a6a8a0fb7144e2a9e809e797b893404bfec6bc307e6a6b7e3436bb3c9b66c2dd` |
+| `gradio/ui/assets/editor.css` | `84a7e33180259ffba63722634abe9684e0ec3df392b0441dd68a91cb1edaf7ef` |
+| `gradio/ui/assets/editor.js` | `4e870a5e562bef546db2d000af96124697978786b74baa6d8aa1af137283b1ab` |
+| `gradio/ui/editor.py` | `8865052322487625b940b0446bc9df4ec923a20b1d19cabbfae2bf843093517a` |
+| `gradio/tests/test_status_flags.py` | `f40073c228b8da0e02ff34f05d748efe41122804b037a22a8f1d302d40915792` |
+| `gradio/tests/test_status_flags.js` | `5c2dc1c38111c16492ee693d507389b6d0f0bad314d807ff5e3dd8f9b6023886` |
+
+## 6. Lệnh kiểm thử và kết quả
+
+```sh
+.venv/bin/python -m unittest discover -s gradio/tests -p test_status_flags.py -v
+node gradio/tests/test_status_flags.js
+node --check gradio/ui/assets/editor.js
+.venv/bin/python -m compileall -q gradio
+git diff --check
+.venv/bin/python -m unittest discover -s gradio/tests -q
+```
+
+Kết quả: 7 test Python mới PASS; test JavaScript PASS; kiểm tra cú pháp Python/JavaScript và whitespace PASS. Test Python chứa vòng Save/reopen/export thật trên normal, missing_text, extra_text và kiểm tra SVG ở step 4/7.
+
+Bộ test cũ có lỗi sẵn: bản gốc chạy 76 test, 14 failures + 18 errors; sau thay đổi chạy 83 test, vẫn 14 failures + 18 errors, **không có tên test lỗi mới**. Các lỗi này gồm giả định reading order cũ, source editing và assertion UI cũ; chưa sửa trong phạm vi yêu cầu này.
+
+Chưa kiểm tra giao diện bằng Browser thật: Browser runtime lỗi khởi tạo `Cannot redefine property: process`. Test JS là kiểm thử DOM fixture, không thay thế kiểm tra layout/font thật. Checklist dưới đây cần kiểm tra trên giao diện khi Browser hoạt động.
+
+## 7. Checklist giao diện
+
+1. Mở ảnh mới, xác minh box mới có đủ cờ false. Chữ thường trắng trên Status & Order.
+2. Bật Font trên intact: chữ/STT hồng, fill hồng 20%, viền xanh.
+3. Bật Expert: status tự damaged, viền vàng; khi Font còn bật chữ vẫn hồng. Tắt Font: chữ vàng.
+4. Đổi Expert sang intact trước Apply và trước Next: viền vẫn vàng, status giữ intact ở Review và sau reopen.
+5. Bật Unknown trên damaged: hai cờ mới tắt, viền đỏ, dấu ? đỏ. Bật Font/Expert: Unknown tắt, dấu ? biến mất.
+6. Chọn box khác rồi chọn lại, Apply, Next/Back, chỉnh tọa độ/thứ tự: cờ theo đúng box, không biến mất.
+7. MISS giữ dấu X, controls cờ bị disable. Kiểm tra ảnh Review khi resize/crop.
+8. Save, mở lại History, Download All: so sánh status + cờ trong JSON với UI.
+9. Không Save ảnh nào và Download All: ZIP vẫn đủ 4 file với `[]`. Có dữ liệu suspicious: file đó là object; nếu rỗng là `[]`. Draft không lọt vào ZIP.
+
+## 8. Patch đầy đủ
+
+Các hunk sau là nguồn code chính xác, bao gồm test mới. Patch không sửa README và không tự chứa file tài liệu này để tránh tự tham chiếu.
+
+```diff
+diff --git a/gradio/annotation/bbox.py b/gradio/annotation/bbox.py
+index 9625c60..7b519b0 100644
+--- a/gradio/annotation/bbox.py
++++ b/gradio/annotation/bbox.py
+@@ -20,7 +20,7 @@ def validate_coordinates(bbox, size):
+ def add_bbox(state, bbox):
+     coords = validate_coordinates(bbox, state['image_size'])
+     uid = uuid4().hex
+-    state['regions'][uid] = dict(bbox=coords, status='intact', unknown=False)
++    state['regions'][uid] = dict(bbox=coords, status='intact', unknown=False, unavailable_font=False, expert_prediction=False)
+     invalidate(state, clear=True)
+     return uid
+ 
+@@ -52,13 +52,15 @@ def update_bboxes(state, boxes, active=None, selected=None):
+     for uid, value in boxes.items():
+         if not isinstance(uid, str) or not uid:
+             raise ValueError('Every bounding box must have a unique string ID.')
+-        box = dict(value) if isinstance(value, dict) else {'bbox': value}
++        box = dict(value) if isinstance(value, dict) else dict(state['regions'].get(uid, {}), bbox=value)
+         box['bbox'] = validate_coordinates(box.get('bbox'), state['image_size'])
+         box.setdefault('status', 'intact')
+-        box.setdefault('unknown', False)
+-        if box['status'] not in {'intact', 'damaged', 'unknown'}:
++        from .status import normalize_flags
++        for flag in ('unknown', 'unavailable_font', 'expert_prediction'):
++            box.setdefault(flag, False)
++        if box['status'] not in {'intact', 'damaged'}:
+             raise ValueError(f'Invalid status for box {uid}.')
+-        box['unknown'] = bool(box['unknown']) if box['status'] == 'damaged' else False
++        normalize_flags(box)
+         normalized[uid] = box
+ 
+     # Replacement semantics are deliberate: deleted frontend IDs stay deleted.
+@@ -89,13 +91,16 @@ def sync_draft_boxes(state, payload, materialize_alignment=True):
+             state['source_mismatch']['invalidated'] = True
+ 
+     statuses = payload.get('statuses', {})
+-    unknowns = payload.get('unknowns', {})
+     for uid, status in statuses.items():
+-        if uid in state['regions'] and status in {'intact', 'damaged', 'unknown'}:
++        if uid in state['regions'] and status in {'intact', 'damaged'}:
+             state['regions'][uid]['status'] = status
+-    for uid, unk in unknowns.items():
+-        if uid in state['regions']:
+-            state['regions'][uid]['unknown'] = bool(unk)
++    from .status import FLAGS, normalize_flags
++    for flag, field in zip(FLAGS, ('unknowns', 'unavailable_fonts', 'expert_predictions')):
++        for uid, value in payload.get(field, {}).items():
++            if uid in state['regions']:
++                state['regions'][uid][flag] = value
++    for uid, box in state['regions'].items():
++        normalize_flags(box)
+ 
+     # Orders are draft metadata and may be incomplete.  Apply saves progress;
+     # only a complete 1..N set materializes the public alignment mapping.
+diff --git a/gradio/annotation/export.py b/gradio/annotation/export.py
+index 8e77cd9..1e14ee6 100644
+--- a/gradio/annotation/export.py
++++ b/gradio/annotation/export.py
+@@ -15,17 +15,12 @@ EXPORT_ARCHIVE_NAME = 'annotations.zip'
+ def save_export_archive(annotations, content, output_dir, source_mismatches=None,
+                         suspicious_details=None):
+     """Persist the Save-all payload as one ZIP and return its path."""
+-    documents = {}
+-    if annotations:
+-        documents['text_annotations.json'] = annotations
+-    if content:
+-        documents['inscription_content.json'] = content
+-    if source_mismatches:
+-        documents['source_mismatches.json'] = source_mismatches
+-    if suspicious_details:
+-        documents['suspicious_details.json'] = suspicious_details
+-    if not documents:
+-        raise ValueError('No image or content records have been saved yet.')
++    documents = {
++        'text_annotations.json': annotations or [],
++        'inscription_content.json': content or [],
++        'source_mismatches.json': source_mismatches or [],
++        'suspicious_details.json': suspicious_details or [],
++    }
+ 
+     output = Path(output_dir)
+     output.mkdir(parents=True, exist_ok=True)
+diff --git a/gradio/annotation/io.py b/gradio/annotation/io.py
+index 33bc26b..0083f37 100644
+--- a/gradio/annotation/io.py
++++ b/gradio/annotation/io.py
+@@ -94,10 +94,12 @@ def validate_document(doc, image, size):
+         if not key.isdecimal() or int(key) < 1 or str(int(key)) != key:
+             raise ValueError('Box IDs must be canonical positive integers.')
+         validate_coordinates(box['bbox'], size)
+-        if box['status'] not in ('intact', 'damaged', 'unknown'):
++        if box['status'] not in ('intact', 'damaged'):
+             raise ValueError('Invalid status.')
+-        if 'unknown' in box and not isinstance(box['unknown'], bool):
+-            raise ValueError('Unknown attribute must be boolean.')
++        from .status import validate_flags
++        validate_flags(box)
++        if doc.get('annotations', {}).get(key) == MISSING_ANNOTATION and any(box[flag] for flag in ('unknown', 'unavailable_font', 'expert_prediction')):
++            raise ValueError('MISS boxes cannot have character flags.')
+     expected_ids = {str(index) for index in range(1, len(doc['bounding_boxes']) + 1)}
+     if set(doc['bounding_boxes']) != expected_ids:
+         raise ValueError('Box IDs must be contiguous from 1 to n.')
+diff --git a/gradio/annotation/status.py b/gradio/annotation/status.py
+index 8e9f53a..1b90ade 100644
+--- a/gradio/annotation/status.py
++++ b/gradio/annotation/status.py
+@@ -3,56 +3,76 @@ from .text_alignment import MISSING_ANNOTATION
+ 
+ 
+ EDITABLE_STATUSES = ('intact', 'damaged')
+-UNKNOWN_STATUS = 'unknown'
++FLAGS = ('unknown', 'unavailable_font', 'expert_prediction')
++
++
++def validate_flags(box):
++    for flag in FLAGS:
++        if flag not in box or not isinstance(box[flag], bool):
++            raise ValueError(f'{flag} must be a boolean.')
++    if box['unknown'] and (box['status'] != 'damaged' or box['unavailable_font'] or box['expert_prediction']):
++        raise ValueError('Unknown requires damaged and cannot coexist with other flags.')
++
++
++def normalize_flags(box, missing=False):
++    if missing:
++        for flag in FLAGS:
++            box[flag] = False
++    elif box['status'] != 'damaged':
++        box['unknown'] = False
++    validate_flags(box)
+ 
+ 
+ def synchronize_missing_statuses(state):
+-    """Keep legacy unknown statuses editable as intact/damaged and ensure unknown flag exists."""
++    """Synchronize all flags and clear character flags on MISS boxes."""
+     for box_id, region_uid in state['region_uid_by_box_id'].items():
+-        current = state['regions'][region_uid]['status']
+-        status = 'intact' if current == UNKNOWN_STATUS else current
+-        is_unknown = bool(state['regions'][region_uid].get('unknown', False)) if status == 'damaged' else False
+-        if state.get('annotations', {}).get(str(box_id)) == MISSING_ANNOTATION:
+-            is_unknown = False
+-        state['regions'][region_uid]['status'] = status
+-        state['regions'][region_uid]['unknown'] = is_unknown
+-        state['bounding_boxes'][box_id]['status'] = status
+-        state['bounding_boxes'][box_id]['unknown'] = is_unknown
++        box = state['regions'][region_uid]
++        normalize_flags(box, state.get('annotations', {}).get(str(box_id)) == MISSING_ANNOTATION)
++        state['bounding_boxes'][box_id].update({key: box[key] for key in ('status', *FLAGS)})
+ 
+ 
+-def update_status(state, region_uid, status, unknown=False):
+-    if region_uid not in state['regions']:
++def update_status(state, region_uid, status, unknown=None, unavailable_font=None, expert_prediction=None, *, default_expert_damage=True):
++    if region_uid not in state['regions'] or status not in EDITABLE_STATUSES:
+         raise ValueError('Invalid region or status.')
++    old = state['regions'][region_uid]
++    unknown = old['unknown'] if unknown is None else unknown
++    unavailable_font = old['unavailable_font'] if unavailable_font is None else unavailable_font
++    expert_prediction = old['expert_prediction'] if expert_prediction is None else expert_prediction
++    for value in (unknown, unavailable_font, expert_prediction):
++        if not isinstance(value, bool):
++            raise ValueError('Flags must be boolean.')
++    if unknown and not old['unknown']:
++        unavailable_font = expert_prediction = False
++    elif (unavailable_font and not old['unavailable_font']) or (expert_prediction and not old['expert_prediction']):
++        unknown = False
++    if default_expert_damage and expert_prediction and not old['expert_prediction']:
++        status = 'damaged'
++    box = dict(old, status=status, unknown=unknown if status == 'damaged' else False,
++               unavailable_font=unavailable_font, expert_prediction=expert_prediction)
+     box_id = state['box_id_by_region'].get(region_uid)
+-    if status not in EDITABLE_STATUSES:
+-        raise ValueError('Every box must be intact or damaged.')
+-    is_unknown = bool(unknown) if status == 'damaged' else False
+-    state['regions'][region_uid]['status'] = status
+-    state['regions'][region_uid]['unknown'] = is_unknown
+-    if box_id and box_id in state.get('bounding_boxes', {}):
+-        state['bounding_boxes'][box_id]['status'] = status
+-        state['bounding_boxes'][box_id]['unknown'] = is_unknown
++    normalize_flags(box, state.get('annotations', {}).get(str(box_id)) == MISSING_ANNOTATION)
++    state['regions'][region_uid] = box
++    if box_id in state['bounding_boxes']:
++        state['bounding_boxes'][box_id].update({key: box[key] for key in ('status', *FLAGS)})
+     state['saved'] = False
+ 
+ 
+-def replace_statuses(state, statuses, unknowns=None):
+-    """Atomically replace the status and unknown flag of every editable region."""
++def replace_statuses(state, statuses, unknowns=None, unavailable_fonts=None, expert_predictions=None):
++    """Validate the complete update before changing any region."""
+     if not isinstance(statuses, dict) or set(statuses) != set(state['regions']):
+         raise ValueError('Statuses must contain every region exactly once.')
+-    if unknowns is not None and not isinstance(unknowns, dict):
+-        raise ValueError('Unknowns must be a mapping of region IDs to boolean flags.')
+-    for region_uid, status in statuses.items():
+-        if status not in EDITABLE_STATUSES:
+-            raise ValueError('Every box must be intact or damaged.')
+-    for region_uid, status in statuses.items():
+-        is_unknown = bool(unknowns.get(region_uid, False)) if (unknowns and status == 'damaged') else False
+-        state['regions'][region_uid]['status'] = status
+-        state['regions'][region_uid]['unknown'] = is_unknown
+-        box_id = state['box_id_by_region'].get(region_uid)
+-        if box_id in state['bounding_boxes']:
+-            state['bounding_boxes'][box_id]['status'] = status
+-            state['bounding_boxes'][box_id]['unknown'] = is_unknown
+-    state['saved'] = False
++    maps = (unknowns, unavailable_fonts, expert_predictions)
++    for values in maps:
++        if values is not None and (not isinstance(values, dict) or
++                any(not isinstance(value, bool) for value in values.values())):
++            raise ValueError('Flags must be mappings of region IDs to booleans.')
++    from copy import deepcopy
++    candidate = deepcopy(state)
++    for uid, status in statuses.items():
++        values = [mapping.get(uid, candidate['regions'][uid][flag]) if mapping is not None
++                  else candidate['regions'][uid][flag] for flag, mapping in zip(FLAGS, maps)]
++        update_status(candidate, uid, status, *values, default_expert_damage=False)
++    state.update(candidate)
+ 
+ 
+ def confirm_status(state):
+@@ -71,4 +91,6 @@ def confirm_status(state):
+             is_unknown = bool(state['regions'][region_uid].get('unknown', False)) if status == 'damaged' else False
+             state['bounding_boxes'][box_id]['status'] = status
+             state['bounding_boxes'][box_id]['unknown'] = is_unknown
++            for flag in FLAGS:
++                state['bounding_boxes'][box_id][flag] = state['regions'][region_uid][flag]
+     state['workflow']['status_valid'] = True
+diff --git a/gradio/annotation/workflow.py b/gradio/annotation/workflow.py
+index adb1bde..9cf6558 100644
+--- a/gradio/annotation/workflow.py
++++ b/gradio/annotation/workflow.py
+@@ -215,7 +215,7 @@ class Workflow:
+             if is_mismatch and source_mismatch_type(doc) == 'other':
+                 hydrate_doc={
+                     'bounding_boxes':{
+-                        key:{'bbox':list(box['bbox']),'status':'intact'}
++                        key:{'bbox':list(box['bbox']),'status':'intact','unknown':False,'unavailable_font':False,'expert_prediction':False}
+                         for key,box in doc['bounding_boxes'].items()},
+                     'annotations':{},
+                     'reading_order':sorted(map(int,doc['bounding_boxes'])),
+@@ -344,7 +344,7 @@ class Workflow:
+                 mismatch_type = (source_mismatch_type(document)
+                                  if s.get('loaded_is_mismatch') else None)
+                 if mismatch_type == 'other':
+-                    s['bounding_boxes']={key:{'bbox':list(box['bbox']),'status':'intact'}
++                    s['bounding_boxes']={key:{'bbox':list(box['bbox']),'status':'intact','unknown':False,'unavailable_font':False,'expert_prediction':False}
+                                              for key,box in document['bounding_boxes'].items()}
+                     s['reading_order']=sorted(map(int,document['bounding_boxes']))
+                     s['annotations']={}
+@@ -447,6 +447,9 @@ class Workflow:
+                     raise ValueError('Detection is disabled (--skip-detection). Draw boxes manually.')
+                 # Detection IDs are discarded; Gradio owns hidden region identity.
+                 doc = detect(s['image_path'], self.options)
++                # Detector output is an intermediate document: initialize annotation flags.
++                for box in doc['bounding_boxes'].values():
++                    box.update(unknown=False, unavailable_font=False, expert_prediction=False)
+                 validate_document(doc, s['image'], s['image_size'])
+                 s['regions'] = {uuid4().hex: deepcopy(box) for box in doc['bounding_boxes'].values()}
+                 s['selected_region_uid'] = next(iter(s['regions']), None)
+@@ -569,11 +572,11 @@ class Workflow:
+             if step not in (4, 5):
+                 raise ValueError('Edit status in the Status & Order step.')
+             box_id = str(payload.get('id') or s['selected_box_id'])
+-            update_status(s, s['region_uid_by_box_id'].get(box_id), payload['status'], payload.get('unknown', False))
++            update_status(s, s['region_uid_by_box_id'].get(box_id), payload['status'], payload.get('unknown'), payload.get('unavailable_font'), payload.get('expert_prediction'))
+         elif action == 'statuses':
+             if step not in (4, 5):
+                 raise ValueError('Edit statuses in the Status & Order step.')
+-            replace_statuses(s, payload.get('statuses'), payload.get('unknowns'))
++            replace_statuses(s, payload.get('statuses'), payload.get('unknowns'), payload.get('unavailable_fonts'), payload.get('expert_predictions'))
+         elif action == 'reorder_text':
+             if step != 4:
+                 raise ValueError('Edit character assignment in Step 4.')
+diff --git a/gradio/app.py b/gradio/app.py
+index b030aaf..182e5a4 100644
+--- a/gradio/app.py
++++ b/gradio/app.py
+@@ -167,6 +167,8 @@ def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=F
+         const boxes = {{}};
+         const statuses = {{}};
+         const unknowns = {{}};
++        const unavailableFonts = {{}};
++        const expertPredictions = {{}};
+         for (const group of groups) {{
+             const id = group.dataset.boxId;
+             const rect = group.querySelector('rect:not([data-image-resize-handle])');
+@@ -178,6 +180,8 @@ def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=F
+                 boxes[id] = bbox;
+                 if (group.dataset.status === 'intact' || group.dataset.status === 'damaged') {{
+                     statuses[id] = group.dataset.status;
++                    unavailableFonts[id] = group.dataset.unavailableFont === 'true';
++                    expertPredictions[id] = group.dataset.expertPrediction === 'true';
+                     unknowns[id] = group.dataset.status === 'damaged' && group.dataset.unknown === 'true';
+                 }}
+             }}
+@@ -185,6 +189,8 @@ def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=F
+         if (!snapshot.boxes && Object.keys(boxes).length) snapshot.boxes = boxes;
+         if (Object.keys(statuses).length) snapshot.statuses = statuses;
+         if (Object.keys(unknowns).length) snapshot.unknowns = unknowns;
++        if (Object.keys(unavailableFonts).length) snapshot.unavailable_fonts = unavailableFonts;
++        if (Object.keys(expertPredictions).length) snapshot.expert_predictions = expertPredictions;
+         args[{selection_index}] = JSON.stringify(snapshot);
+         return args;
+     }}"""
+@@ -431,6 +437,8 @@ def create_app(options):
+                     status_id=gr.Dropdown(visible=False)
+                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
+                     unknown_status=gr.Radio(['False','True'],value='False',label='Unknown character (Damaged only)',interactive=True,elem_id='unknown-radio')
++                    unavailable_font_status=gr.Radio(['False','True'],value='False',label='Unavailable Font',interactive=True,elem_id='unavailable-font-radio')
++                    expert_prediction_status=gr.Radio(['False','True'],value='False',label='expert_prediction',interactive=True,elem_id='expert-prediction-radio')
+                     suspicious_toggle=gr.Checkbox(value=False,label='Suspicious annotation',interactive=False,elem_id='suspicious-toggle')
+                     apply_changes=gr.Button('Apply Changes', variant='primary',
+                                             elem_id='apply-status-changes')
+@@ -577,7 +585,7 @@ def create_app(options):
+                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
+                     gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected_region),*region_box['bbox'],
+                     gr.update(visible=step==4),gr.update(choices=box_ids,value=selected_box),
+-                    gr.update(choices=status_choices,value=('intact' if status_box['status']=='unknown' else status_box['status']),interactive=True),
++                    gr.update(choices=status_choices,value=status_box['status'],interactive=True),
+                     None,json.dumps(s['reading_order']),gr.update(value=final),
+                     gr.update(visible=step==6 and has),json.dumps(s.get('crop')),
+                     gr.update(visible=step==7),
+@@ -587,7 +595,7 @@ def create_app(options):
+                     gr.update(value=issue.get('issue_type')),
+                     gr.update(value=issue.get('note','')),
+                     gr.update(interactive=has and step==3),gr.update(visible=mismatch),
+-                    gr.update(visible=has and step in (3,4)),
++                    gr.update(visible=has and step == 3),
+                     workflow_progress(s),LOADING_HIDDEN,
+                     gr.update(visible=step==1),gr.update(visible=has and step>1),
+                     gr.update(visible=has and step>1),gr.update(visible=has and step>1),
+@@ -1053,7 +1061,10 @@ def create_app(options):
+                         or any(not isinstance(box_id,str) or not isinstance(val,bool)
+                                for box_id,val in unknowns.items())):
+                     raise ValueError
+-                return statuses, unknowns
++                flags = [parsed.get(key, {}) for key in ('unavailable_fonts', 'expert_predictions')]
++                if any(not isinstance(values, dict) or any(not isinstance(k, str) or not isinstance(v, bool) for k, v in values.items()) for values in flags):
++                    raise ValueError
++                return statuses, unknowns, *flags
+             except (ValueError,TypeError,AttributeError):
+                 raise gr.Error('The local status selection is invalid.')
+         def commit_statuses(ctx,selection,status_value='intact'):
+@@ -1065,12 +1076,16 @@ def create_app(options):
+                 uid: bool(box.get('unknown', False))
+                 for uid,box in ctx['active']['regions'].items()
+             }
+-            frontend, frontend_unknowns = frontend_statuses(selection)
++            frontend, frontend_unknowns, frontend_fonts, frontend_experts = frontend_statuses(selection)
++            fonts_map={uid: box['unavailable_font'] for uid,box in ctx['active']['regions'].items()}
++            experts_map={uid: box['expert_prediction'] for uid,box in ctx['active']['regions'].items()}
+             for box_id,status_name in frontend.items():
+                 region_uid=(ctx['active']['region_uid_by_box_id'].get(str(box_id)) or
+                             (str(box_id) if str(box_id) in ctx['active']['regions'] else None))
+                 if region_uid and region_uid in statuses:
+                     statuses[region_uid]=status_name
++                    fonts_map[region_uid]=frontend_fonts.get(box_id, fonts_map[region_uid])
++                    experts_map[region_uid]=frontend_experts.get(box_id, experts_map[region_uid])
+                     if box_id in frontend_unknowns:
+                         unknowns_map[region_uid]=bool(frontend_unknowns[box_id]) if status_name == 'damaged' else False
+             active,_=frontend_selection(selection)
+@@ -1079,7 +1094,7 @@ def create_app(options):
+                             (str(active) if str(active) in ctx['active']['regions'] else None))
+                 if region_uid and region_uid in statuses:
+                     statuses[region_uid]=status_value
+-            updated=engine.apply(ctx['active'],'statuses',{'statuses':statuses, 'unknowns':unknowns_map})
++            updated=engine.apply(ctx['active'],'statuses',{'statuses':statuses, 'unknowns':unknowns_map, 'unavailable_fonts':fonts_map, 'expert_predictions':experts_map})
+             return dict(ctx,active=updated)
+         apply_changes.click(
+             fn=None,inputs=[],outputs=None,show_progress='hidden',
+diff --git a/gradio/tests/test_annotation.py b/gradio/tests/test_annotation.py
+index 0a03640..141ff79 100644
+--- a/gradio/tests/test_annotation.py
++++ b/gradio/tests/test_annotation.py
+@@ -418,7 +418,7 @@ class Integration(unittest.TestCase):
+         from crop.crop import crop_document, image_resize
+         out=self.root/'out';out.mkdir(parents=True)
+         boxes={str(index):{
+-            'bbox':[index*10,0,index*10+9,9],'status':'intact'}
++            'bbox':[index*10,0,index*10+9,9],'status':'intact','unknown':False,'unavailable_font':False,'expert_prediction':False}
+             for index in range(1,4)}
+         atomic_write(out/'12305.json',{
+             'image':'12305.png','bounding_boxes':boxes,
+diff --git a/gradio/tests/test_export.py b/gradio/tests/test_export.py
+index 572259f..92789c8 100644
+--- a/gradio/tests/test_export.py
++++ b/gradio/tests/test_export.py
+@@ -160,7 +160,7 @@ class FolderExport(unittest.TestCase):
+             self.output,mismatches)
+         with zipfile.ZipFile(archive) as bundle:
+             self.assertEqual(set(bundle.namelist()),{
+-                'text_annotations.json','inscription_content.json','source_mismatches.json'})
++                'text_annotations.json','inscription_content.json','source_mismatches.json','suspicious_details.json'})
+ 
+     def test_suspicious_details_are_exported_as_fourth_document(self):
+         e=self.engine;s=e.open_image(self.images[0])
+diff --git a/gradio/ui/assets/editor.css b/gradio/ui/assets/editor.css
+index ec02b0e..2dad078 100644
+--- a/gradio/ui/assets/editor.css
++++ b/gradio/ui/assets/editor.css
+@@ -111,7 +111,9 @@
+ .status-legend span::before { width: 12px; height: 12px; border: 2px solid; border-radius: var(--radius-sm, 4px); content: ''; }
+ .status-legend .intact { color: #22c55e; }
+ .status-legend .damaged { color: #ef4444; }
+-.status-legend .unknown { color: #f59e0b; }
++.status-legend .unknown { color: #ef4444; }
++.status-legend .unavailable-font { color: #ec4899; }
++.status-legend .expert-prediction { color: #facc15; }
+ .status-legend .missing { color: #a1a1aa; }
+ .status-legend .missing::before {
+   border-color: #a1a1aa;
+@@ -463,3 +465,6 @@ button:focus-visible { outline: 2px solid var(--color-accent, #ff7a1a); outline-
+   color: #ef4444;
+   font-size: 11px;
+ }
++
++/* Character text never inherits physical-condition colors. */
++.order-chip .tile-character { color: #ffffff; }
+diff --git a/gradio/ui/assets/editor.js b/gradio/ui/assets/editor.js
+index 57b5b31..138cc53 100644
+--- a/gradio/ui/assets/editor.js
++++ b/gradio/ui/assets/editor.js
+@@ -75,7 +75,7 @@ const updateValidationSummary = () => {
+     });
+     if (hasOrder) {
+       element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
+-        const text = group.querySelector('text');
++        const text = group.querySelector('[data-box-order-label]');
+         if (text) text.textContent = '';
+       });
+       isDirty = true;
+@@ -126,6 +126,8 @@ const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map((
+   const copy = structuredClone(box);
+   copy.bbox = [...box.bbox];
+   copy.unknown = Boolean(box.unknown);
++  copy.unavailable_font = Boolean(box.unavailable_font);
++  copy.expert_prediction = Boolean(box.expert_prediction);
+   copy.order = box.order ?? null;
+   return [String(id), copy];
+ }));
+@@ -156,9 +158,10 @@ const applyImageOnlyMode = (enabled) => {
+ root.addEventListener('canvas-image-only-change', event => {
+   applyImageOnlyMode(event.detail);
+ });
+-const statusColor = (status, unknown = false) => status === 'damaged' ? (unknown ? '#f59e0b' : '#ef4444') : '#22c55e';
++const statusColor = (status, expert = false) => expert ? '#facc15' : status === 'damaged' ? '#ef4444' : '#22c55e';
++const textColor = box => box.unavailable_font ? '#ec4899' : box.expert_prediction ? '#facc15' : '#ffffff';
+ const applyAnnotationColor = () => {
+-  if (![3, 4].includes(props.value.step)) return;
++  if (props.value.step !== 3) return;
+   element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
+     const rect = group.querySelector('rect:not([data-image-resize-handle])');
+     if (rect) {
+@@ -167,7 +170,7 @@ const applyAnnotationColor = () => {
+         rect.setAttribute('stroke', annotationColor);
+       }
+     }
+-    const label = group.querySelector('text');
++    const label = group.querySelector('[data-box-order-label]');
+     if (label) label.setAttribute('fill', annotationColor);
+   });
+ };
+@@ -208,6 +211,8 @@ const syncExternalControls = () => {
+     unknowns: Object.fromEntries(Object.entries(localBoxes).map(
+       ([id, box]) => [id, Boolean(box.status === 'damaged' && box.unknown)]
+     )),
++    unavailable_fonts: Object.fromEntries(Object.entries(localBoxes).map(([id, box]) => [id, box.unavailable_font])),
++    expert_predictions: Object.fromEntries(Object.entries(localBoxes).map(([id, box]) => [id, box.expert_prediction])),
+     boxes: serializeLocalBoxes(),
+     orders: Object.fromEntries(Object.entries(localBoxes).map(
+       ([id, box]) => [id, box.order ?? null]
+@@ -287,6 +292,17 @@ const syncExternalControls = () => {
+       active.unknown = false;
+       renderLocalStatus(activeBoxId, active.status, false);
+     }
++    for (const [flag, selector] of [['unavailable_font', '#unavailable-font-radio'], ['expert_prediction', '#expert-prediction-radio']]) {
++      if (isMissing) active[flag] = false;
++      root.querySelectorAll(`${selector} input`).forEach(input => {
++        const target = active[flag] ? 'True' : 'False';
++        if (input.value === target && !input.checked) {
++          syncingStatusControl = true;
++          try { input.click(); } finally { syncingStatusControl = false; }
++        }
++        input.disabled = isMissing;
++      });
++    }
+     const unknownRadioInputs = root.querySelectorAll('#unknown-radio input');
+     const unknownContainer = root.querySelector('#unknown-radio');
+     const isDamaged = active.status === 'damaged';
+@@ -327,20 +343,42 @@ const renderLocalStatus = (id, status, unknown = null) => {
+     box.unknown = false;
+   }
+   group.dataset.status = status;
++  if (box.unknown) { box.unavailable_font = false; box.expert_prediction = false; }
++  if (group.querySelector('rect')?.dataset.missing === '1') {
++    box.unknown = false; box.unavailable_font = false; box.expert_prediction = false;
++  }
++  group.dataset.unavailableFont = String(box.unavailable_font);
++  group.dataset.expertPrediction = String(box.expert_prediction);
+   group.dataset.unknown = String(Boolean(box.unknown));
+   const revealStatus = props.value.step >= 4;
+-  const color = !revealStatus ? annotationColor : statusColor(status, box.unknown);
++  const color = !revealStatus ? annotationColor : statusColor(status, box.expert_prediction);
+   const rect = group.querySelector('rect:not([data-image-resize-handle])');
+   if (rect) {
+     const missing = rect.dataset.missing === '1';
+     const suspicious = group.classList.contains('suspicious-region');
+-    rect.setAttribute('fill', suspicious ? '#facc15' : missing ? '#e5e7eb' : color);
++    rect.setAttribute('fill', box.unavailable_font && revealStatus ? '#ec4899' : suspicious ? '#facc15' : missing ? '#e5e7eb' : color);
+     rect.setAttribute('stroke', color);
+     rect.removeAttribute('stroke-dasharray');
+-    rect.setAttribute('fill-opacity', suspicious ? '.20' : missing ? '.30' : '.04');
+-  }
+-  const label = group.querySelector('text');
+-  if (label) label.setAttribute('fill', revealStatus ? color : annotationColor);
++    rect.setAttribute('fill-opacity', box.unavailable_font && revealStatus ? '.20' : suspicious ? '.20' : missing ? '.30' : '.04');
++  }
++  const label = group.querySelector('[data-box-order-label]');
++  if (label) label.setAttribute('fill', revealStatus ? textColor(box) : annotationColor);
++  let mark = group.querySelector('[data-unknown-mark]');
++  if (revealStatus && box.unknown) {
++    if (!mark) {
++      mark = document.createElementNS('http://www.w3.org/2000/svg', 'text');
++      mark.dataset.unknownMark = '1';
++      group.appendChild(mark);
++    }
++    const [x1,y1,x2,y2] = box.bbox;
++    const attrs = {x:(x1+x2)/2, y:(y1+y2)/2, 'text-anchor':'middle',
++      'dominant-baseline':'central', fill:'#ef4444', 'font-family':'sans-serif',
++      'font-size':Math.min(x2-x1,y2-y1)*0.65, 'pointer-events':'none'};
++    Object.entries(attrs).forEach(([key,value]) => mark.setAttribute(key,value));
++    mark.textContent = '?';
++  } else mark?.remove();
++  element.querySelectorAll(`[data-order-chip][data-assigned-box-id="${id}"] .tile-character`)
++    .forEach(chip => { chip.style.color = textColor(box); });
+ };
+ const renderSelection = (sync = true) => {
+   const showResizeHandles = selectedIds.size === 1;
+@@ -644,6 +682,20 @@ root.addEventListener('change', event => {
+     syncExternalControls();
+     return;
+   }
++  for (const [flag, selector] of [['unavailable_font', '#unavailable-font-radio'], ['expert_prediction', '#expert-prediction-radio']]) {
++    const flagInput = event.target.closest(`${selector} input`);
++    if (flagInput && props.value.step === 4 && activeBoxId) {
++      const box = localBoxes[activeBoxId];
++      if (!box || groupFor(activeBoxId)?.querySelector('rect')?.dataset.missing === '1') return;
++      const enabled = flagInput.value.toLowerCase() === 'true';
++      if (flag === 'expert_prediction' && enabled && !box[flag]) box.status = 'damaged';
++      box[flag] = enabled;
++      if (enabled) box.unknown = false;
++      renderLocalStatus(activeBoxId, box.status, box.unknown);
++      syncExternalControls();
++      return;
++    }
++  }
+   const unknownInput = event.target.closest('#unknown-radio input');
+   if (unknownInput && props.value.step === 4 && activeBoxId) {
+     const currentBox = localBoxes[activeBoxId];
+@@ -742,7 +794,7 @@ const drawPreview = (group, box) => {
+         if (line) ['x1', 'y1', 'x2', 'y2'].forEach((attr, pos) => line.setAttribute(attr, coords[pos]));
+       });
+   }
+-  const label = group.querySelector('text');
++  const label = group.querySelector('[data-box-order-label]');
+   if (label) {
+     const bw = box[2] - box[0];
+     const bh = box[3] - box[1];
+@@ -892,7 +944,7 @@ element.addEventListener('apply-status-preview', () => {
+         line.setAttribute('vector-effect', 'non-scaling-stroke');
+         mark.appendChild(line);
+       });
+-      group.insertBefore(mark, group.querySelector('text'));
++      group.insertBefore(mark, group.querySelector('[data-box-order-label]'));
+     }
+     renderLocalStatus(id, box.status, box.unknown);
+   });
+@@ -905,17 +957,8 @@ function renderSuspiciousPreview() {
+     const chip = element.querySelector(`[data-order-chip][data-assigned-box-id="${group.dataset.boxId}"]`);
+     const suspicious = Boolean(chip?.classList.contains('suspicious'));
+     group.classList.toggle('suspicious-region', suspicious);
+-    const status = localBoxes[group.dataset.boxId]?.status || 'intact';
+-    const unknown = Boolean(localBoxes[group.dataset.boxId]?.unknown);
+-    const stroke = statusColor(status, unknown);
+-    const rect = group.querySelector('rect:not([data-image-resize-handle])');
+-    if (rect) {
+-      const missing = rect.dataset.missing === '1';
+-      rect.setAttribute('fill', suspicious ? '#facc15' : missing ? '#e5e7eb' : stroke);
+-      rect.setAttribute('fill-opacity', suspicious ? '.20' : missing ? '.30' : '.04');
+-      rect.setAttribute('stroke', stroke);
+-    }
+-    const label = group.querySelector('text'); if (label && props.value.step !== 4) label.setAttribute('fill', stroke);
++    const box = localBoxes[group.dataset.boxId];
++    if (box) renderLocalStatus(group.dataset.boxId, box.status, box.unknown);
+   });
+   applyAnnotationColor();
+ }
+@@ -1234,7 +1277,7 @@ element.addEventListener('pointerup', event => {
+       const bbox = state.result;
+       let newId;
+       do { newId = `box_new_${nextTemporaryBoxId++}`; } while (localBoxes[newId]);
+-      localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, order: null };
++      localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, unavailable_font: false, expert_prediction: false, order: null };
+       mismatchConfirmationInvalidated = true;
+       clearMismatchIssueSelection();
+ 
+@@ -1263,6 +1306,7 @@ element.addEventListener('pointerup', event => {
+       text.setAttribute('x', centerX);
+       text.setAttribute('y', Math.max(fontSize, bbox[1] - 3 * unit));
+       text.setAttribute('text-anchor', 'middle');
++      text.setAttribute('data-box-order-label', '1');
+       text.setAttribute('fill', annotationColor);
+       text.setAttribute('font-size', fontSize);
+       text.setAttribute('stroke', '#17191c');
+diff --git a/gradio/ui/editor.py b/gradio/ui/editor.py
+index 9bf6928..fcbbaa6 100644
+--- a/gradio/ui/editor.py
++++ b/gradio/ui/editor.py
+@@ -131,13 +131,17 @@ def snapshot(s):
+         suspicious = key in suspicious_boxes
+         reveal_status = step >= 4 and not other_mismatch
+         is_unknown = bool(b.get('unknown', False)) and b['status'] == 'damaged'
+-        status_color = ('#f59e0b' if is_unknown else '#ef4444') if b['status'] == 'damaged' else '#22c55e'
++        unavailable_font = bool(b.get('unavailable_font', False))
++        expert_prediction = bool(b.get('expert_prediction', False))
++        status_color = '#facc15' if expert_prediction else '#ef4444' if b['status'] == 'damaged' else '#22c55e'
++        text_color = '#ec4899' if unavailable_font else '#facc15' if expert_prediction else '#ffffff'
+         stroke_color=('#ff7a1a' if step==6 else '#f4f4f5' if not reveal_status
+                       else status_color)
+         missing_annotation = (step in (4, 5, 7) and s.get('annotations', {}).get(str(key)) == MISSING_ANNOTATION)
+-        fill_color = ('#ff7a1a' if step==6 else '#facc15' if suspicious
++        fill_color = ('#ff7a1a' if step==6 else '#ec4899' if reveal_status and unavailable_font else '#facc15' if suspicious
+                       else '#e5e7eb' if missing_annotation else stroke_color)
+         fill_opacity = ('.16' if multi_selected and step in (3,6) else
++                        '.20' if reveal_status and unavailable_font else
+                         '.20' if suspicious else
+                         '.30' if missing_annotation else
+                         '.04')
+@@ -151,16 +155,18 @@ def snapshot(s):
+         identity_attr = (f'data-box-id="{key}" data-region-uid="{key}"'
+                          if step == 3 else f'data-box-id="{key}"')
+         identity_attr += f' data-status="{b["status"]}" data-unknown="{str(is_unknown).lower()}"'
++        identity_attr += f' data-unavailable-font="{str(unavailable_font).lower()}" data-expert-prediction="{str(expert_prediction).lower()}"'
+         group_classes=' '.join(filter(None,(
+             'selected-region' if multi_selected else '',
+             'active-region' if key==selected_id else '',
+             'suspicious-region' if suspicious else '',
+         )))
+         missing_attr = ' data-missing="1"' if missing_annotation else ''
+-        markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}{' · unknown' if is_unknown else ''}{' · suspicious' if suspicious else ''}</title>
++        markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}{' · unknown' if is_unknown else ''}{' · unavailable_font' if unavailable_font else ''}{' · expert_prediction' if expert_prediction else ''}{' · suspicious' if suspicious else ''}</title>
+             <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{fill_color}" fill-opacity="{fill_opacity}" stroke="{stroke_color}" stroke-width="{'3' if suspicious and multi_selected else '2' if suspicious else '2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{missing_attr}{dashed}/>
+             {f'<g data-miss-mark="1" stroke="#ef4444" stroke-width="2.25" stroke-linecap="round" pointer-events="none"><line x1="{miss_x1}" y1="{miss_y1}" x2="{miss_x2}" y2="{miss_y2}" vector-effect="non-scaling-stroke"/><line x1="{miss_x2}" y1="{miss_y1}" x2="{miss_x1}" y2="{miss_y2}" vector-effect="non-scaling-stroke"/></g>' if missing_annotation else ''}
+-            {f'<text data-box-order-label="1" x="{(x1+x2)/2}" y="{max(font_size, y1-3*unit)}" text-anchor="middle" fill="{stroke_color}" font-size="{font_size}" font-family="var(--han-nom-font, &quot;Vietnamica NomNaTong&quot;, &quot;Vietnamica DengXian&quot;, sans-serif)" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{stroke_width}">{label}</text>' if label else ''}'''
++            {f'<text data-unknown-mark="1" x="{(x1+x2)/2}" y="{(y1+y2)/2}" text-anchor="middle" dominant-baseline="central" fill="#ef4444" font-family="sans-serif" font-size="{min(bw,bh)*0.65}" pointer-events="none">?</text>' if reveal_status and is_unknown and not missing_annotation else ''}
++            {f'<text data-box-order-label="1" x="{(x1+x2)/2}" y="{max(font_size, y1-3*unit)}" text-anchor="middle" fill="{text_color if reveal_status else stroke_color}" font-size="{font_size}" font-family="var(--han-nom-font, &quot;Vietnamica NomNaTong&quot;, &quot;Vietnamica DengXian&quot;, sans-serif)" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{stroke_width}">{label}</text>' if label else ''}'''
+         # Handles are pre-rendered for local selection changes; CSS exposes
+         # them only on the browser-local active region.
+         if step in (3, 6):
+@@ -171,7 +177,7 @@ def snapshot(s):
+     if step in (4, 5) or (step == 7 and not other_mismatch):
+         suspicious_legend=('<span class="suspicious">Suspicious content</span>'
+                            if suspicious_boxes else '')
+-        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown</span><span class="missing">MISS content</span>{suspicious_legend}</div>'
++        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown (?)</span><span class="unavailable-font">Unavailable Font</span><span class="expert-prediction">expert_prediction</span><span class="missing">MISS content</span>{suspicious_legend}</div>'
+     if step in (4,7) and not (step==7 and other_mismatch):
+         if step == 4:
+             chips=[]
+@@ -193,10 +199,13 @@ def snapshot(s):
+                 box_id=(spatial_ids[position-1] if position<=len(spatial_ids) else '')
+                 token_id=(token_ids[position-1] if position<=len(token_ids) else str(position))
+                 suspicious=' suspicious' if token_id in suspicious_tokens else ''
++                assigned_box=s.get('bounding_boxes', {}).get(box_id, {})
++                chip_color=('#ec4899' if assigned_box.get('unavailable_font') else
++                            '#facc15' if assigned_box.get('expert_prediction') else '#ffffff')
+                 box_attribute=(f' data-assigned-box-id="{box_id}"' if box_id else '')
+                 chips.append(f'''<button type="button" class="order-chip{missing}{excluded}{suspicious}" data-order-chip="1" data-token-id="{token_id}" data-character="{attribute_char}"{box_attribute}
+                     draggable="false" aria-label="Reading position {position}: {char}" title="{char}">
+-                    <span class="tile-character">{char}</span></button>''')
++                    <span class="tile-character" style="color:{chip_color}">{char}</span></button>''')
+             title='Character Assignment'
+             help_text=('Drag the text cards into the sequence that should be assigned to the spatially sorted boxes.'
+                        if chips else 'This confirmed source mismatch has no character mapping to arrange.')
+diff --git a/gradio/tests/test_status_flags.py b/gradio/tests/test_status_flags.py
+new file mode 100644
+index 0000000..bac43c5
+--- /dev/null
++++ b/gradio/tests/test_status_flags.py
+@@ -0,0 +1,154 @@
++"""New annotation schema, flag transitions, overlays and committed exports."""
++import json
++import sys
++import tempfile
++import unittest
++import zipfile
++from copy import deepcopy
++from pathlib import Path
++from types import SimpleNamespace
++from xml.etree import ElementTree as ET
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++from PIL import Image
++from annotation.bbox import add_bbox, sync_draft_boxes
++from annotation.state import new_state, set_verified_content, initialize_alignment
++from annotation.status import FLAGS, update_status, replace_statuses, confirm_status
++from annotation.io import atomic_write, load_annotation, read_json
++from annotation.export import collect_annotations, collect_source_mismatches, save_export_archive
++from annotation.workflow import Workflow
++from ui.editor import snapshot
++
++
++class StatusFlags(unittest.TestCase):
++    def state(self):
++        s = new_state()
++        s.update(image='1.png', image_size=[100,100], current_step=4, image_url='image.jpg')
++        set_verified_content(s, {}, '永寺')
++        for x in (10,40):
++            add_bbox(s, [x,10,x+20,30])
++        initialize_alignment(s)
++        return s
++
++    def test_defaults_exclusion_and_intact(self):
++        s = self.state(); uid = s['region_uid_by_box_id']['1']
++        self.assertTrue(all(s['regions'][uid][flag] is False for flag in FLAGS))
++        update_status(s,uid,'intact',unavailable_font=True)
++        update_status(s,uid,'intact',expert_prediction=True)
++        self.assertEqual(s['regions'][uid]['status'],'damaged')
++        update_status(s,uid,'intact')
++        self.assertTrue(s['regions'][uid]['expert_prediction'])
++        self.assertTrue(s['regions'][uid]['unavailable_font'])
++        update_status(s,uid,'damaged',unknown=True)
++        self.assertTrue(s['regions'][uid]['unknown'])
++        self.assertFalse(s['regions'][uid]['expert_prediction'])
++        self.assertFalse(s['regions'][uid]['unavailable_font'])
++        update_status(s,uid,'damaged',unavailable_font=True)
++        self.assertFalse(s['regions'][uid]['unknown'])
++        update_status(s,uid,'damaged',unknown=True)
++        update_status(s,uid,'intact')
++        self.assertFalse(s['regions'][uid]['unknown'])
++
++    def test_complete_snapshot_preserves_intact_after_expert_toggle(self):
++        s=self.state();uid=s['region_uid_by_box_id']['1']
++        statuses={u:'intact' for u in s['regions']}
++        experts={u:u==uid for u in s['regions']}
++        replace_statuses(s,statuses,expert_predictions=experts)
++        confirm_status(s)
++        self.assertEqual(s['bounding_boxes']['1']['status'],'intact')
++        self.assertTrue(s['bounding_boxes']['1']['expert_prediction'])
++        before=deepcopy(s)
++        with self.assertRaises(ValueError):
++            replace_statuses(s,statuses,unavailable_fonts={uid:'true'})
++        self.assertEqual(s,before)
++
++    def overlay(self,s,step):
++        s['current_step']=step
++        markup=snapshot(s)['markup']
++        start=markup.index('<svg class="annotation-canvas"');end=markup.index('</svg>',start)+6
++        svg=ET.fromstring(markup[start:end]);ns={'svg':''}
++        return svg.find(".//svg:g[@data-box-id='1']",ns), ns
++
++    def test_python_overlay_colors_and_marks(self):
++        for step in (4,7):
++            for font,expert,unknown,expected in (
++                (False,False,False,('#22c55e','#ffffff')),
++                (True,False,False,('#22c55e','#ec4899')),
++                (False,True,False,('#facc15','#facc15')),
++                (True,True,False,('#facc15','#ec4899')),
++                (False,False,True,('#ef4444','#ffffff'))):
++                s=self.state();uid=s['region_uid_by_box_id']['1']
++                s['regions'][uid].update(status='damaged' if unknown else 'intact',
++                    unknown=unknown,unavailable_font=font,expert_prediction=expert)
++                confirm_status(s)
++                group,ns=self.overlay(s,step)
++                rect=group.find('svg:rect',ns)
++                label=group.find("svg:text[@data-box-order-label='1']",ns)
++                self.assertEqual((rect.get('stroke'),label.get('fill')),expected)
++                mark=group.find("svg:text[@data-unknown-mark='1']",ns)
++                self.assertEqual(mark is not None,unknown)
++                if unknown:self.assertEqual((mark.text,mark.get('fill')),('?','#ef4444'))
++                if font:self.assertEqual((rect.get('fill'),rect.get('fill-opacity')),('#ec4899','.20'))
++
++    def test_miss_clears_all_character_flags(self):
++        s=self.state();uid=s['region_uid_by_box_id']['1']
++        s['annotations']['1']='MISS'
++        update_status(s,uid,'damaged',unavailable_font=True,expert_prediction=True)
++        self.assertTrue(all(not s['regions'][uid][flag] for flag in FLAGS))
++        group,ns=self.overlay(s,4)
++        self.assertIsNotNone(group.find("svg:g[@data-miss-mark='1']",ns))
++        self.assertIsNone(group.find("svg:text[@data-unknown-mark='1']",ns))
++
++    def test_draft_geometry_and_alignment_preserve_flags(self):
++        s=self.state();uid=s['region_uid_by_box_id']['1']
++        update_status(s,uid,'intact',unavailable_font=True,expert_prediction=True)
++        boxes=deepcopy(s['regions'])
++        boxes[uid]['bbox']=[11,11,31,31]
++        for index,u in enumerate(reversed(list(boxes)),1):boxes[u]['order']=index
++        sync_draft_boxes(s,{'boxes':boxes})
++        box_id=s['box_id_by_region'][uid]
++        self.assertTrue(s['bounding_boxes'][box_id]['unavailable_font'])
++        self.assertTrue(s['bounding_boxes'][box_id]['expert_prediction'])
++        self.assertEqual(s['bounding_boxes'][box_id]['bbox'],[11,11,31,31])
++
++    def test_workflow_save_reopen_export_normal_and_missing_extra(self):
++        for text,issue in [('永寺',None),('永','missing_text'),('永寺樂','extra_text')]:
++            with self.subTest(issue=issue), tempfile.TemporaryDirectory() as directory:
++                root=Path(directory);image=root/'1.png';Image.new('RGB',(100,100)).save(image)
++                source=root/'source.json';atomic_write(source,[{'noi_dung':[{'ky_hieu':'1','chuyen_muc':[
++                    {'tieu_de':'Nguyên văn chữ Hán Nôm','van_ban':text}]}]}])
++                engine=Workflow(SimpleNamespace(output_dir=root/'out',source_json=source,
++                    content_titles=('Nguyên văn chữ Hán Nôm',),annotation_title='Nguyên văn chữ Hán Nôm'))
++                s=engine.apply(engine.open_image(image),'save_content');s=engine.apply(s,'next')
++                for x in (10,40):s=engine.apply(s,'add',{'bbox':[x,10,x+20,30]})
++                if issue:s=engine.apply(s,'confirm_source_mismatch',{'issue_type':issue,'note':''})
++                boxes=deepcopy(s['regions'])
++                for index,box in enumerate(boxes.values(),1):box['order']=index
++                s=engine.apply(s,'next',{'boxes':boxes})
++                s=engine.apply(s,'status',{'id':'1','status':'intact','unavailable_font':True,'expert_prediction':True})
++                s=engine.apply(s,'status',{'id':'1','status':'intact'})
++                for _ in range(3):s=engine.apply(s,'next')
++                s=engine.apply(s,'save')
++                reopened=engine.open_image(image)
++                box=reopened['bounding_boxes']['1']
++                self.assertEqual((box['status'],box['unavailable_font'],box['expert_prediction']),('intact',True,True))
++                docs=(collect_source_mismatches([image],root/'out') if issue else collect_annotations([image],root/'out'))
++                self.assertEqual(docs[0]['bounding_boxes']['1'],box)
++                if not issue:
++                    doc=read_json(root/'out/1.json');del doc['bounding_boxes']['1']['unavailable_font']
++                    atomic_write(root/'invalid.json',doc)
++                    with self.assertRaisesRegex(ValueError,'unavailable_font'):
++                        load_annotation(root/'invalid.json','1.png',[100,100])
++
++    def test_archive_all_categories_and_empty_arrays(self):
++        with tempfile.TemporaryDirectory() as directory:
++            for annotations,details in [([],None),([{'image':'1.png'}],{'1':{'note':'test'}})]:
++                archive=save_export_archive(annotations,[],directory,[],details)
++                with zipfile.ZipFile(archive) as bundle:
++                    self.assertEqual(set(bundle.namelist()),{'text_annotations.json','inscription_content.json',
++                        'source_mismatches.json','suspicious_details.json'})
++                    self.assertEqual(json.loads(bundle.read('suspicious_details.json')),details or [])
++                    self.assertEqual(json.loads(bundle.read('text_annotations.json')),annotations)
++                    self.assertEqual(json.loads(bundle.read('source_mismatches.json')),[])
++
++if __name__=='__main__':unittest.main()
+diff --git a/gradio/tests/test_status_flags.js b/gradio/tests/test_status_flags.js
+new file mode 100644
+index 0000000..735ca59
+--- /dev/null
++++ b/gradio/tests/test_status_flags.js
+@@ -0,0 +1,57 @@
++// Execute the production preview and radio handlers against a small SVG DOM fixture.
++const fs = require('node:fs');
++const vm = require('node:vm');
++const assert = require('node:assert/strict');
++const script = fs.readFileSync(require('node:path').join(__dirname, '../ui/assets/editor.js'), 'utf8');
++const extract = (start, end) => script.slice(script.indexOf(start), script.indexOf(end, script.indexOf(start)));
++class Node {
++  constructor() { this.attrs = {}; this.dataset = {}; this.style = {}; this.children = []; this.classList = {contains:()=>false}; }
++  setAttribute(k,v) {this.attrs[k]=String(v);}
++  getAttribute(k) {return this.attrs[k];}
++  removeAttribute(k) {delete this.attrs[k];}
++  appendChild(n) {n.parent=this;this.children.push(n);}
++  remove() {this.parent.children=this.parent.children.filter(n=>n!==this);}
++  querySelector(selector) {
++    if (selector.startsWith('rect')) return this.rect;
++    if (selector === '[data-box-order-label]') return this.label;
++    if (selector === '[data-unknown-mark]') return this.children.find(n=>n.dataset.unknownMark);
++    return null;
++  }
++}
++const group = new Node();group.rect=new Node();group.label=new Node();
++const chip=new Node();const box={bbox:[10,20,40,60],status:'intact',unknown:false,unavailable_font:false,expert_prediction:false};
++const context = {localBoxes:{'1':box},groupFor:()=>group,props:{value:{step:4}},
++  annotationColor:'#22d3ee', element:{querySelectorAll:()=>[chip]}, document:{createElementNS:()=>new Node()},
++  activeBoxId:'1',syncExternalControls:()=>{},assert};
++vm.createContext(context);
++vm.runInContext(extract('const statusColor =', 'const applyAnnotationColor =') +
++  extract('const renderLocalStatus =', 'const renderSelection ='), context);
++const run = code => vm.runInContext(code,context);
++const radioHandlers=script.slice(script.indexOf("  const input = event.target.closest('#status-radio input');"),
++  script.indexOf("\n});",script.indexOf("  const input = event.target.closest('#status-radio input');")));
++run(`function radio(selector,value) { const event={target:{closest:s=>s===selector?{value}:null}}; ${radioHandlers} }`);
++run("renderLocalStatus('1','intact',false)");
++assert.equal(group.rect.attrs.stroke,'#22c55e');assert.equal(group.label.attrs.fill,'#ffffff');
++run("radio('#unavailable-font-radio input','True')");
++assert.equal(group.label.attrs.fill,'#ec4899');assert.equal(group.rect.attrs['fill-opacity'],'.20');
++assert.equal(box.status,'intact');
++run("radio('#expert-prediction-radio input','True')");
++assert.equal(box.status,'damaged');assert.equal(group.rect.attrs.stroke,'#facc15');assert.equal(group.label.attrs.fill,'#ec4899');
++run("radio('#status-radio input','intact')");
++assert.equal(box.status,'intact');assert.equal(group.rect.attrs.stroke,'#facc15');
++run("radio('#unavailable-font-radio input','False')");
++assert.equal(group.label.attrs.fill,'#facc15');assert.equal(chip.style.color,'#facc15');
++run("radio('#status-radio input','damaged'); radio('#unknown-radio input','True')");
++assert.equal(box.expert_prediction,false);assert.equal(box.unavailable_font,false);
++assert.equal(group.rect.attrs.stroke,'#ef4444');assert.equal(group.label.attrs.fill,'#ffffff');
++assert.equal(group.querySelector('[data-unknown-mark]').textContent,'?');
++run("radio('#unavailable-font-radio input','True')");
++assert.equal(box.unknown,false);assert.equal(group.querySelector('[data-unknown-mark]'),undefined);
++run("radio('#expert-prediction-radio input','True'); radio('#expert-prediction-radio input','False')");
++assert.equal(box.status,'damaged');assert.equal(box.unavailable_font,true);
++group.rect.dataset.missing='1';
++run("radio('#expert-prediction-radio input','True'); renderLocalStatus('1','damaged',true)");
++assert.equal(box.expert_prediction,false);assert.equal(box.unavailable_font,false);assert.equal(box.unknown,false);
++// Physical palette changes must be scoped to the geometry editor (step 3).
++assert.match(extract('const applyAnnotationColor =','const readAnnotationColor ='), /props.value.step !== 3/);
++console.log('PASS: production radio handlers and SVG preview, exclusivity, combined flags, intact override, MISS and white text');
+```

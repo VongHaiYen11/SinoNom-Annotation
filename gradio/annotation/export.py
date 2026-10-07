@@ -15,17 +15,12 @@ EXPORT_ARCHIVE_NAME = 'annotations.zip'
 def save_export_archive(annotations, content, output_dir, source_mismatches=None,
                         suspicious_details=None):
     """Persist the Save-all payload as one ZIP and return its path."""
-    documents = {}
-    if annotations:
-        documents['text_annotations.json'] = annotations
-    if content:
-        documents['inscription_content.json'] = content
-    if source_mismatches:
-        documents['source_mismatches.json'] = source_mismatches
-    if suspicious_details:
-        documents['suspicious_details.json'] = suspicious_details
-    if not documents:
-        raise ValueError('No image or content records have been saved yet.')
+    documents = {
+        'text_annotations.json': annotations or [],
+        'inscription_content.json': content or [],
+        'source_mismatches.json': source_mismatches or [],
+        'suspicious_details.json': suspicious_details or [],
+    }
 
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)

@@ -20,7 +20,7 @@ def validate_coordinates(bbox, size):
 def add_bbox(state, bbox):
     coords = validate_coordinates(bbox, state['image_size'])
     uid = uuid4().hex
-    state['regions'][uid] = dict(bbox=coords, status='intact', unknown=False)
+    state['regions'][uid] = dict(bbox=coords, status='intact', unknown=False, unavailable_font=False, expert_prediction=False)
     invalidate(state, clear=True)
     return uid
 
@@ -52,13 +52,15 @@ def update_bboxes(state, boxes, active=None, selected=None):
     for uid, value in boxes.items():
         if not isinstance(uid, str) or not uid:
             raise ValueError('Every bounding box must have a unique string ID.')
-        box = dict(value) if isinstance(value, dict) else {'bbox': value}
+        box = dict(value) if isinstance(value, dict) else dict(state['regions'].get(uid, {}), bbox=value)
         box['bbox'] = validate_coordinates(box.get('bbox'), state['image_size'])
         box.setdefault('status', 'intact')
-        box.setdefault('unknown', False)
-        if box['status'] not in {'intact', 'damaged', 'unknown'}:
+        from .status import normalize_flags
+        for flag in ('unknown', 'unavailable_font', 'expert_prediction'):
+            box.setdefault(flag, False)
+        if box['status'] not in {'intact', 'damaged'}:
             raise ValueError(f'Invalid status for box {uid}.')
-        box['unknown'] = bool(box['unknown']) if box['status'] == 'damaged' else False
+        normalize_flags(box)
         normalized[uid] = box
 
     # Replacement semantics are deliberate: deleted frontend IDs stay deleted.
@@ -89,13 +91,16 @@ def sync_draft_boxes(state, payload, materialize_alignment=True):
             state['source_mismatch']['invalidated'] = True
 
     statuses = payload.get('statuses', {})
-    unknowns = payload.get('unknowns', {})
     for uid, status in statuses.items():
-        if uid in state['regions'] and status in {'intact', 'damaged', 'unknown'}:
+        if uid in state['regions'] and status in {'intact', 'damaged'}:
             state['regions'][uid]['status'] = status
-    for uid, unk in unknowns.items():
-        if uid in state['regions']:
-            state['regions'][uid]['unknown'] = bool(unk)
+    from .status import FLAGS, normalize_flags
+    for flag, field in zip(FLAGS, ('unknowns', 'unavailable_fonts', 'expert_predictions')):
+        for uid, value in payload.get(field, {}).items():
+            if uid in state['regions']:
+                state['regions'][uid][flag] = value
+    for uid, box in state['regions'].items():
+        normalize_flags(box)
 
     # Orders are draft metadata and may be incomplete.  Apply saves progress;
     # only a complete 1..N set materializes the public alignment mapping.

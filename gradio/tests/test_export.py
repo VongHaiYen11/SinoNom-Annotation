@@ -160,7 +160,7 @@ class FolderExport(unittest.TestCase):
             self.output,mismatches)
         with zipfile.ZipFile(archive) as bundle:
             self.assertEqual(set(bundle.namelist()),{
-                'text_annotations.json','inscription_content.json','source_mismatches.json'})
+                'text_annotations.json','inscription_content.json','source_mismatches.json','suspicious_details.json'})
 
     def test_suspicious_details_are_exported_as_fourth_document(self):
         e=self.engine;s=e.open_image(self.images[0])

@@ -131,13 +131,17 @@ def snapshot(s):
         suspicious = key in suspicious_boxes
         reveal_status = step >= 4 and not other_mismatch
         is_unknown = bool(b.get('unknown', False)) and b['status'] == 'damaged'
-        status_color = ('#f59e0b' if is_unknown else '#ef4444') if b['status'] == 'damaged' else '#22c55e'
+        unavailable_font = bool(b.get('unavailable_font', False))
+        expert_prediction = bool(b.get('expert_prediction', False))
+        status_color = '#facc15' if expert_prediction else '#ef4444' if b['status'] == 'damaged' else '#22c55e'
+        text_color = '#ec4899' if unavailable_font else '#facc15' if expert_prediction else '#ffffff'
         stroke_color=('#ff7a1a' if step==6 else '#f4f4f5' if not reveal_status
                       else status_color)
         missing_annotation = (step in (4, 5, 7) and s.get('annotations', {}).get(str(key)) == MISSING_ANNOTATION)
-        fill_color = ('#ff7a1a' if step==6 else '#facc15' if suspicious
+        fill_color = ('#ff7a1a' if step==6 else '#ec4899' if reveal_status and unavailable_font else '#facc15' if suspicious
                       else '#e5e7eb' if missing_annotation else stroke_color)
         fill_opacity = ('.16' if multi_selected and step in (3,6) else
+                        '.20' if reveal_status and unavailable_font else
                         '.20' if suspicious else
                         '.30' if missing_annotation else
                         '.04')
@@ -151,16 +155,18 @@ def snapshot(s):
         identity_attr = (f'data-box-id="{key}" data-region-uid="{key}"'
                          if step == 3 else f'data-box-id="{key}"')
         identity_attr += f' data-status="{b["status"]}" data-unknown="{str(is_unknown).lower()}"'
+        identity_attr += f' data-unavailable-font="{str(unavailable_font).lower()}" data-expert-prediction="{str(expert_prediction).lower()}"'
         group_classes=' '.join(filter(None,(
             'selected-region' if multi_selected else '',
             'active-region' if key==selected_id else '',
             'suspicious-region' if suspicious else '',
         )))
         missing_attr = ' data-missing="1"' if missing_annotation else ''
-        markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}{' · unknown' if is_unknown else ''}{' · suspicious' if suspicious else ''}</title>
+        markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}{' · unknown' if is_unknown else ''}{' · unavailable_font' if unavailable_font else ''}{' · expert_prediction' if expert_prediction else ''}{' · suspicious' if suspicious else ''}</title>
             <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{fill_color}" fill-opacity="{fill_opacity}" stroke="{stroke_color}" stroke-width="{'3' if suspicious and multi_selected else '2' if suspicious else '2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{missing_attr}{dashed}/>
             {f'<g data-miss-mark="1" stroke="#ef4444" stroke-width="2.25" stroke-linecap="round" pointer-events="none"><line x1="{miss_x1}" y1="{miss_y1}" x2="{miss_x2}" y2="{miss_y2}" vector-effect="non-scaling-stroke"/><line x1="{miss_x2}" y1="{miss_y1}" x2="{miss_x1}" y2="{miss_y2}" vector-effect="non-scaling-stroke"/></g>' if missing_annotation else ''}
-            {f'<text data-box-order-label="1" x="{(x1+x2)/2}" y="{max(font_size, y1-3*unit)}" text-anchor="middle" fill="{stroke_color}" font-size="{font_size}" font-family="var(--han-nom-font, &quot;Vietnamica NomNaTong&quot;, &quot;Vietnamica DengXian&quot;, sans-serif)" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{stroke_width}">{label}</text>' if label else ''}'''
+            {f'<text data-unknown-mark="1" x="{(x1+x2)/2}" y="{(y1+y2)/2}" text-anchor="middle" dominant-baseline="central" fill="#ef4444" font-family="sans-serif" font-size="{min(bw,bh)*0.65}" pointer-events="none">?</text>' if reveal_status and is_unknown and not missing_annotation else ''}
+            {f'<text data-box-order-label="1" x="{(x1+x2)/2}" y="{max(font_size, y1-3*unit)}" text-anchor="middle" fill="{text_color if reveal_status else stroke_color}" font-size="{font_size}" font-family="var(--han-nom-font, &quot;Vietnamica NomNaTong&quot;, &quot;Vietnamica DengXian&quot;, sans-serif)" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{stroke_width}">{label}</text>' if label else ''}'''
         # Handles are pre-rendered for local selection changes; CSS exposes
         # them only on the browser-local active region.
         if step in (3, 6):
@@ -171,7 +177,7 @@ def snapshot(s):
     if step in (4, 5) or (step == 7 and not other_mismatch):
         suspicious_legend=('<span class="suspicious">Suspicious content</span>'
                            if suspicious_boxes else '')
-        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown</span><span class="missing">MISS content</span>{suspicious_legend}</div>'
+        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown (?)</span><span class="unavailable-font">Unavailable Font</span><span class="expert-prediction">expert_prediction</span><span class="missing">MISS content</span>{suspicious_legend}</div>'
     if step in (4,7) and not (step==7 and other_mismatch):
         if step == 4:
             chips=[]
@@ -193,10 +199,13 @@ def snapshot(s):
                 box_id=(spatial_ids[position-1] if position<=len(spatial_ids) else '')
                 token_id=(token_ids[position-1] if position<=len(token_ids) else str(position))
                 suspicious=' suspicious' if token_id in suspicious_tokens else ''
+                assigned_box=s.get('bounding_boxes', {}).get(box_id, {})
+                chip_color=('#ec4899' if assigned_box.get('unavailable_font') else
+                            '#facc15' if assigned_box.get('expert_prediction') else '#ffffff')
                 box_attribute=(f' data-assigned-box-id="{box_id}"' if box_id else '')
                 chips.append(f'''<button type="button" class="order-chip{missing}{excluded}{suspicious}" data-order-chip="1" data-token-id="{token_id}" data-character="{attribute_char}"{box_attribute}
                     draggable="false" aria-label="Reading position {position}: {char}" title="{char}">
-                    <span class="tile-character">{char}</span></button>''')
+                    <span class="tile-character" style="color:{chip_color}">{char}</span></button>''')
             title='Character Assignment'
             help_text=('Drag the text cards into the sequence that should be assigned to the spatially sorted boxes.'
                        if chips else 'This confirmed source mismatch has no character mapping to arrange.')

@@ -167,6 +167,8 @@ def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=F
         const boxes = {{}};
         const statuses = {{}};
         const unknowns = {{}};
+        const unavailableFonts = {{}};
+        const expertPredictions = {{}};
         for (const group of groups) {{
             const id = group.dataset.boxId;
             const rect = group.querySelector('rect:not([data-image-resize-handle])');
@@ -178,6 +180,8 @@ def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=F
                 boxes[id] = bbox;
                 if (group.dataset.status === 'intact' || group.dataset.status === 'damaged') {{
                     statuses[id] = group.dataset.status;
+                    unavailableFonts[id] = group.dataset.unavailableFont === 'true';
+                    expertPredictions[id] = group.dataset.expertPrediction === 'true';
                     unknowns[id] = group.dataset.status === 'damaged' && group.dataset.unknown === 'true';
                 }}
             }}
@@ -185,6 +189,8 @@ def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=F
         if (!snapshot.boxes && Object.keys(boxes).length) snapshot.boxes = boxes;
         if (Object.keys(statuses).length) snapshot.statuses = statuses;
         if (Object.keys(unknowns).length) snapshot.unknowns = unknowns;
+        if (Object.keys(unavailableFonts).length) snapshot.unavailable_fonts = unavailableFonts;
+        if (Object.keys(expertPredictions).length) snapshot.expert_predictions = expertPredictions;
         args[{selection_index}] = JSON.stringify(snapshot);
         return args;
     }}"""
@@ -431,6 +437,8 @@ def create_app(options):
                     status_id=gr.Dropdown(visible=False)
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
                     unknown_status=gr.Radio(['False','True'],value='False',label='Unknown character (Damaged only)',interactive=True,elem_id='unknown-radio')
+                    unavailable_font_status=gr.Radio(['False','True'],value='False',label='Unavailable Font',interactive=True,elem_id='unavailable-font-radio')
+                    expert_prediction_status=gr.Radio(['False','True'],value='False',label='expert_prediction',interactive=True,elem_id='expert-prediction-radio')
                     suspicious_toggle=gr.Checkbox(value=False,label='Suspicious annotation',interactive=False,elem_id='suspicious-toggle')
                     apply_changes=gr.Button('Apply Changes', variant='primary',
                                             elem_id='apply-status-changes')
@@ -577,7 +585,7 @@ def create_app(options):
                     gr.update(visible=step==2 and has),gr.update(choices=choices,value=chosen),val,draft_preview,None,gr.update(value=snapshot(s),visible=step!=2),
                     gr.update(visible=step==3 and has),gr.update(choices=region_ids,value=selected_region),*region_box['bbox'],
                     gr.update(visible=step==4),gr.update(choices=box_ids,value=selected_box),
-                    gr.update(choices=status_choices,value=('intact' if status_box['status']=='unknown' else status_box['status']),interactive=True),
+                    gr.update(choices=status_choices,value=status_box['status'],interactive=True),
                     None,json.dumps(s['reading_order']),gr.update(value=final),
                     gr.update(visible=step==6 and has),json.dumps(s.get('crop')),
                     gr.update(visible=step==7),
@@ -587,7 +595,7 @@ def create_app(options):
                     gr.update(value=issue.get('issue_type')),
                     gr.update(value=issue.get('note','')),
                     gr.update(interactive=has and step==3),gr.update(visible=mismatch),
-                    gr.update(visible=has and step in (3,4)),
+                    gr.update(visible=has and step == 3),
                     workflow_progress(s),LOADING_HIDDEN,
                     gr.update(visible=step==1),gr.update(visible=has and step>1),
                     gr.update(visible=has and step>1),gr.update(visible=has and step>1),
@@ -1053,7 +1061,10 @@ def create_app(options):
                         or any(not isinstance(box_id,str) or not isinstance(val,bool)
                                for box_id,val in unknowns.items())):
                     raise ValueError
-                return statuses, unknowns
+                flags = [parsed.get(key, {}) for key in ('unavailable_fonts', 'expert_predictions')]
+                if any(not isinstance(values, dict) or any(not isinstance(k, str) or not isinstance(v, bool) for k, v in values.items()) for values in flags):
+                    raise ValueError
+                return statuses, unknowns, *flags
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local status selection is invalid.')
         def commit_statuses(ctx,selection,status_value='intact'):
@@ -1065,12 +1076,16 @@ def create_app(options):
                 uid: bool(box.get('unknown', False))
                 for uid,box in ctx['active']['regions'].items()
             }
-            frontend, frontend_unknowns = frontend_statuses(selection)
+            frontend, frontend_unknowns, frontend_fonts, frontend_experts = frontend_statuses(selection)
+            fonts_map={uid: box['unavailable_font'] for uid,box in ctx['active']['regions'].items()}
+            experts_map={uid: box['expert_prediction'] for uid,box in ctx['active']['regions'].items()}
             for box_id,status_name in frontend.items():
                 region_uid=(ctx['active']['region_uid_by_box_id'].get(str(box_id)) or
                             (str(box_id) if str(box_id) in ctx['active']['regions'] else None))
                 if region_uid and region_uid in statuses:
                     statuses[region_uid]=status_name
+                    fonts_map[region_uid]=frontend_fonts.get(box_id, fonts_map[region_uid])
+                    experts_map[region_uid]=frontend_experts.get(box_id, experts_map[region_uid])
                     if box_id in frontend_unknowns:
                         unknowns_map[region_uid]=bool(frontend_unknowns[box_id]) if status_name == 'damaged' else False
             active,_=frontend_selection(selection)
@@ -1079,7 +1094,7 @@ def create_app(options):
                             (str(active) if str(active) in ctx['active']['regions'] else None))
                 if region_uid and region_uid in statuses:
                     statuses[region_uid]=status_value
-            updated=engine.apply(ctx['active'],'statuses',{'statuses':statuses, 'unknowns':unknowns_map})
+            updated=engine.apply(ctx['active'],'statuses',{'statuses':statuses, 'unknowns':unknowns_map, 'unavailable_fonts':fonts_map, 'expert_predictions':experts_map})
             return dict(ctx,active=updated)
         apply_changes.click(
             fn=None,inputs=[],outputs=None,show_progress='hidden',
