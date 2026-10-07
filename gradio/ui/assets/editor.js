@@ -160,6 +160,9 @@ root.addEventListener('canvas-image-only-change', event => {
 });
 const statusColor = (status, expert = false) => expert ? '#facc15' : status === 'damaged' ? '#ef4444' : '#22c55e';
 const textColor = box => box.unavailable_font ? '#ec4899' : box.expert_prediction ? '#facc15' : '#ffffff';
+// Status rendering and selection share opacity so hydration cannot erase Font fill.
+const statusFillOpacity = (box, missing, suspicious) =>
+  box?.unavailable_font ? '.20' : suspicious ? '.20' : missing ? '.30' : '.04';
 const applyAnnotationColor = () => {
   if (props.value.step !== 3) return;
   element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
@@ -359,7 +362,7 @@ const renderLocalStatus = (id, status, unknown = null) => {
     rect.setAttribute('fill', box.unavailable_font && revealStatus ? '#ec4899' : suspicious ? '#facc15' : missing ? '#e5e7eb' : color);
     rect.setAttribute('stroke', color);
     rect.removeAttribute('stroke-dasharray');
-    rect.setAttribute('fill-opacity', box.unavailable_font && revealStatus ? '.20' : suspicious ? '.20' : missing ? '.30' : '.04');
+    rect.setAttribute('fill-opacity', statusFillOpacity(revealStatus ? box : null, missing, suspicious));
   }
   const label = group.querySelector('[data-box-order-label]');
   if (label) label.setAttribute('fill', revealStatus ? textColor(box) : annotationColor);
@@ -370,10 +373,14 @@ const renderLocalStatus = (id, status, unknown = null) => {
       mark.dataset.unknownMark = '1';
       group.appendChild(mark);
     }
-    const [x1,y1,x2,y2] = box.bbox;
+    // SVG geometry already includes Review crop/resize transforms.
+    const x1 = rect ? Number(rect.getAttribute('x')) : box.bbox[0];
+    const y1 = rect ? Number(rect.getAttribute('y')) : box.bbox[1];
+    const x2 = rect ? x1 + Number(rect.getAttribute('width')) : box.bbox[2];
+    const y2 = rect ? y1 + Number(rect.getAttribute('height')) : box.bbox[3];
     const attrs = {x:(x1+x2)/2, y:(y1+y2)/2, 'text-anchor':'middle',
       'dominant-baseline':'central', fill:'#ef4444', 'font-family':'sans-serif',
-      'font-size':Math.min(x2-x1,y2-y1)*0.65, 'pointer-events':'none'};
+      'font-size':Math.min(x2-x1,y2-y1)*0.80, 'font-weight':'700', 'pointer-events':'none'};
     Object.entries(attrs).forEach(([key,value]) => mark.setAttribute(key,value));
     mark.textContent = '?';
   } else mark?.remove();
@@ -393,7 +400,7 @@ const renderSelection = (sync = true) => {
       const suspicious = group.classList.contains('suspicious-region');
       const missing = rect.dataset.missing === '1';
       rect.setAttribute('fill-opacity', props.value.step >= 4
-        ? suspicious ? '.20' : missing ? '.30' : '.04'
+        ? statusFillOpacity(localBoxes[id], missing, suspicious)
         : selected ? '.16' : '.04');
       rect.setAttribute('stroke-width', suspicious && active ? '3' : suspicious ? '2' : active ? '2.5' : selected ? '2' : '1.5');
     }
@@ -425,7 +432,7 @@ const updateCanvasLabels = () => {
       const bw = Math.max(1, box[2] - box[0]);
       const bh = Math.max(1, box[3] - box[1]);
       const unit = Math.max(props.value.width, props.value.height) / 900;
-      const fontSize = Math.max(10 * unit, Math.min(bw, bh) * (props.value.step === 4 ? 0.25 : 0.30));
+      const fontSize = Math.max(10 * unit, Math.min(bw, bh) * 0.30);
       const strokeWidth = Math.max(0.5, fontSize * 0.1);
       const centerX = (box[0] + box[2]) / 2;
       text.setAttribute('x', centerX);
@@ -433,7 +440,7 @@ const updateCanvasLabels = () => {
       text.setAttribute('text-anchor', 'middle');
       text.setAttribute('font-size', fontSize);
       text.setAttribute('stroke-width', strokeWidth);
-      text.setAttribute('fill', annotationColor || '#ffffff');
+      text.setAttribute('fill', props.value.step >= 4 ? textColor(b) : annotationColor || '#ffffff');
       const publicBox = props.value.step !== 6;
       const assignedCharacter = props.value.step === 4 ? characterByBoxId.get(String(id)) : null;
       const labelText = publicBox ? (hasOrder

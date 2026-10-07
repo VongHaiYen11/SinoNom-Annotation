@@ -87,8 +87,34 @@ class StatusFlags(unittest.TestCase):
                 self.assertEqual((rect.get('stroke'),label.get('fill')),expected)
                 mark=group.find("svg:text[@data-unknown-mark='1']",ns)
                 self.assertEqual(mark is not None,unknown)
-                if unknown:self.assertEqual((mark.text,mark.get('fill')),('?','#ef4444'))
+                if unknown:
+                    self.assertEqual((mark.text,mark.get('fill')),('?','#ef4444'))
+                    self.assertEqual(mark.get('font-weight'),'700')
+                    self.assertEqual(float(mark.get('font-size')),float(rect.get('width'))*0.80)
                 if font:self.assertEqual((rect.get('fill'),rect.get('fill-opacity')),('#ec4899','.20'))
+
+    def test_review_crop_resize_preserves_visuals_and_scales_question_mark(self):
+        s=self.state();uid=s['region_uid_by_box_id']['1']
+        # A reopened crop may have non-uniform image scale factors.
+        s.update(crop=[5,5,95,95], loaded_crop_source=[5,5,95,95],
+                 loaded_crop_scaled=[2,1,48,24], resized_image_size=[50,25])
+        for font,expert,unknown in ((True,False,False),(True,True,False),(False,False,True)):
+            s['regions'][uid].update(status='damaged',unknown=unknown,
+                unavailable_font=font,expert_prediction=expert)
+            confirm_status(s)
+            group,ns=self.overlay(s,7)
+            rect=group.find('svg:rect',ns)
+            self.assertEqual(float(rect.get('width')),10)
+            self.assertEqual(float(rect.get('height')),5)
+            if font:
+                self.assertEqual((rect.get('fill'),rect.get('fill-opacity')),('#ec4899','.20'))
+            if expert:self.assertEqual(rect.get('stroke'),'#facc15')
+            mark=group.find("svg:text[@data-unknown-mark='1']",ns)
+            if unknown:
+                self.assertEqual(float(mark.get('font-size')),4)
+                self.assertEqual(float(mark.get('x')),float(rect.get('x'))+5)
+                self.assertEqual(float(mark.get('y')),float(rect.get('y'))+2.5)
+                self.assertEqual(mark.get('font-weight'),'700')
 
     def test_miss_clears_all_character_flags(self):
         s=self.state();uid=s['region_uid_by_box_id']['1']

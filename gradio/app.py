@@ -438,7 +438,7 @@ def create_app(options):
                     status=gr.Radio(['intact','damaged'],value='intact',label='Selected box status',elem_id='status-radio')
                     unknown_status=gr.Radio(['False','True'],value='False',label='Unknown character (Damaged only)',interactive=True,elem_id='unknown-radio')
                     unavailable_font_status=gr.Radio(['False','True'],value='False',label='Unavailable Font',interactive=True,elem_id='unavailable-font-radio')
-                    expert_prediction_status=gr.Radio(['False','True'],value='False',label='expert_prediction',interactive=True,elem_id='expert-prediction-radio')
+                    expert_prediction_status=gr.Radio(['False','True'],value='False',label='Expert Prediction',interactive=True,elem_id='expert-prediction-radio')
                     suspicious_toggle=gr.Checkbox(value=False,label='Suspicious annotation',interactive=False,elem_id='suspicious-toggle')
                     apply_changes=gr.Button('Apply Changes', variant='primary',
                                             elem_id='apply-status-changes')

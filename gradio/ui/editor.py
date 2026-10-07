@@ -162,10 +162,10 @@ def snapshot(s):
             'suspicious-region' if suspicious else '',
         )))
         missing_attr = ' data-missing="1"' if missing_annotation else ''
-        markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}{' · unknown' if is_unknown else ''}{' · unavailable_font' if unavailable_font else ''}{' · expert_prediction' if expert_prediction else ''}{' · suspicious' if suspicious else ''}</title>
+        markup+=f'''<g {identity_attr} class="{group_classes}"><title>{'Region' if not public_box else label} · {b['status']}{' · unknown' if is_unknown else ''}{' · unavailable_font' if unavailable_font else ''}{' · Expert Prediction' if expert_prediction else ''}{' · suspicious' if suspicious else ''}</title>
             <rect x="{x1}" y="{y1}" width="{x2-x1}" height="{y2-y1}" fill="{fill_color}" fill-opacity="{fill_opacity}" stroke="{stroke_color}" stroke-width="{'3' if suspicious and multi_selected else '2' if suspicious else '2.5' if multi_selected else '1.5'}" vector-effect="non-scaling-stroke"{missing_attr}{dashed}/>
             {f'<g data-miss-mark="1" stroke="#ef4444" stroke-width="2.25" stroke-linecap="round" pointer-events="none"><line x1="{miss_x1}" y1="{miss_y1}" x2="{miss_x2}" y2="{miss_y2}" vector-effect="non-scaling-stroke"/><line x1="{miss_x2}" y1="{miss_y1}" x2="{miss_x1}" y2="{miss_y2}" vector-effect="non-scaling-stroke"/></g>' if missing_annotation else ''}
-            {f'<text data-unknown-mark="1" x="{(x1+x2)/2}" y="{(y1+y2)/2}" text-anchor="middle" dominant-baseline="central" fill="#ef4444" font-family="sans-serif" font-size="{min(bw,bh)*0.65}" pointer-events="none">?</text>' if reveal_status and is_unknown and not missing_annotation else ''}
+            {f'<text data-unknown-mark="1" x="{(x1+x2)/2}" y="{(y1+y2)/2}" text-anchor="middle" dominant-baseline="central" fill="#ef4444" font-family="sans-serif" font-size="{min(bw,bh)*0.80}" font-weight="700" pointer-events="none">?</text>' if reveal_status and is_unknown and not missing_annotation else ''}
             {f'<text data-box-order-label="1" x="{(x1+x2)/2}" y="{max(font_size, y1-3*unit)}" text-anchor="middle" fill="{text_color if reveal_status else stroke_color}" font-size="{font_size}" font-family="var(--han-nom-font, &quot;Vietnamica NomNaTong&quot;, &quot;Vietnamica DengXian&quot;, sans-serif)" pointer-events="none" paint-order="stroke" stroke="#17191c" stroke-width="{stroke_width}">{label}</text>' if label else ''}'''
         # Handles are pre-rendered for local selection changes; CSS exposes
         # them only on the browser-local active region.
@@ -177,7 +177,7 @@ def snapshot(s):
     if step in (4, 5) or (step == 7 and not other_mismatch):
         suspicious_legend=('<span class="suspicious">Suspicious content</span>'
                            if suspicious_boxes else '')
-        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown (?)</span><span class="unavailable-font">Unavailable Font</span><span class="expert-prediction">expert_prediction</span><span class="missing">MISS content</span>{suspicious_legend}</div>'
+        markup+=f'<div class="status-legend"><span class="intact">Intact</span><span class="damaged">Damaged</span><span class="unknown">Unknown (?)</span><span class="unavailable-font">Unavailable Font</span><span class="expert-prediction">Expert Prediction</span><span class="missing">MISS content</span>{suspicious_legend}</div>'
     if step in (4,7) and not (step==7 and other_mismatch):
         if step == 4:
             chips=[]
