@@ -64,6 +64,10 @@ def update_bboxes(state, boxes, active=None, selected=None):
         normalized[uid] = box
 
     # Replacement semantics are deliberate: deleted frontend IDs stay deleted.
+    keep_alignment_mapping = (
+        set(normalized) == set(state['regions'])
+        and bool(state.get('annotations'))
+    )
     state['regions'] = normalized
 
     selected = list(dict.fromkeys(selected or []))
@@ -71,7 +75,7 @@ def update_bboxes(state, boxes, active=None, selected=None):
     state['selected_region_uids'] = selected
     state['selected_region_uid'] = active if active in state['regions'] else (selected[-1] if selected else next(iter(state['regions']), None))
 
-    invalidate(state, clear=True)
+    invalidate(state, clear=not keep_alignment_mapping)
 
 
 def sync_draft_boxes(state, payload, materialize_alignment=True):

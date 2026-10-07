@@ -613,7 +613,7 @@ class Workflow:
                     and set((s.get('saved_alignment_document') or s.get('loaded_document'))['annotations'])
                         == set(s['bounding_boxes'])
                 )
-                if has_saved_alignment:
+                if has_saved_alignment and not s['workflow']['alignment_valid']:
                     document = s.get('saved_alignment_document') or s['loaded_document']
                     mismatch_type = (source_mismatch_type(document)
                                      if 'inscription_code' in document else None)

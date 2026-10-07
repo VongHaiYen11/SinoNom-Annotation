@@ -188,6 +188,94 @@ class StatusFlags(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError,'unavailable_font'):
                         load_annotation(root/'invalid.json','1.png',[100,100])
 
+    def test_reopened_missing_alignment_survives_frontend_box_commit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);image=root/'1.png';Image.new('RGB',(100,100)).save(image)
+            source=root/'source.json';atomic_write(source,[{'noi_dung':[{'ky_hieu':'1','chuyen_muc':[
+                {'tieu_de':'Nguyên văn chữ Hán Nôm','van_ban':'永寺'}]}]}])
+            engine=Workflow(SimpleNamespace(output_dir=root/'out',source_json=source,
+                content_titles=('Nguyên văn chữ Hán Nôm',),annotation_title='Nguyên văn chữ Hán Nôm'))
+            s=engine.apply(engine.open_image(image),'next')
+            for x in (0,15,30,45,60):s=engine.apply(s,'add',{'bbox':[x,10,x+10,30]})
+            s=engine.apply(s,'confirm_source_mismatch',{'issue_type':'missing_text','note':''})
+            boxes=deepcopy(s['regions'])
+            for index,box in enumerate(boxes.values(),1):box['order']=index
+            s=engine.apply(s,'next',{'boxes':boxes})
+            expected=['MISS','寺','MISS','永','MISS']
+            s=engine.apply(s,'reorder_text',{'sequence':expected})
+            for _ in range(3):s=engine.apply(s,'next')
+            s=engine.apply(s,'save')
+            reopened=engine.open_image(image)
+            self.assertEqual(reopened['text_sequence'],expected)
+            reopened=engine.apply(reopened,'next')
+            self.assertEqual(reopened['text_sequence'],expected)
+            boxes=deepcopy(reopened['regions'])
+            for box_id,uid in reopened['region_uid_by_box_id'].items():boxes[uid]['order']=int(box_id)
+            reopened=engine.apply(reopened,'next',{'boxes':boxes})
+            self.assertEqual(reopened['text_sequence'],expected)
+            self.assertEqual([reopened['annotations'][str(i)] for i in range(1,6)],expected)
+            markup=snapshot(reopened)['markup']
+            import re,html
+            chips=re.findall(r'data-character="([^"]*)"',markup)
+            self.assertEqual([html.unescape(value) for value in chips],expected)
+            # Back/Next with a geometry edit must also keep the slot assignment.
+            reopened=engine.apply(reopened,'back')
+            boxes=deepcopy(reopened['regions'])
+            for uid,box in boxes.items():box['bbox'][1]+=1;box['bbox'][3]+=1
+            reopened=engine.apply(reopened,'next',{'boxes':boxes})
+            self.assertEqual(reopened['text_sequence'],expected)
+            for _ in range(3):reopened=engine.apply(reopened,'next')
+            reopened=engine.apply(reopened,'save')
+            self.assertEqual(engine.open_image(image)['text_sequence'],expected)
+            # Reversing spatial slot order renumbers boxes but retains MISS by region.
+            reopened=engine.apply(engine.open_image(image),'next')
+            boxes=deepcopy(reopened['regions'])
+            for box_id,uid in reopened['region_uid_by_box_id'].items():boxes[uid]['order']=6-int(box_id)
+            reopened=engine.apply(reopened,'next',{'boxes':boxes})
+            self.assertEqual(reopened['text_sequence'],list(reversed(expected)))
+
+    def test_reopened_normal_extra_alignment_keeps_assignment_and_metadata(self):
+        for source_text,expected,issue,n in (
+                ('永寺',['寺','永'],None,2),
+                ('永寺永',['寺','永','永'],None,3),
+                ('永寺樂',['樂','永','寺'],'extra_text',2)):
+            with self.subTest(issue=issue,source=source_text), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);image=root/'1.png';Image.new('RGB',(100,100)).save(image)
+                source=root/'source.json';atomic_write(source,[{'noi_dung':[{'ky_hieu':'1','chuyen_muc':[
+                    {'tieu_de':'Nguyên văn chữ Hán Nôm','van_ban':source_text}]}]}])
+                engine=Workflow(SimpleNamespace(output_dir=root/'out',source_json=source,
+                    content_titles=('Nguyên văn chữ Hán Nôm',),annotation_title='Nguyên văn chữ Hán Nôm'))
+                s=engine.apply(engine.open_image(image),'next')
+                for x in range(n):s=engine.apply(s,'add',{'bbox':[x*20,10,x*20+10,30]})
+                if issue:s=engine.apply(s,'confirm_source_mismatch',{'issue_type':issue,'note':''})
+                boxes=deepcopy(s['regions'])
+                for index,box in enumerate(boxes.values(),1):box['order']=index
+                s=engine.apply(s,'next',{'boxes':boxes})
+                s=engine.apply(s,'reorder_text',{'sequence':expected})
+                s=engine.apply(s,'status',{'id':'1','status':'intact','unavailable_font':True})
+                s=engine.apply(s,'suspicious',{'token_id':s['text_token_ids'][0],'value':True})
+                for _ in range(3):s=engine.apply(s,'next')
+                s=engine.apply(s,'save')
+                s=engine.apply(engine.open_image(image),'next')
+                for reverse in (False,True):
+                    boxes=deepcopy(s['regions'])
+                    for box_id,uid in s['region_uid_by_box_id'].items():
+                        boxes[uid]['order']=n+1-int(box_id) if reverse else int(box_id)
+                        boxes[uid]['bbox'][1]+=1;boxes[uid]['bbox'][3]+=1
+                    s=engine.apply(s,'next',{'boxes':boxes})
+                    wanted=list(reversed(expected[:n]))+expected[n:] if reverse else expected
+                    self.assertEqual(s['text_sequence'],wanted)
+                    self.assertEqual([s['annotations'][str(i)] for i in range(1,n+1)],wanted[:n])
+                    if issue:self.assertEqual(s['source_mismatch']['excluded_characters'],expected[n:])
+                    marked_box=str(n if reverse else 1)
+                    self.assertTrue(s['bounding_boxes'][marked_box]['unavailable_font'])
+                    from annotation.reading_order import suspicious_box_ids
+                    self.assertEqual(list(map(str,suspicious_box_ids(s))),[marked_box])
+                    if not reverse:s=engine.apply(s,'back')
+                for _ in range(3):s=engine.apply(s,'next')
+                s=engine.apply(s,'save')
+                self.assertEqual(engine.open_image(image)['text_sequence'],wanted)
+
     def test_archive_all_categories_and_empty_arrays(self):
         with tempfile.TemporaryDirectory() as directory:
             for annotations,details in [([],None),([{'image':'1.png'}],{'1':{'note':'test'}})]:
