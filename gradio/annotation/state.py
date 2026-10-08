@@ -156,8 +156,10 @@ def initialize_alignment(state, ordered_uids=None):
                      if source_mismatch_confirmed(state) else None)
     excluded = (list(state['source_mismatch'].get('excluded_characters', []))
                 if mismatch_type == 'extra_text' else [])
+    previous_order = [uid for uid, box_id in sorted(previous_mapping.items(), key=lambda item: int(item[1]))]
     preserve_alignment = (
-        set(preserved) == set(ordered_uids)
+        ordered_uids == previous_order
+        and set(preserved) == set(ordered_uids)
         and Counter([value for value in preserved.values() if value != MISSING_ANNOTATION] + excluded)
             == Counter(characters(state['annotation_text']))
     )

@@ -123,6 +123,16 @@
 .status-legend .intact { color: #22c55e; }
 .status-legend .damaged { color: #ef4444; }
 .status-legend .unknown { color: #ef4444; }
+.status-legend .unknown::before {
+  content: '?';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
 .status-legend .unavailable-font { color: #ec4899; }
 .status-legend .expert-prediction { color: #facc15; }
 .status-legend .missing { color: #a1a1aa; }

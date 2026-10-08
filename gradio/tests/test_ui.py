@@ -60,11 +60,14 @@ class GradioCallbacks(unittest.TestCase):
                 ctx=back_action(ctx)[0]
                 self.assertEqual(ctx['active']['current_step'],1)
 
-    def test_fonts_exclude_pmingliu(self):
+    def test_fonts_preload_pmingliu(self):
         from ui.fonts import FONT_CSS, FONT_FILES, DEFAULT_FONT_STACK
-        self.assertNotIn('PMingLiU',FONT_FILES)
-        self.assertNotIn('PMingLiU',FONT_CSS)
-        self.assertNotIn('PMingLiU',DEFAULT_FONT_STACK)
+        from app import FONT_PRELOAD_JS
+        for family in ('PMingLiU', 'PMingLiU-ExtB'):
+            self.assertTrue(FONT_FILES[family].is_file())
+            self.assertIn(f'font-family: "{family}"', FONT_CSS)
+            self.assertIn(f'"{family}"', DEFAULT_FONT_STACK)
+            self.assertIn(family, FONT_PRELOAD_JS)
 
     def test_repeated_sort_results_have_distinct_update_tokens(self):
         with tempfile.TemporaryDirectory() as folder:

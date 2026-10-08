@@ -227,12 +227,12 @@ class StatusFlags(unittest.TestCase):
             for _ in range(3):reopened=engine.apply(reopened,'next')
             reopened=engine.apply(reopened,'save')
             self.assertEqual(engine.open_image(image)['text_sequence'],expected)
-            # Reversing spatial slot order renumbers boxes but retains MISS by region.
+            # Changing box order resets character alignment from source text.
             reopened=engine.apply(engine.open_image(image),'next')
             boxes=deepcopy(reopened['regions'])
             for box_id,uid in reopened['region_uid_by_box_id'].items():boxes[uid]['order']=6-int(box_id)
             reopened=engine.apply(reopened,'next',{'boxes':boxes})
-            self.assertEqual(reopened['text_sequence'],list(reversed(expected)))
+            self.assertEqual(reopened['text_sequence'],['永','寺','MISS','MISS','MISS'])
 
     def test_reopened_normal_extra_alignment_keeps_assignment_and_metadata(self):
         for source_text,expected,issue,n in (
@@ -263,14 +263,14 @@ class StatusFlags(unittest.TestCase):
                         boxes[uid]['order']=n+1-int(box_id) if reverse else int(box_id)
                         boxes[uid]['bbox'][1]+=1;boxes[uid]['bbox'][3]+=1
                     s=engine.apply(s,'next',{'boxes':boxes})
-                    wanted=list(reversed(expected[:n]))+expected[n:] if reverse else expected
+                    wanted=list(source_text) if reverse else expected
                     self.assertEqual(s['text_sequence'],wanted)
                     self.assertEqual([s['annotations'][str(i)] for i in range(1,n+1)],wanted[:n])
-                    if issue:self.assertEqual(s['source_mismatch']['excluded_characters'],expected[n:])
+                    if issue:self.assertEqual(s['source_mismatch']['excluded_characters'],wanted[n:])
                     marked_box=str(n if reverse else 1)
                     self.assertTrue(s['bounding_boxes'][marked_box]['unavailable_font'])
                     from annotation.reading_order import suspicious_box_ids
-                    self.assertEqual(list(map(str,suspicious_box_ids(s))),[marked_box])
+                    self.assertEqual(list(map(str,suspicious_box_ids(s))),[] if reverse else [marked_box])
                     if not reverse:s=engine.apply(s,'back')
                 for _ in range(3):s=engine.apply(s,'next')
                 s=engine.apply(s,'save')

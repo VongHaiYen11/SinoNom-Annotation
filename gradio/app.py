@@ -53,7 +53,7 @@ FONT_PRELOAD_JS = f"""() => {{
     window.__vietnamicaFontsReady = true;
     const overlay = document.getElementById('global-loading');
     const families = {json.dumps(list(FONT_FILES), ensure_ascii=False)};
-    const sample = '漢字';
+    const sample = '漢字𠀀';
     const specs = families.map(family => `20px "${{family}}"`);
     if (specs.every(spec => document.fonts.check(spec, sample))) {{
         overlay?.classList.remove('is-visible');
