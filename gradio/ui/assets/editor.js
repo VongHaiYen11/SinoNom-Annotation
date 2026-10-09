@@ -349,6 +349,15 @@ const renderLocalStatus = (id, status, unknown = null) => {
   } else if (status !== 'damaged') {
     box.unknown = false;
   }
+  const assignedChip = element.querySelector(`[data-order-chip][data-assigned-box-id="${id}"]`);
+  const character = assignedChip?.dataset.character;
+  if (character === '□') {
+    Object.assign(box, {status: 'damaged', unknown: true, unavailable_font: false, expert_prediction: false, suspicious: false});
+  } else if (character === '@') {
+    box.unknown = false;
+    box.unavailable_font = true;
+  }
+  status = box.status;
   group.dataset.status = status;
   if (box.unknown) { box.unavailable_font = false; box.expert_prediction = false; box.suspicious = false; }
   if (group.querySelector('rect')?.dataset.missing === '1') {

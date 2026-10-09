@@ -119,3 +119,13 @@ chip.classList.toggle('excluded',false);
 // Physical palette changes must be scoped to the geometry editor (step 3).
 assert.match(extract('const applyAnnotationColor =','const readAnnotationColor ='), /props.value.step !== 3/);
 console.log('PASS: radio handlers, all status visuals after selection in steps 4/7, label refresh and cropped/scaled question mark');
+
+chip.dataset.character='□';
+Object.assign(box,{status:'intact',unknown:false,suspicious:true,unavailable_font:true});
+run("renderLocalStatus('1','intact',false)");
+assert.equal(box.status,'damaged');assert.equal(box.unknown,true);
+assert.equal(box.suspicious,false);assert.equal(box.unavailable_font,false);
+chip.dataset.character='@';
+run("renderLocalStatus('1','intact',true)");
+assert.equal(box.unknown,false);assert.equal(box.unavailable_font,true);
+assert.equal(chip.style.color,'#ec4899');

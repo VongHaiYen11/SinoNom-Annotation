@@ -83,6 +83,7 @@ def _load_regions(state, document):
         state['region_uid_by_box_id'][box_id] = uid
     state['bounding_boxes'] = deepcopy(document['bounding_boxes'])
     state['annotations'] = deepcopy(document.get('annotations', {}))
+    synchronize_missing_statuses(state)
     state['saved_annotation_text'] = annotations_to_text(state['annotations'])
     # Saved `annotations` contain the final character -> Box mapping.
     state['reading_order'] = sorted(map(int, document['bounding_boxes']))

@@ -26,6 +26,26 @@ class SuspiciousFlags(unittest.TestCase):
         initialize_alignment(s)
         return s
 
+    def test_placeholder_flags_on_assignment_and_reload(self):
+        from annotation.reading_order import update_text_sequence
+        from annotation.workflow import _load_regions
+        s=self.state('□@永')
+        self.assertTrue(s['bounding_boxes']['1']['unknown'])
+        self.assertEqual(s['bounding_boxes']['1']['status'],'damaged')
+        self.assertTrue(s['bounding_boxes']['2']['unavailable_font'])
+        update_text_sequence(s,['永','□','@'])
+        self.assertTrue(s['bounding_boxes']['2']['unknown'])
+        self.assertFalse(s['bounding_boxes']['2']['unavailable_font'])
+        self.assertTrue(s['bounding_boxes']['3']['unavailable_font'])
+        self.assertFalse(s['bounding_boxes']['3']['unknown'])
+        uid=s['region_uid_by_box_id']['2']
+        update_status(s,uid,'intact',suspicious=True)
+        self.assertTrue(s['bounding_boxes']['2']['unknown'])
+        self.assertFalse(s['bounding_boxes']['2']['suspicious'])
+        restored=new_state()
+        _load_regions(restored,{'bounding_boxes':s['bounding_boxes'],'annotations':s['annotations']})
+        self.assertEqual(restored['bounding_boxes'],s['bounding_boxes'])
+
     def test_defaults_combinations_and_validation(self):
         s=self.state();uid=s['region_uid_by_box_id']['1']
         self.assertFalse(s['regions'][uid]['suspicious'])
