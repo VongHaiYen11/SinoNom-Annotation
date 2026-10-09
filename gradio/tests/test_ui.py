@@ -190,7 +190,8 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('textSequenceFromDOM',script)
         self.assertIn('chip.dataset.assignedBoxId',script)
         self.assertNotIn("send('suspicious'",script)
-        self.assertIn('suspiciousTokenIds: [...localSuspiciousTokenIds]',script)
+        self.assertNotIn('suspiciousTokenIds',script)
+        self.assertIn('suspiciouses:',script)
         self.assertIn('animateChipReflow',script)
         self.assertIn('captureChipRects',script)
         self.assertIn('getBoundingClientRect()',script)
@@ -298,7 +299,8 @@ class GradioCallbacks(unittest.TestCase):
         scaled=new_state();scaled.update(image='large.png',image_path='/missing/large.png',
             preview_dir='/private/tmp',image_size=[8000,6000],image_url='image.jpg',
             current_step=7,crop=[2000,1000,7000,5000],
-            bounding_boxes={'1':{'bbox':[3000,2000,3200,2200],'status':'intact'}},
+            bounding_boxes={'1':{'bbox':[3000,2000,3200,2200],'status':'intact',
+                'unknown':False,'unavailable_font':False,'expert_prediction':False,'suspicious':False}},
             annotations={'1':'永'},reading_order=[1])
         # Missing image paths keep this a pure overlay geometry check.
         scaled.pop('image_path');scaled.pop('preview_dir')
@@ -327,9 +329,9 @@ class GradioCallbacks(unittest.TestCase):
         self.assertIn('snapshot_board_state_js(4)',source)
         self.assertIn('snapshot_board_state_js(1)',source)
         self.assertIn("with gr.Accordion('text_annotations.json'",source)
-        self.assertIn("with gr.Accordion('suspicious_details.json'",source)
+        self.assertNotIn("with gr.Accordion('suspicious_details.json'",source)
         self.assertIn("with gr.Accordion('source_mismatches.json'",source)
-        self.assertIn('load_suspicious_details(options.output_dir)',source)
+        self.assertNotIn('load_suspicious_details(options.output_dir)',source)
         self.assertIn('collect_source_mismatches(',source)
         self.assertIn('delete_selected,[session,selection_bridge,x1,y1,x2,y2]',source)
         self.assertIn("value='White',show_label=False,interactive=True",source)

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PIL import Image
 from annotation.export import (collect_annotations, collect_content_documents,
-                               collect_source_mismatches, collect_suspicious_details,
+                               collect_source_mismatches,
                                save_export_archive)
 from annotation.io import atomic_write, read_json
 from annotation.text_extraction import content_fields
@@ -160,23 +160,24 @@ class FolderExport(unittest.TestCase):
             self.output,mismatches)
         with zipfile.ZipFile(archive) as bundle:
             self.assertEqual(set(bundle.namelist()),{
-                'text_annotations.json','inscription_content.json','source_mismatches.json','suspicious_details.json'})
+                'text_annotations.json','inscription_content.json','source_mismatches.json'})
 
-    def test_suspicious_details_are_exported_as_fourth_document(self):
-        e=self.engine;s=e.open_image(self.images[0])
-        s=e.apply(s,'save_content');s=e.apply(s,'next')
+    def test_suspicious_is_in_normal_annotation_and_no_fourth_document(self):
+        from copy import deepcopy
+        e=self.engine;s=e.apply(e.open_image(self.images[0]),'next')
         for x in (0,20):s=e.apply(s,'add',{'bbox':[x,0,x+10,10]})
-        s=e.apply(s,'next');s=e.apply(s,'select',{'id':'1'})
-        s=e.apply(s,'suspicious',{'token_id':'1','value':True})
+        boxes=deepcopy(s['regions'])
+        for i,box in enumerate(boxes.values(),1):box['order']=i
+        s=e.apply(s,'next',{'boxes':boxes})
+        s=e.apply(s,'suspicious',{'id':'1','value':True})
         for _ in range(3):s=e.apply(s,'next')
         e.apply(s,'save')
-        details=collect_suspicious_details(self.images,self.output)
-        archive=save_export_archive(
-            collect_annotations(self.images,self.output),
-            collect_content_documents(self.images,self.output),
-            self.output,[],details)
+        documents=collect_annotations(self.images,self.output)
+        self.assertTrue(documents[0]['bounding_boxes']['1']['suspicious'])
+        self.assertNotIn('issue_type',documents[0])
+        self.assertFalse((self.output/'suspicious_details.json').exists())
+        self.assertEqual(collect_source_mismatches(self.images,self.output,allow_empty=True),[])
+        archive=save_export_archive(documents,[],self.output,[])
         with zipfile.ZipFile(archive) as bundle:
-            self.assertIn('suspicious_details.json',bundle.namelist())
-            self.assertEqual(
-                __import__('json').loads(bundle.read('suspicious_details.json')),
-                details)
+            self.assertEqual(set(bundle.namelist()),{'text_annotations.json',
+                'inscription_content.json','source_mismatches.json'})

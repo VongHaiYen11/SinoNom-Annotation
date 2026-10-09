@@ -173,6 +173,7 @@ def snapshot(s):
                          if step == 3 else f'data-box-id="{key}"')
         identity_attr += f' data-status="{b["status"]}" data-unknown="{str(is_unknown).lower()}"'
         identity_attr += f' data-unavailable-font="{str(unavailable_font).lower()}" data-expert-prediction="{str(expert_prediction).lower()}"'
+        identity_attr += f' data-suspicious="{str(suspicious).lower()}"'
         group_classes=' '.join(filter(None,(
             'selected-region' if multi_selected else '',
             'active-region' if key==selected_id else '',
@@ -207,7 +208,6 @@ def snapshot(s):
             # order; recomputing a spatial order here would silently reassign them.
             spatial_ids=list(map(str,s.get('reading_order', [])))
             token_ids=list(map(str,s.get('text_token_ids',[])))
-            suspicious_tokens=set(map(str,s.get('suspicious_token_ids',[])))
             for position,value in enumerate(values,1):
                 char=html.escape(value)
                 missing=' missing' if value == MISSING_ANNOTATION else ''
@@ -215,7 +215,7 @@ def snapshot(s):
                 attribute_char=html.escape(value,quote=True)
                 box_id=(spatial_ids[position-1] if position<=len(spatial_ids) else '')
                 token_id=(token_ids[position-1] if position<=len(token_ids) else str(position))
-                suspicious=' suspicious' if token_id in suspicious_tokens else ''
+                suspicious=' suspicious' if s.get('bounding_boxes', {}).get(box_id, {}).get('suspicious', False) else ''
                 assigned_box=s.get('bounding_boxes', {}).get(box_id, {})
                 chip_color=('#ec4899' if assigned_box.get('unavailable_font') else
                             '#facc15' if assigned_box.get('expert_prediction') else '#ffffff')
@@ -304,7 +304,6 @@ def snapshot(s):
                 mismatchBoxCount=(s.get('source_mismatch') or {}).get('bounding_box_count'),
                 readingOrder=list(s['reading_order']),
                 spatialBoxOrder=(list(s.get('reading_order', [])) if s.get('bounding_boxes') else []),
-                suspiciousTokenIds=list(map(str,s.get('suspicious_token_ids',[]))),
                 selectedTokenId=(str(s['selected_token_id'])
                                  if s.get('selected_token_id') is not None else None),
                 orderedAnnotations=([s['annotations'][str(box_id)]

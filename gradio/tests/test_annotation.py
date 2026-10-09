@@ -251,15 +251,16 @@ class Invariants(unittest.TestCase):
         for sequence in (['永','樂'],['永','樂','樂'],['永','樂',3],None):
             with self.assertRaises(ValueError):update_text_sequence(s,sequence)
 
-    def test_suspicious_identity_follows_duplicate_character_token(self):
+    def test_suspicious_identity_stays_on_box_with_duplicate_tokens(self):
         s=aligned_state('永永寺')
         geometry=deepcopy(s['bounding_boxes'])
-        s['suspicious_token_ids']=['2']
+        update_status(s,s['region_uid_by_box_id']['2'],'intact',suspicious=True)
+        geometry=deepcopy(s['bounding_boxes'])
         s['selected_token_id']='2';s['selected_box_id']='2'
         self.assertEqual(suspicious_box_ids(s),['2'])
         update_text_tokens(s,['永','永','寺'],['2','1','3'])
-        self.assertEqual(s['suspicious_token_ids'],['2'])
-        self.assertEqual(suspicious_box_ids(s),['1'])
+        self.assertTrue(s['bounding_boxes']['2']['suspicious'])
+        self.assertEqual(suspicious_box_ids(s),['2'])
         self.assertEqual(s['selected_box_id'],'1')
         self.assertEqual(s['bounding_boxes'],geometry)
 
@@ -307,25 +308,26 @@ class Invariants(unittest.TestCase):
             with self.assertRaises(ValueError):
                 load_source_mismatch(path,'12305.png',[100,100])
 
-    def test_source_mismatch_combines_suspicious_issue_without_geometry_changes(self):
+    def test_source_mismatch_keeps_suspicious_on_box_without_issue_type(self):
         s=state(n=2)
         s['source_mismatch']={
             'source_text':s['annotation_text'],'source_character_count':3,
             'bounding_box_count':2,'issue_type':'extra_text','note':''}
         confirm_status(s);initialize_alignment(s)
         geometry=deepcopy(s['bounding_boxes'])
-        s['suspicious_token_ids']=['1']
+        update_status(s,s['region_uid_by_box_id']['1'],'intact',suspicious=True)
+        geometry=deepcopy(s['bounding_boxes'])
         s['workflow']['reading_order_valid']=True
         confirm_status(s);s['code']='12305'
         document=final_source_mismatch_document(s)
-        self.assertEqual(document['issue_type'],['extra_text','suspicious_content'])
+        self.assertEqual(document['issue_type'],['extra_text'])
         self.assertEqual(document['bounding_boxes'],geometry)
         s['current_step']=7;s['image_url']='image.jpg'
         review=snapshot(s)['markup']
-        self.assertIn('stroke="#facc15"',review)
+        self.assertIn('fill="#facc15"',review)
         self.assertIn('· suspicious</title>',review)
         self.assertIn('Suspicious content',review)
-        self.assertIn('Unknown / MISS',review)
+        self.assertIn('MISS content',review)
 
         invalid=deepcopy(document)
         invalid['issue_type']='extra_source_characters'
@@ -418,7 +420,7 @@ class Integration(unittest.TestCase):
         from crop.crop import crop_document, image_resize
         out=self.root/'out';out.mkdir(parents=True)
         boxes={str(index):{
-            'bbox':[index*10,0,index*10+9,9],'status':'intact','unknown':False,'unavailable_font':False,'expert_prediction':False}
+            'bbox':[index*10,0,index*10+9,9],'status':'intact','unknown':False,'unavailable_font':False,'expert_prediction':False,'suspicious':False}
             for index in range(1,4)}
         atomic_write(out/'12305.json',{
             'image':'12305.png','bounding_boxes':boxes,
@@ -529,43 +531,29 @@ class Integration(unittest.TestCase):
         self.assertEqual(s['annotations'],{'1':'永','2':'樂','3':'寺','4':'文'})
 
     def test_suspicious_roundtrip_reorder_and_removal(self):
-        e=self.engine;s=e.open_image(self.image)
-        s=e.apply(s,'save_content');s=e.apply(s,'next')
-        for x in (0,20,40):
-            s=e.apply(s,'add',{'bbox':[x,0,x+10,10]})
-        s=e.apply(s,'next')
+        e=self.engine;s=e.apply(e.open_image(self.image),'next')
+        for x in (0,20,40):s=e.apply(s,'add',{'bbox':[x,0,x+10,10]})
+        boxes=deepcopy(s['regions'])
+        for i,box in enumerate(boxes.values(),1):box['order']=i
+        s=e.apply(s,'next',{'boxes':boxes})
+        s=e.apply(s,'suspicious',{'id':'2','value':True})
         geometry=deepcopy(s['bounding_boxes'])
-        s=e.apply(s,'select',{'id':'2'})
-        self.assertFalse((self.root/'out/suspicious_details.json').exists())
-        s=e.apply(s,'reorder_text',{
-            'sequence':['樂','永','寺'],
-            'suspicious_token_ids':['2'],
-        })
-        self.assertEqual(s['suspicious_token_ids'],['2'])
-        self.assertEqual(suspicious_box_ids(s),['3'])
+        s=e.apply(s,'reorder_text',{'sequence':['樂','永','寺']})
+        self.assertEqual(suspicious_box_ids(s),['2'])
         self.assertEqual(s['bounding_boxes'],geometry)
         for _ in range(3):s=e.apply(s,'next')
-        s=e.apply(s,'save')
-        self.assertEqual(read_json(self.root/'out/12305.json')['issue_type'],
-                         ['suspicious_content'])
-        self.assertEqual(read_json(self.root/'out/suspicious_details.json'),{
-            '12305':{'issue_type':'suspicious_content','box_ids':[3],
-                     'note':'Content may be incorrect.'}})
-
-        reopened=e.open_image(self.image)
-        reopened=e.apply(reopened,'save_content')
-        self.assertEqual(suspicious_box_ids(reopened),['3'])
-        reopened=e.apply(reopened,'next');reopened=e.apply(reopened,'next')
-        reopened=e.apply(reopened,'select',{'id':'3'})
-        reopened=e.apply(reopened,'reorder_text',{
-            'sequence':list(reopened['text_sequence']),
-            'token_order':list(reopened['text_token_ids']),
-            'suspicious_token_ids':[],
-        })
+        e.apply(s,'save')
+        document=read_json(self.root/'out/12305.json')
+        self.assertNotIn('issue_type',document)
+        self.assertTrue(document['bounding_boxes']['2']['suspicious'])
+        self.assertFalse((self.root/'out/suspicious_details.json').exists())
+        reopened=e.apply(e.open_image(self.image),'next')
+        reopened=e.apply(reopened,'next')
+        self.assertEqual(suspicious_box_ids(reopened),['2'])
+        reopened=e.apply(reopened,'suspicious',{'id':'2','value':False})
         for _ in range(3):reopened=e.apply(reopened,'next')
         e.apply(reopened,'save')
-        self.assertNotIn('issue_type',read_json(self.root/'out/12305.json'))
-        self.assertFalse((self.root/'out/suspicious_details.json').exists())
+        self.assertFalse(e.open_image(self.image)['bounding_boxes']['2']['suspicious'])
 
     def test_seven_step_gates_and_crop_independence(self):
         e=self.engine;s=e.open_image(self.image)

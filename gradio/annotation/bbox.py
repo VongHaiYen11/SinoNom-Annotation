@@ -20,7 +20,7 @@ def validate_coordinates(bbox, size):
 def add_bbox(state, bbox):
     coords = validate_coordinates(bbox, state['image_size'])
     uid = uuid4().hex
-    state['regions'][uid] = dict(bbox=coords, status='intact', unknown=False, unavailable_font=False, expert_prediction=False)
+    state['regions'][uid] = dict(bbox=coords, status='intact', unknown=False, unavailable_font=False, expert_prediction=False, suspicious=False)
     invalidate(state, clear=True)
     return uid
 
@@ -56,7 +56,7 @@ def update_bboxes(state, boxes, active=None, selected=None):
         box['bbox'] = validate_coordinates(box.get('bbox'), state['image_size'])
         box.setdefault('status', 'intact')
         from .status import normalize_flags
-        for flag in ('unknown', 'unavailable_font', 'expert_prediction'):
+        for flag in ('unknown', 'unavailable_font', 'expert_prediction', 'suspicious'):
             box.setdefault(flag, False)
         if box['status'] not in {'intact', 'damaged'}:
             raise ValueError(f'Invalid status for box {uid}.')
@@ -99,7 +99,7 @@ def sync_draft_boxes(state, payload, materialize_alignment=True):
         if uid in state['regions'] and status in {'intact', 'damaged'}:
             state['regions'][uid]['status'] = status
     from .status import FLAGS, normalize_flags
-    for flag, field in zip(FLAGS, ('unknowns', 'unavailable_fonts', 'expert_predictions')):
+    for flag, field in zip(FLAGS, ('unknowns', 'unavailable_fonts', 'expert_predictions', 'suspiciouses')):
         for uid, value in payload.get(field, {}).items():
             if uid in state['regions']:
                 state['regions'][uid][flag] = value

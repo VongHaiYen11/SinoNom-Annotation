@@ -3,14 +3,14 @@ from .text_alignment import MISSING_ANNOTATION
 
 
 EDITABLE_STATUSES = ('intact', 'damaged')
-FLAGS = ('unknown', 'unavailable_font', 'expert_prediction')
+FLAGS = ('unknown', 'unavailable_font', 'expert_prediction', 'suspicious')
 
 
 def validate_flags(box):
     for flag in FLAGS:
         if flag not in box or not isinstance(box[flag], bool):
             raise ValueError(f'{flag} must be a boolean.')
-    if box['unknown'] and (box['status'] != 'damaged' or box['unavailable_font'] or box['expert_prediction']):
+    if box['unknown'] and (box['status'] != 'damaged' or box['unavailable_font'] or box['expert_prediction'] or box['suspicious']):
         raise ValueError('Unknown requires damaged and cannot coexist with other flags.')
 
 
@@ -31,24 +31,25 @@ def synchronize_missing_statuses(state):
         state['bounding_boxes'][box_id].update({key: box[key] for key in ('status', *FLAGS)})
 
 
-def update_status(state, region_uid, status, unknown=None, unavailable_font=None, expert_prediction=None, *, default_expert_damage=True):
+def update_status(state, region_uid, status, unknown=None, unavailable_font=None, expert_prediction=None, suspicious=None, *, default_expert_damage=True):
     if region_uid not in state['regions'] or status not in EDITABLE_STATUSES:
         raise ValueError('Invalid region or status.')
     old = state['regions'][region_uid]
     unknown = old['unknown'] if unknown is None else unknown
     unavailable_font = old['unavailable_font'] if unavailable_font is None else unavailable_font
     expert_prediction = old['expert_prediction'] if expert_prediction is None else expert_prediction
-    for value in (unknown, unavailable_font, expert_prediction):
+    suspicious = old['suspicious'] if suspicious is None else suspicious
+    for value in (unknown, unavailable_font, expert_prediction, suspicious):
         if not isinstance(value, bool):
             raise ValueError('Flags must be boolean.')
     if unknown and not old['unknown']:
-        unavailable_font = expert_prediction = False
-    elif (unavailable_font and not old['unavailable_font']) or (expert_prediction and not old['expert_prediction']):
+        unavailable_font = expert_prediction = suspicious = False
+    elif (suspicious and not old['suspicious']) or (unavailable_font and not old['unavailable_font']) or (expert_prediction and not old['expert_prediction']):
         unknown = False
     if default_expert_damage and expert_prediction and not old['expert_prediction']:
         status = 'damaged'
     box = dict(old, status=status, unknown=unknown if status == 'damaged' else False,
-               unavailable_font=unavailable_font, expert_prediction=expert_prediction)
+               unavailable_font=unavailable_font, expert_prediction=expert_prediction, suspicious=suspicious)
     box_id = state['box_id_by_region'].get(region_uid)
     normalize_flags(box, state.get('annotations', {}).get(str(box_id)) == MISSING_ANNOTATION)
     state['regions'][region_uid] = box
@@ -57,11 +58,11 @@ def update_status(state, region_uid, status, unknown=None, unavailable_font=None
     state['saved'] = False
 
 
-def replace_statuses(state, statuses, unknowns=None, unavailable_fonts=None, expert_predictions=None):
+def replace_statuses(state, statuses, unknowns=None, unavailable_fonts=None, expert_predictions=None, suspiciouses=None):
     """Validate the complete update before changing any region."""
     if not isinstance(statuses, dict) or set(statuses) != set(state['regions']):
         raise ValueError('Statuses must contain every region exactly once.')
-    maps = (unknowns, unavailable_fonts, expert_predictions)
+    maps = (unknowns, unavailable_fonts, expert_predictions, suspiciouses)
     for values in maps:
         if values is not None and (not isinstance(values, dict) or
                 any(not isinstance(value, bool) for value in values.values())):

@@ -237,8 +237,8 @@ A normal saved annotation has this shape. This illustrative example uses an unsc
 {
   "image": "12305.jpg",
   "bounding_boxes": {
-    "1": {"bbox": [120, 350, 180, 420], "status": "intact", "unknown": false},
-    "2": {"bbox": [120, 450, 180, 520], "status": "damaged", "unknown": true}
+    "1": {"bbox": [120, 350, 180, 420], "status": "intact", "unknown": false, "unavailable_font": false, "expert_prediction": false, "suspicious": true},
+    "2": {"bbox": [120, 450, 180, 520], "status": "damaged", "unknown": true, "unavailable_font": false, "expert_prediction": false, "suspicious": false}
   },
   "annotations": {"1": "永", "2": "樂"},
   "image_resize": {
@@ -261,10 +261,11 @@ A normal saved annotation has this shape. This illustrative example uses an unsc
 | `bounding_boxes` | Contiguous string IDs `"1"` through `"n"`, ordered for character assignment |
 | `bbox` | `[x1, y1, x2, y2]` in original-image pixel coordinates |
 | `status` / `unknown` | Physical condition and an independent unknown flag for damaged characters |
+| `unavailable_font` / `expert_prediction` / `suspicious` | Required per-box boolean flags; suspicious can combine with font/expert flags but cannot combine with unknown |
 | `annotations` | One normalized character per box; `MISS` denotes missing source content in mismatch records |
 | `image_resize` | Source/output dimensions and scale factors |
 | `crop` | Four corners in resized-image coordinates |
-| `issue_type` | Optional issue array, including `suspicious_content` when applicable |
+| `issue_type` | Source mismatch type only: missing_text, extra_text, or other; absent from normal annotations |
 
 > [!IMPORTANT]
 > Boxes remain in original-image coordinates; crop corners refer to `image_resize.output_size`. Apply the scale factors when combining these geometries. Export stores JSON metadata, not cropped image files.
@@ -278,9 +279,8 @@ Normal annotations are saved as `<output-dir>/<image-stem>.json`. Confirmed disc
 | `text_annotations.json` | Array of normal saved annotations |
 | `inscription_content.json` | Array of verified per-image content documents |
 | `source_mismatches.json` | Array of confirmed discrepancy records |
-| `suspicious_details.json` | Inscription-ID-keyed suspicious box IDs and notes |
 
-Empty categories are omitted. The standalone detection CLI returns `image`, `bounding_boxes`, and a separate `reading_order` list; this is an intermediate result, not a completed annotation document.
+All three files are included; empty categories contain `[]`. Suspicious is saved directly on each bounding box and does not create a source mismatch or a separate file. Reordering character cards keeps the flag on its box; reopening an annotation restores it from the saved JSON. Missing/extra records retain the flag on their annotated boxes. Annotation files must contain the current flags; the former suspicious sidecar format is not migrated or loaded. The standalone detection CLI returns `image`, `bounding_boxes`, and a separate `reading_order` list; this is an intermediate result, not a completed annotation document.
 
 ## Architecture
 

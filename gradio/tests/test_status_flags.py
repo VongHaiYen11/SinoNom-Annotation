@@ -253,7 +253,7 @@ class StatusFlags(unittest.TestCase):
                 s=engine.apply(s,'next',{'boxes':boxes})
                 s=engine.apply(s,'reorder_text',{'sequence':expected})
                 s=engine.apply(s,'status',{'id':'1','status':'intact','unavailable_font':True})
-                s=engine.apply(s,'suspicious',{'token_id':s['text_token_ids'][0],'value':True})
+                s=engine.apply(s,'suspicious',{'id':'1','value':True})
                 for _ in range(3):s=engine.apply(s,'next')
                 s=engine.apply(s,'save')
                 s=engine.apply(engine.open_image(image),'next')
@@ -270,7 +270,7 @@ class StatusFlags(unittest.TestCase):
                     marked_box=str(n if reverse else 1)
                     self.assertTrue(s['bounding_boxes'][marked_box]['unavailable_font'])
                     from annotation.reading_order import suspicious_box_ids
-                    self.assertEqual(list(map(str,suspicious_box_ids(s))),[] if reverse else [marked_box])
+                    self.assertEqual(list(map(str,suspicious_box_ids(s))),[marked_box])
                     if not reverse:s=engine.apply(s,'back')
                 for _ in range(3):s=engine.apply(s,'next')
                 s=engine.apply(s,'save')
@@ -278,12 +278,11 @@ class StatusFlags(unittest.TestCase):
 
     def test_archive_all_categories_and_empty_arrays(self):
         with tempfile.TemporaryDirectory() as directory:
-            for annotations,details in [([],None),([{'image':'1.png'}],{'1':{'note':'test'}})]:
-                archive=save_export_archive(annotations,[],directory,[],details)
+            for annotations in ([], [{'image':'1.png'}]):
+                archive=save_export_archive(annotations,[],directory,[])
                 with zipfile.ZipFile(archive) as bundle:
                     self.assertEqual(set(bundle.namelist()),{'text_annotations.json','inscription_content.json',
-                        'source_mismatches.json','suspicious_details.json'})
-                    self.assertEqual(json.loads(bundle.read('suspicious_details.json')),details or [])
+                        'source_mismatches.json'})
                     self.assertEqual(json.loads(bundle.read('text_annotations.json')),annotations)
                     self.assertEqual(json.loads(bundle.read('source_mismatches.json')),[])
 

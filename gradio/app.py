@@ -15,13 +15,13 @@ from annotation.state import (new_state, source_mismatch_confirmed,
                               calculate_spatial_order, refresh_bbox_validation)
 from annotation.reading_order import suspicious_box_ids
 from annotation.workflow import Workflow
-from annotation.io import (SUSPICIOUS_NOTE, final_document,
+from annotation.io import (final_document,
                            final_source_mismatch_document, load_image_list,
-                           load_suspicious_details, read_json)
+                           read_json)
 from annotation.text_extraction import content_fields, normalize_content_titles
 from annotation.text_alignment import count_annotation_characters
 from annotation.export import (collect_annotations, collect_content_documents,
-                               collect_source_mismatches, collect_suspicious_details,
+                               collect_source_mismatches,
                                save_export_archive)
 from ui.editor import snapshot, source_text, SCRIPT, CSS
 from ui.presentation import (APP_CSS, app_identity, workflow_progress,
@@ -158,8 +158,6 @@ def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=F
                 .map(card => card.dataset.character);
             snapshot.tokenOrder = [...cards.querySelectorAll('[data-order-chip]')]
                 .map(card => card.dataset.tokenId);
-            snapshot.suspiciousTokenIds = [...cards.querySelectorAll('[data-order-chip].suspicious')]
-                .map(card => card.dataset.tokenId);
         }}
         // The hidden bridge is the canonical serialization of localBoxes.
         // DOM geometry is only a legacy fallback when no local snapshot exists.
@@ -169,6 +167,7 @@ def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=F
         const unknowns = {{}};
         const unavailableFonts = {{}};
         const expertPredictions = {{}};
+        const suspiciouses = {{}};
         for (const group of groups) {{
             const id = group.dataset.boxId;
             const rect = group.querySelector('rect:not([data-image-resize-handle])');
@@ -181,6 +180,7 @@ def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=F
                 if (group.dataset.status === 'intact' || group.dataset.status === 'damaged') {{
                     statuses[id] = group.dataset.status;
                     unavailableFonts[id] = group.dataset.unavailableFont === 'true';
+                    suspiciouses[id] = group.dataset.suspicious === 'true';
                     expertPredictions[id] = group.dataset.expertPrediction === 'true';
                     unknowns[id] = group.dataset.status === 'damaged' && group.dataset.unknown === 'true';
                 }}
@@ -191,6 +191,7 @@ def snapshot_board_state_js(selection_index, label_text='Loading…', deselect=F
         if (Object.keys(unknowns).length) snapshot.unknowns = unknowns;
         if (Object.keys(unavailableFonts).length) snapshot.unavailable_fonts = unavailableFonts;
         if (Object.keys(expertPredictions).length) snapshot.expert_predictions = expertPredictions;
+        if (Object.keys(suspiciouses).length) snapshot.suspiciouses = suspiciouses;
         args[{selection_index}] = JSON.stringify(snapshot);
         return args;
     }}"""
@@ -439,7 +440,7 @@ def create_app(options):
                     unknown_status=gr.Radio(['False','True'],value='False',label='Unknown character (Damaged only)',interactive=True,elem_id='unknown-radio')
                     unavailable_font_status=gr.Radio(['False','True'],value='False',label='Unavailable Font',interactive=True,elem_id='unavailable-font-radio')
                     expert_prediction_status=gr.Radio(['False','True'],value='False',label='Expert Prediction',interactive=True,elem_id='expert-prediction-radio')
-                    suspicious_toggle=gr.Checkbox(value=False,label='Suspicious annotation',interactive=False,elem_id='suspicious-toggle')
+                    suspicious_toggle=gr.Radio(['False','True'],value='False',label='Suspicious annotation',interactive=False,elem_id='suspicious-toggle')
                     apply_changes=gr.Button('Apply Changes', variant='primary',
                                             elem_id='apply-status-changes')
                 with gr.Group(visible=False,
@@ -492,12 +493,6 @@ def create_app(options):
                             preview=gr.JSON(
                                 label='Image JSON', visible=True,
                                 elem_id='final-preview', elem_classes='han-nom-json')
-                        with gr.Accordion('suspicious_details.json', open=False,
-                                          elem_classes='section') as suspicious_json_section:
-                            suspicious_preview=gr.JSON(
-                                label='Suspicious Details', visible=True,
-                                elem_id='suspicious-preview',
-                                elem_classes='han-nom-json')
                         with gr.Accordion('source_mismatches.json', open=False,
                                           elem_classes='section') as source_mismatches_json_section:
                             source_mismatches_preview=gr.JSON(
@@ -521,7 +516,7 @@ def create_app(options):
         outputs.append(suspicious_toggle)
         outputs.append(source_text_group)
         outputs.extend([
-            final_json_group,suspicious_preview,suspicious_json_section,
+            final_json_group,
             source_mismatches_preview,source_mismatches_json_section,
         ])
         outputs.append(save_all)
@@ -560,17 +555,8 @@ def create_app(options):
             suspicious_ids=set(suspicious_box_ids(s))
             mismatch=source_mismatch_confirmed(s)
             final=(final_source_mismatch_document(s) if mismatch else final_document(s)) if step==7 else None
-            suspicious_json={}
             source_mismatch_json=[]
             if step==7:
-                suspicious_json=load_suspicious_details(options.output_dir)
-                if suspicious_ids:
-                    suspicious_json=dict(suspicious_json)
-                    suspicious_json[str(s['code'])]={
-                        'issue_type':'suspicious_content',
-                        'box_ids':sorted({int(box_id) for box_id in suspicious_ids}),
-                        'note':SUSPICIOUS_NOTE,
-                    }
                 source_mismatch_json=collect_source_mismatches(
                     images,options.output_dir,allow_empty=True)
                 if mismatch and final:
@@ -601,12 +587,10 @@ def create_app(options):
                     gr.update(visible=has and step>1),gr.update(visible=has and step>1),
                     (f'`{s["image"]}`' if has else '—'),
                     browser_draft,
-                    gr.update(value=selected_box in suspicious_ids,
+                    gr.update(value='True' if selected_box in suspicious_ids else 'False',
                               interactive=step==4 and selected_box is not None),
                     gr.update(value=source_text(s), visible=(step in (4, 7) and has)),
                     gr.update(visible=step==7),
-                    gr.update(value=suspicious_json),
-                    gr.update(visible=step==7 and bool(suspicious_json)),
                     gr.update(value=source_mismatch_json),
                     gr.update(visible=step==7 and bool(source_mismatch_json))]
             rendered.append(gr.update(interactive=has_saved_image_records()))
@@ -642,7 +626,7 @@ def create_app(options):
                         msg='Detection failed: '+str(exc)
                 result = render(ctx,msg)
                 # Preserve unaffected editors and avoid replacing unrelated component values.
-                suspicious_outputs={len(outputs)-2}
+                suspicious_outputs={outputs.index(suspicious_toggle)}
                 affected = {
                     'select': {0,2,8,10,11,12,13,14,16,17} | suspicious_outputs,
                     'suspicious': {0,2,8} | suspicious_outputs,
@@ -730,9 +714,8 @@ def create_app(options):
                     committed_images,options.output_dir,allow_empty=True,
                     titles=engine.verification_titles)
                 mismatches=collect_source_mismatches(images,options.output_dir,allow_empty=True)
-                suspicious=collect_suspicious_details(images,options.output_dir)
                 archive=save_export_archive(
-                    annotations,content,options.output_dir,mismatches,suspicious)
+                    annotations,content,options.output_dir,mismatches)
                 return json.dumps({'name':archive.name,
                                    'content':base64.b64encode(archive.read_bytes()).decode('ascii')})
             except (ValueError,OSError,KeyError,TypeError) as exc:
@@ -862,22 +845,13 @@ def create_app(options):
             if ctx['active']['current_step'] == 4:
                 try:
                     ctx = commit_statuses(ctx, selection, status_value)
-                    text_sequence,token_order,suspicious_token_ids = frontend_text_sequence(selection)
+                    text_sequence,token_order = frontend_text_sequence(selection)
                     if text_sequence is not None and (text_sequence or ctx['active']['annotations']):
                         updated = engine.apply(ctx['active'], 'reorder_text', {
                             'sequence': text_sequence,
                             'token_order': token_order,
-                            'suspicious_token_ids': suspicious_token_ids,
                         })
                         ctx = dict(ctx, active=updated)
-                    elif suspicious_token_ids is not None:
-                        updated = engine.apply(ctx['active'], 'reorder_text', {
-                            'sequence': list(ctx['active'].get('text_sequence', [])),
-                            'token_order': list(map(str, ctx['active'].get('text_token_ids', []))),
-                            'suspicious_token_ids': suspicious_token_ids,
-                        })
-                        ctx = dict(ctx, active=updated)
-                    ctx = commit_statuses(ctx, selection, status_value)
                 except Exception as exc:
                     return render(ctx, WARNING+' '+html.escape(str(exc)))
             if ctx['active']['current_step'] == 6:
@@ -1030,7 +1004,6 @@ def create_app(options):
                 parsed=json.loads(value or '{}')
                 sequence=parsed.get('textSequence')
                 token_order=parsed.get('tokenOrder')
-                suspicious_token_ids=parsed.get('suspiciousTokenIds')
                 if sequence is not None and (
                         not isinstance(sequence,list)
                         or any(not isinstance(item,str) or not item for item in sequence)):
@@ -1039,12 +1012,7 @@ def create_app(options):
                         not isinstance(token_order,list)
                         or any(not isinstance(item,str) or not item for item in token_order)):
                     raise ValueError
-                if suspicious_token_ids is not None and (
-                        not isinstance(suspicious_token_ids,list)
-                        or any(not isinstance(item,str) or not item
-                               for item in suspicious_token_ids)):
-                    raise ValueError
-                return sequence,token_order,suspicious_token_ids
+                return sequence,token_order
             except (ValueError,TypeError,AttributeError):
                 raise gr.Error('The local text sequence is invalid.')
         def frontend_statuses(value):
@@ -1061,7 +1029,7 @@ def create_app(options):
                         or any(not isinstance(box_id,str) or not isinstance(val,bool)
                                for box_id,val in unknowns.items())):
                     raise ValueError
-                flags = [parsed.get(key, {}) for key in ('unavailable_fonts', 'expert_predictions')]
+                flags = [parsed.get(key, {}) for key in ('unavailable_fonts', 'expert_predictions', 'suspiciouses')]
                 if any(not isinstance(values, dict) or any(not isinstance(k, str) or not isinstance(v, bool) for k, v in values.items()) for values in flags):
                     raise ValueError
                 return statuses, unknowns, *flags
@@ -1076,14 +1044,16 @@ def create_app(options):
                 uid: bool(box.get('unknown', False))
                 for uid,box in ctx['active']['regions'].items()
             }
-            frontend, frontend_unknowns, frontend_fonts, frontend_experts = frontend_statuses(selection)
+            frontend, frontend_unknowns, frontend_fonts, frontend_experts, frontend_suspicious = frontend_statuses(selection)
             fonts_map={uid: box['unavailable_font'] for uid,box in ctx['active']['regions'].items()}
+            suspicious_map={uid: box['suspicious'] for uid,box in ctx['active']['regions'].items()}
             experts_map={uid: box['expert_prediction'] for uid,box in ctx['active']['regions'].items()}
             for box_id,status_name in frontend.items():
                 region_uid=(ctx['active']['region_uid_by_box_id'].get(str(box_id)) or
                             (str(box_id) if str(box_id) in ctx['active']['regions'] else None))
                 if region_uid and region_uid in statuses:
                     statuses[region_uid]=status_name
+                    suspicious_map[region_uid]=frontend_suspicious.get(box_id, suspicious_map[region_uid])
                     fonts_map[region_uid]=frontend_fonts.get(box_id, fonts_map[region_uid])
                     experts_map[region_uid]=frontend_experts.get(box_id, experts_map[region_uid])
                     if box_id in frontend_unknowns:
@@ -1094,7 +1064,7 @@ def create_app(options):
                             (str(active) if str(active) in ctx['active']['regions'] else None))
                 if region_uid and region_uid in statuses:
                     statuses[region_uid]=status_value
-            updated=engine.apply(ctx['active'],'statuses',{'statuses':statuses, 'unknowns':unknowns_map, 'unavailable_fonts':fonts_map, 'expert_predictions':experts_map})
+            updated=engine.apply(ctx['active'],'statuses',{'statuses':statuses, 'unknowns':unknowns_map, 'unavailable_fonts':fonts_map, 'expert_predictions':experts_map, 'suspiciouses':suspicious_map})
             return dict(ctx,active=updated)
         apply_changes.click(
             fn=None,inputs=[],outputs=None,show_progress='hidden',

@@ -7,7 +7,7 @@ let syncingCoordinateControls = false;
 let isDirty = false, pendingSortSelectedRange = null, pendingSortOverwrite = null;
 let image = props.value.image, localContext = '';
 let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId = null;
-let localTextSequence = [], localTokenOrder = [], localSuspiciousTokenIds = new Set();
+let localTextSequence = [], localTokenOrder = [];
 let alignmentStateReady = false, alignmentContainer = null;
 let mismatchConfirmationInvalidated = false;
 let nextTemporaryBoxId = 1;
@@ -128,6 +128,7 @@ const cloneBoxes = boxes => Object.fromEntries(Object.entries(boxes || {}).map((
   copy.unknown = Boolean(box.unknown);
   copy.unavailable_font = Boolean(box.unavailable_font);
   copy.expert_prediction = Boolean(box.expert_prediction);
+  copy.suspicious = Boolean(box.suspicious);
   copy.order = box.order ?? null;
   return [String(id), copy];
 }));
@@ -224,7 +225,7 @@ const syncExternalControls = () => {
     textSequence: [...localTextSequence],
     tokenOrder: [...(element.querySelectorAll('.order-chips [data-order-chip]') || [])]
       .map(chip => chip.dataset.tokenId),
-    suspiciousTokenIds: [...localSuspiciousTokenIds],
+    suspiciouses: Object.fromEntries(Object.entries(localBoxes).map(([id, box]) => [id, box.suspicious])),
   };
   const serializedSnapshot = JSON.stringify(bridgeSnapshot);
   // Gradio component values can lag one browser event behind. Keep a
@@ -235,20 +236,23 @@ const syncExternalControls = () => {
   setInputValue('#selection-bridge', serializedSnapshot);
   const active = activeBoxId && localBoxes[activeBoxId];
   if (props.value.step === 4) {
-    const suspicious = root.querySelector('#suspicious-toggle input[type="checkbox"]');
-    if (suspicious) {
-      const chip = activeBoxId && element.querySelector(
-        `[data-order-chip][data-assigned-box-id="${activeBoxId}"]`);
-      activeTokenId = chip?.dataset.tokenId || null;
-      const isMissing = Boolean(chip?.classList.contains('missing') || chip?.dataset.character === '[MISS]');
-      const isExcluded = Boolean(chip?.classList.contains('excluded'));
-      if (isMissing && activeTokenId) {
-        localSuspiciousTokenIds.delete(activeTokenId);
+    const chip = activeBoxId && element.querySelector(
+      `[data-order-chip][data-assigned-box-id="${activeBoxId}"]`);
+    activeTokenId = chip?.dataset.tokenId || null;
+    const isMissing = Boolean(chip?.classList.contains('missing') || chip?.dataset.character === '[MISS]');
+    const isExcluded = Boolean(chip?.classList.contains('excluded'));
+    const allowed = Boolean(chip && !isMissing && !isExcluded && active);
+    const target = allowed && active.suspicious ? 'True' : 'False';
+    root.querySelectorAll('#suspicious-toggle input').forEach(input => {
+      if (input.value === target && !input.checked) {
+        input.disabled = false;
+        syncingStatusControl = true;
+        try { input.click(); } finally { syncingStatusControl = false; }
       }
-      suspicious.disabled = !chip || isExcluded || isMissing;
-      suspicious.checked = Boolean(chip && !isMissing && !isExcluded && localSuspiciousTokenIds.has(activeTokenId));
-    }
+      input.disabled = !allowed;
+    });
   }
+
   if (props.value.step === 3) {
     const manualOrderInput = root.querySelector('#manual-box-order input');
     const isSingleSelection = selectedIds.size === 1 && activeBoxId && localBoxes[activeBoxId];
@@ -346,12 +350,14 @@ const renderLocalStatus = (id, status, unknown = null) => {
     box.unknown = false;
   }
   group.dataset.status = status;
-  if (box.unknown) { box.unavailable_font = false; box.expert_prediction = false; }
+  if (box.unknown) { box.unavailable_font = false; box.expert_prediction = false; box.suspicious = false; }
   if (group.querySelector('rect')?.dataset.missing === '1') {
-    box.unknown = false; box.unavailable_font = false; box.expert_prediction = false;
+    box.unknown = false; box.unavailable_font = false; box.expert_prediction = false; box.suspicious = false;
   }
   group.dataset.unavailableFont = String(box.unavailable_font);
   group.dataset.expertPrediction = String(box.expert_prediction);
+  group.dataset.suspicious = String(box.suspicious);
+  group.classList.toggle('suspicious-region', Boolean(box.suspicious));
   group.dataset.unknown = String(Boolean(box.unknown));
   const revealStatus = props.value.step >= 4;
   const color = !revealStatus ? annotationColor : statusColor(status, box.expert_prediction);
@@ -384,6 +390,8 @@ const renderLocalStatus = (id, status, unknown = null) => {
     Object.entries(attrs).forEach(([key,value]) => mark.setAttribute(key,value));
     mark.textContent = '?';
   } else mark?.remove();
+  element.querySelectorAll(`[data-order-chip][data-assigned-box-id="${id}"]`)
+    .forEach(chip => chip.classList.toggle('suspicious', Boolean(box.suspicious)));
   element.querySelectorAll(`[data-order-chip][data-assigned-box-id="${id}"] .tile-character`)
     .forEach(chip => { chip.style.color = textColor(box); });
 };
@@ -513,8 +521,6 @@ const hydrateLocalState = () => {
   if (!preserveOrder) {
     localTextSequence = [...(props.value.orderedAnnotations || [])].map(String);
     localTokenOrder = [];
-    localSuspiciousTokenIds = new Set(
-      (props.value.suspiciousTokenIds || []).map(String));
   }
   imageTransform.width = props.value.width;
   imageTransform.height = props.value.height;
@@ -672,12 +678,13 @@ if (sidebar) resizeObserver.observe(sidebar);
 root.addEventListener('change', event => {
   if (syncingStatusControl) return;
   if (handleAnnotationColor(event.target)) return;
-  const suspicious = event.target.closest('#suspicious-toggle input[type="checkbox"]');
-  if (suspicious && props.value.step === 4 && activeTokenId) {
-    if (suspicious.checked) localSuspiciousTokenIds.add(activeTokenId);
-    else localSuspiciousTokenIds.delete(activeTokenId);
-    element.querySelectorAll('[data-order-chip]').forEach(chip =>
-      chip.classList.toggle('suspicious', localSuspiciousTokenIds.has(chip.dataset.tokenId)));
+  const suspicious = event.target.closest('#suspicious-toggle input');
+  if (suspicious && props.value.step === 4 && activeBoxId) {
+    const box = localBoxes[activeBoxId];
+    const chip = element.querySelector(`[data-order-chip][data-assigned-box-id="${activeBoxId}"]`);
+    if (!box || !chip || chip.classList.contains('missing') || chip.classList.contains('excluded')) return;
+    box.suspicious = suspicious.value.toLowerCase() === 'true';
+    if (box.suspicious) box.unknown = false;
     renderSuspiciousPreview();
     renderSelection();
     return;
@@ -911,7 +918,7 @@ const updateExcludedChips = container => {
     chip.title = excluded ? 'Excluded from annotation data' : chip.dataset.character;
     const boxId = excluded ? '' : String((props.value.spatialBoxOrder || [])[index] || '');
     if (boxId) chip.dataset.assignedBoxId = boxId; else delete chip.dataset.assignedBoxId;
-    chip.classList.toggle('suspicious', localSuspiciousTokenIds.has(chip.dataset.tokenId));
+    chip.classList.toggle('suspicious', Boolean(localBoxes[boxId]?.suspicious) && !excluded && chip.dataset.character !== 'MISS');
   });
   renderSuspiciousPreview();
   updateCanvasLabels();
@@ -962,11 +969,23 @@ function renderSuspiciousPreview() {
   if (props.value.step !== 4) return;
   element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
     const chip = element.querySelector(`[data-order-chip][data-assigned-box-id="${group.dataset.boxId}"]`);
-    const suspicious = Boolean(chip?.classList.contains('suspicious'));
+    const suspicious = Boolean(localBoxes[group.dataset.boxId]?.suspicious);
+    chip?.classList.toggle('suspicious', suspicious);
     group.classList.toggle('suspicious-region', suspicious);
     const box = localBoxes[group.dataset.boxId];
     if (box) renderLocalStatus(group.dataset.boxId, box.status, box.unknown);
   });
+  const legend = element.querySelector('.status-legend');
+  if (legend) {
+    const hasSuspicious = Object.values(localBoxes).some(box => box.suspicious);
+    const label = legend.querySelector('.suspicious');
+    if (hasSuspicious && !label) {
+      const span = document.createElement('span');
+      span.className = 'suspicious';
+      span.textContent = 'Suspicious content';
+      legend.appendChild(span);
+    } else if (!hasSuspicious) label?.remove();
+  }
   applyAnnotationColor();
 }
 const orderRows = chips => {
@@ -1284,7 +1303,7 @@ element.addEventListener('pointerup', event => {
       const bbox = state.result;
       let newId;
       do { newId = `box_new_${nextTemporaryBoxId++}`; } while (localBoxes[newId]);
-      localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, unavailable_font: false, expert_prediction: false, order: null };
+      localBoxes[newId] = { bbox: [...bbox], status: 'intact', unknown: false, unavailable_font: false, expert_prediction: false, suspicious: false, order: null };
       mismatchConfirmationInvalidated = true;
       clearMismatchIssueSelection();
 

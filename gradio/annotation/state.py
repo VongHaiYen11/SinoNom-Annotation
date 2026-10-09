@@ -13,7 +13,7 @@ def new_state():
                 selection_cleared=False,
                 bounding_boxes={}, annotations={}, reading_order=[],
                 text_sequence=[],
-                text_token_ids=[], suspicious_token_ids=[],
+                text_token_ids=[],
                 box_id_by_region={}, region_uid_by_box_id={}, selected_box_id=None,
                 selected_token_id=None,
                 revision=0, current_step=1,
@@ -36,7 +36,6 @@ def invalidate(state, clear=False):
         state['selected_box_id'] = None
         state['selected_token_id'] = None
         state['text_token_ids'] = []
-        state['suspicious_token_ids'] = []
     state['saved'] = False
 
 
@@ -168,7 +167,6 @@ def initialize_alignment(state, ordered_uids=None):
                                state.get('text_token_ids', [])))
     tokens_by_region = {uid: previous_tokens[box_id]
                         for uid, box_id in previous_mapping.items() if box_id in previous_tokens}
-    previous_suspicious = list(state.get('suspicious_token_ids', []))
     ids = list(range(1, len(ordered_uids) + 1))
     state['box_id_by_region'] = {uid: str(box_id) for uid, box_id in zip(ordered_uids, ids)}
     state['region_uid_by_box_id'] = {str(box_id): uid for uid, box_id in zip(ordered_uids, ids)}
@@ -198,9 +196,6 @@ def initialize_alignment(state, ordered_uids=None):
     if (preserve_alignment and set(tokens_by_region) == set(ordered_uids)
             and len(excluded_tokens) == len(excluded)):
         state['text_token_ids'] = [tokens_by_region[uid] for uid in ordered_uids] + excluded_tokens
-        state['suspicious_token_ids'] = previous_suspicious
-    else:
-        state['suspicious_token_ids'] = []
     state['reading_order'] = ids
     state['selected_box_id'] = state['box_id_by_region'].get(state['selected_region_uid'])
     selected_index = (ids.index(int(state['selected_box_id']))

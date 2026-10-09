@@ -20,17 +20,18 @@ class Node {
 }
 const group = new Node();group.rect=new Node();group.label=new Node();group.dataset.boxId='1';
 Object.entries({x:10,y:20,width:30,height:40}).forEach(([k,v])=>group.rect.setAttribute(k,v));
-const chip=new Node();chip.dataset={assignedBoxId:'1',character:'永'};const box={bbox:[10,20,40,60],status:'intact',unknown:false,unavailable_font:false,expert_prediction:false};
+const chip=new Node();chip.dataset={assignedBoxId:'1',character:'永'};const box={bbox:[10,20,40,60],status:'intact',unknown:false,unavailable_font:false,expert_prediction:false,suspicious:false};
 const context = {localBoxes:{'1':box},groupFor:()=>group,props:{value:{step:4}},
-  selectedIds:new Set(['1']), annotationColor:'#22d3ee', element:{querySelectorAll:selector=>selector.startsWith('.annotation-canvas')?[group]:selector==='[data-order-chip]'?[]:[chip]}, document:{createElementNS:()=>new Node()},
+  selectedIds:new Set(['1']), annotationColor:'#22d3ee', applyAnnotationColor:()=>{}, element:{querySelector:selector=>selector==='.status-legend'?null:chip,querySelectorAll:selector=>selector.startsWith('.annotation-canvas')?[group]:selector==='[data-order-chip]'?[]:[chip]}, document:{createElementNS:()=>new Node()},
   activeBoxId:'1',syncExternalControls:()=>{},assert};
 vm.createContext(context);
 vm.runInContext(extract('const statusColor =', 'const applyAnnotationColor =') +
   extract('const renderLocalStatus =', 'const updateCanvasLabels ='), context);
 const run = code => vm.runInContext(code,context);
-const radioHandlers=script.slice(script.indexOf("  const input = event.target.closest('#status-radio input');"),
-  script.indexOf("\n});",script.indexOf("  const input = event.target.closest('#status-radio input');")));
-run(`function radio(selector,value) { const event={target:{closest:s=>s===selector?{value}:null}}; ${radioHandlers} }`);
+const radioHandlers=script.slice(script.indexOf("  const suspicious = event.target.closest('#suspicious-toggle input');"),
+  script.indexOf("\n});",script.indexOf("  const suspicious = event.target.closest('#suspicious-toggle input');")));
+vm.runInContext(extract('function renderSuspiciousPreview()', 'const orderRows ='),context);
+run(`function radio(selector,value) { const event={target:{closest:s=>s===selector?{value,checked:value===true}:null}}; ${radioHandlers} }`);
 run("renderLocalStatus('1','intact',false)");
 assert.equal(group.rect.attrs.stroke,'#22c55e');assert.equal(group.label.attrs.fill,'#ffffff');
 run("radio('#unavailable-font-radio input','True')");
@@ -78,7 +79,7 @@ for (const step of [4,7]) {
     [false,false,false,true,false,'intact','#22c55e','#ffffff','#facc15','.20'],
     [false,false,false,false,true,'intact','#22c55e','#ffffff','#e5e7eb','.30'],
   ]) {
-    Object.assign(box,{status,unavailable_font:font,expert_prediction:expert,unknown});
+    Object.assign(box,{status,unavailable_font:font,expert_prediction:expert,unknown,suspicious});
     group.classList.toggle('suspicious-region',suspicious);
     if(missing) group.rect.dataset.missing='1'; else delete group.rect.dataset.missing;
     run("renderLocalStatus('1',localBoxes['1'].status,localBoxes['1'].unknown); renderSelection(false)");
@@ -101,6 +102,20 @@ for (const [font,expert,color] of [[true,true,'#ec4899'],[false,true,'#facc15'],
   assert.equal(group.label.attrs.fill,color);
   assert.equal(group.label.attrs['font-size'],'9');
 }
+// True/False radio acts on the box and excludes Unknown in both directions.
+box.status='damaged';box.unknown=true;box.suspicious=false;
+run("radio('#suspicious-toggle input','True')");
+assert.equal(box.suspicious,true);assert.equal(box.unknown,false);
+assert.equal(group.rect.attrs['fill-opacity'],'.20');
+assert.equal(chip.classList.contains('suspicious'),true);
+run("radio('#unknown-radio input','True')");
+assert.equal(box.suspicious,false);assert.equal(chip.classList.contains('suspicious'),false);
+run("radio('#suspicious-toggle input','True'); radio('#status-radio input','intact')");
+assert.equal(box.suspicious,true);
+chip.classList.toggle('excluded',true);
+run("radio('#suspicious-toggle input','False')");
+assert.equal(box.suspicious,true);
+chip.classList.toggle('excluded',false);
 // Physical palette changes must be scoped to the geometry editor (step 3).
 assert.match(extract('const applyAnnotationColor =','const readAnnotationColor ='), /props.value.step !== 3/);
 console.log('PASS: radio handlers, all status visuals after selection in steps 4/7, label refresh and cropped/scaled question mark');

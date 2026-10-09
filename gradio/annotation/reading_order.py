@@ -89,23 +89,9 @@ def _apply_text_sequence(state, sequence, token_order, extra):
 
 
 def suspicious_box_ids(state):
-    """Return the boxes currently receiving suspicious character tokens."""
-    tokens=list(map(str,state.get('text_token_ids',[])))
-    suspicious=set(map(str,state.get('suspicious_token_ids',[])))
-    if not tokens or not suspicious or not state.get('bounding_boxes'):
-        return []
-    order=list(map(str,state.get('reading_order') or spatial_box_order(state)))
-    return [box_id for box_id,token_id in zip(order,tokens) if token_id in suspicious]
-
-
-def restore_suspicious_tokens(state, box_ids):
-    order=list(map(str,state.get('reading_order') or spatial_box_order(state)))
-    tokens=list(map(str,state.get('text_token_ids',[])))
-    by_box=dict(zip(order,tokens))
-    unknown=set(map(str,box_ids))-set(by_box)
-    if unknown:
-        raise ValueError('Suspicious details reference an unknown Box ID.')
-    state['suspicious_token_ids']=[by_box[str(box_id)] for box_id in map(str,box_ids)]
+    """Suspicious belongs to the box, independent of the assigned token."""
+    return [box_id for box_id, box in state.get('bounding_boxes', {}).items()
+            if box['suspicious']]
 
 
 def token_id_for_box(state, box_id):
