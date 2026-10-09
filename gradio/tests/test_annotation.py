@@ -185,7 +185,7 @@ class Invariants(unittest.TestCase):
                          materialize_alignment=False)
         self.assertTrue(source_mismatch_confirmed(s))
 
-    def test_clear_source_mismatch_disables_sort_until_counts_match_or_reconfirm(self):
+    def test_sort_without_mismatch_confirmation_keeps_alignment_blocked(self):
         engine=Workflow.__new__(Workflow)
         s=state('永寺樂文',n=3)
         s['current_step']=3
@@ -200,8 +200,11 @@ class Invariants(unittest.TestCase):
         cleared=engine.apply(s,'clear_source_mismatch')
         self.assertFalse(source_mismatch_confirmed(cleared))
         self.assertFalse(cleared['workflow']['bbox_valid'])
+        sorted_state=engine.apply(cleared,'sort_boxes')
+        self.assertEqual(sorted(box['order'] for box in sorted_state['regions'].values()),[1,2,3])
+        self.assertFalse(sorted_state['workflow']['alignment_valid'])
         with self.assertRaisesRegex(ValueError,'confirm a source mismatch'):
-            engine.apply(cleared,'sort_boxes')
+            engine.apply(sorted_state,'next')
 
     def test_complete_mismatch_order_materializes_character_tokens(self):
         s=state('永寺',n=3)

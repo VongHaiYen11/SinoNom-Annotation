@@ -1173,12 +1173,6 @@ def create_app(options):
                     refresh_bbox_validation(transient)
                     if not transient['workflow']['content_verified']:
                         raise ValueError('Verify the content before sorting boxes.')
-                    # Check the submitted boxes against the recorded count and
-                    # text. Order metadata does not affect mismatch approval.
-                    if not (transient['workflow']['bbox_valid']
-                            or source_mismatch_confirmed(transient)):
-                        raise ValueError(
-                            'Confirm the source mismatch before sorting when box and character counts differ.')
                     boxes={
                         str(uid):(box.get('bbox') if isinstance(box,dict) else box)
                         for uid,box in raw.items()

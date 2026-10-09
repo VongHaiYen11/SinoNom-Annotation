@@ -141,7 +141,7 @@ class GradioCallbacks(unittest.TestCase):
                 'action':'sort_boxes_calc','payload':changed_membership}))
             self.assertEqual(changed[8]['value']['sortRequestId'],
                              'sort-changed-membership')
-            self.assertEqual(changed[8]['value']['calcSortedBoxIds'],[])
+            self.assertEqual(changed[8]['value']['calcSortedBoxIds'],['middle','left'])
             invalid_payload=dict(sort_payload,boxes={},sortRequestId='sort-rejected')
             rejected=on_action(ctx,gr.EventData(None,{
                 'action':'sort_boxes_calc','payload':invalid_payload}))
