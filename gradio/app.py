@@ -556,15 +556,10 @@ def create_app(options):
             mismatch=source_mismatch_confirmed(s)
             final=(final_source_mismatch_document(s) if mismatch else final_document(s)) if step==7 else None
             source_mismatch_json=[]
-            if step==7:
-                source_mismatch_json=collect_source_mismatches(
-                    images,options.output_dir,allow_empty=True)
-                if mismatch and final:
-                    current_code=str(s['code'])
-                    source_mismatch_json=[
-                        doc for doc in source_mismatch_json
-                        if str(doc.get('inscription_code')) != current_code
-                    ] + [final]
+            if step==7 and mismatch and final:
+                # Review previews the current annotation. Validating every saved
+                # image belongs to Download All and must not block navigation.
+                source_mismatch_json=[final]
             issue=(s.get('source_mismatch') or {}) if mismatch else {}
             counts_differ=bool(has and len(s['regions']) != count_annotation_characters(s['annotation_text']))
             rendered=[ctx,app_identity(s),gr.update(value=msg,visible=bool(msg)),

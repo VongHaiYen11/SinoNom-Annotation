@@ -2,6 +2,7 @@
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -106,6 +107,14 @@ class SuspiciousFlags(unittest.TestCase):
                     with self.assertRaises(ValueError):engine.apply(s,'suspicious',{'id':'3','value':True})
                 for _ in range(3):s=engine.apply(s,'next')
                 s=engine.apply(s,'save')
+                if issue is None:
+                    open_callback=next(f for f in app.fns.values() if f.fn and f.fn.__name__=='open_image')
+                    # A broken saved mismatch for another image must not block Review.
+                    with patch('app.collect_source_mismatches',side_effect=ValueError('invalid other image')) as collect, patch('app.gr.Warning') as warning:
+                        result=open_callback.fn(dict(active=new_state(),drafts={str(image.resolve()):s}),str(image.resolve()))
+                        self.assertEqual(result[0]['active']['current_step'],7)
+                        collect.assert_not_called()
+                        warning.assert_not_called()
                 output=root/'out';path=output/('source_mismatches/1.json' if issue else '1.json')
                 doc=read_json(path)
                 self.assertTrue(doc['bounding_boxes']['1']['suspicious'])
