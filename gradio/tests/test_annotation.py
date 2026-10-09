@@ -386,9 +386,11 @@ class Invariants(unittest.TestCase):
         self.assertEqual(document['image_resize']['output_size'],[3413,4096])
 
     def test_unicode(self):
-        self.assertEqual(count_annotation_characters(' 永、樂。寺\n(𨴦) '),4)
+        self.assertEqual(count_annotation_characters(' 永、樂。寺\n(𨴦) '),6)
         self.assertEqual(count_annotation_characters('a\u0301 𨴦\U000E0100'),2)
-        self.assertEqual(normalize_annotation_text('(永樂寺)'), '永樂寺')
+        self.assertEqual(normalize_annotation_text('(永樂寺)'), '(永樂寺)')
+        brackets='()[]{}（）【】《》〈〉「」『』〔〕〖〗“”‘’'
+        self.assertEqual(normalize_annotation_text(brackets+' @□，。！？'),brackets+'@□')
         self.assertFalse(state('，。',0)['workflow']['alignment_valid'])
 
     def test_save_guards(self):
