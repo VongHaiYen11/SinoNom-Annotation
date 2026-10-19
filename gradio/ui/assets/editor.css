@@ -345,6 +345,12 @@
 }
 .order-chip .tile-character { font-size: 18px; line-height: 1; }
 
+/* Focus only the selected box/card pair; keep the source image and hit targets. */
+.status-order-board .annotation-canvas [data-box-id].focus-dimmed,
+.status-order-board .order-chip.focus-dimmed:not(.dragging) {
+  opacity: .25;
+}
+
 .review-detail { display: flex; flex-direction: column; gap: var(--space-6, 24px); padding: var(--space-6, 24px); border-top: 1px solid var(--color-border, #303237); }
 .review-text { display: flex; flex-direction: column; gap: var(--space-3, 12px); padding: var(--space-4, 16px); border: 1px solid var(--color-border, #303237); border-radius: var(--radius-sm, 4px); background: var(--color-page, #0b0d0f); }
 .review-text p { margin: 0; overflow-wrap: anywhere; font-size: 24px; letter-spacing: 2px; }

@@ -79,6 +79,7 @@ const context = {
   alignmentStateReady: false, alignmentContainer: null, alignmentCanvas: null, alignmentBoxGroups: [],
   localTextSequence: [], localTokenOrder: [], annotationColor: '#ffffff', applyAnnotationColor: () => {},
   orderDrag: null,
+  activeBoxId: '1',
   MutationObserver: class { constructor(callback) { observerCallback = callback; } observe() {} },
 };
 vm.createContext(context);
@@ -93,6 +94,7 @@ const run = code => vm.runInContext(code, context);
 function check(expected) {
   groups.forEach((group, index) => {
     const missing = expected.includes(index + 1);
+    assert.equal(group.classList.contains('focus-dimmed'), index !== 0);
     assert.equal(group.rect.dataset.missing === '1', missing);
     const marks = group.children.filter(node => node.attrs['data-miss-mark']);
     assert.equal(marks.length, Number(missing));
@@ -105,6 +107,10 @@ function check(expected) {
       assert.equal(marks[0].children[0].attrs.x1, String(x + 4));
       assert.equal(marks[0].children[0].attrs.y1, '14');
     }
+  });
+  container.children.forEach(chip => {
+    assert.equal(chip.classList.contains('selected-chip'), chip.dataset.assignedBoxId === '1');
+    assert.equal(chip.classList.contains('focus-dimmed'), chip.dataset.assignedBoxId !== '1');
   });
 }
 assert.equal(run('initializeAlignmentStateFromDOM()'), true);

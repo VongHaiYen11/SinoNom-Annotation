@@ -413,6 +413,18 @@ const renderLocalStatus = (id, status, unknown = null) => {
   element.querySelectorAll(`[data-order-chip][data-assigned-box-id="${id}"] .tile-character`)
     .forEach(chip => { chip.style.color = textColor(box); });
 };
+function renderAlignmentFocus() {
+  const focused = props.value.step === 4 && Boolean(activeBoxId && localBoxes[activeBoxId]);
+  element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
+    group.classList.toggle('focus-dimmed', focused && group.dataset.boxId !== activeBoxId);
+  });
+  element.querySelectorAll('[data-order-chip]').forEach(chip => {
+    const active = focused && chip.dataset.assignedBoxId === activeBoxId;
+    chip.classList.toggle('selected-chip', active);
+    chip.classList.toggle('focus-dimmed', focused && !active);
+  });
+}
+
 const renderSelection = (sync = true) => {
   const showResizeHandles = selectedIds.size === 1;
   element.querySelectorAll('.annotation-canvas [data-box-id]').forEach(group => {
@@ -431,9 +443,7 @@ const renderSelection = (sync = true) => {
       rect.setAttribute('stroke-width', suspicious && active ? '3' : suspicious ? '2' : active ? '2.5' : selected ? '2' : '1.5');
     }
   });
-  element.querySelectorAll('[data-order-chip]').forEach(chip => {
-    chip.classList.remove('selected-chip');
-  });
+  renderAlignmentFocus();
   if (sync) syncExternalControls();
 };
 const updateCanvasLabels = () => {
@@ -968,6 +978,7 @@ const updateExcludedChips = container => {
   synchronizeMissingPreview(container);
   renderSuspiciousPreview();
   updateCanvasLabels();
+  renderAlignmentFocus();
 };
 
 // Labels and MISS overlays follow the same browser draft, including cancelled
