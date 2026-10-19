@@ -433,6 +433,14 @@ def create_app(options):
                 with gr.Group(visible=False,
                               elem_classes=['section','sidebar-section','sidebar-component','selection-section']) as status_group:
                     gr.Markdown('### Selected region')
+                    gr.HTML('''<div class="box-number-selection">
+                        <label for="select-box-number">Select box #</label>
+                        <input id="select-box-number" type="text" inputmode="numeric"
+                            autocomplete="off" placeholder="Box number"
+                            aria-describedby="select-box-number-help select-box-number-error"/>
+                        <small id="select-box-number-help">Nhập số box rồi nhấn Enter</small>
+                        <div id="select-box-number-error" role="status" aria-live="polite"></div>
+                    </div>''')
                     hide_canvas_overlays=gr.Checkbox(
                         value=False,label='Show image only',elem_id='show-image-only')
                     status_id=gr.Dropdown(visible=False)

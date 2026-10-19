@@ -10,6 +10,7 @@ let localBoxes = {}, selectedIds = new Set(), activeBoxId = null, activeTokenId 
 let localTextSequence = [], localTokenOrder = [];
 let alignmentStateReady = false, alignmentContainer = null, alignmentCanvas = null;
 let alignmentBoxGroups = [];
+let boxNumberInputElement = null, boxNumberSelectedId = null;
 let mismatchConfirmationInvalidated = false;
 let nextTemporaryBoxId = 1;
 let annotationColor = '#f4f4f5';
@@ -195,8 +196,31 @@ const setInputValue = (selector, value) => {
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
 };
+function setBoxNumberError(message) {
+  const input = root.querySelector('#select-box-number');
+  const error = root.querySelector('#select-box-number-error');
+  if (error) error.textContent = message;
+  if (input) {
+    if (message) input.setAttribute('aria-invalid', 'true');
+    else input.removeAttribute('aria-invalid');
+  }
+}
+
+function syncBoxNumberInput() {
+  const input = root.querySelector('#select-box-number');
+  const id = props.value.step === 4 && activeBoxId && localBoxes[activeBoxId] ? activeBoxId : '';
+  const changed = input !== boxNumberInputElement || id !== boxNumberSelectedId;
+  if (input && (changed || document.activeElement !== input)) {
+    input.value = id;
+    setBoxNumberError('');
+  }
+  boxNumberInputElement = input;
+  boxNumberSelectedId = id;
+}
+
 const syncExternalControls = () => {
   updateValidationSummary();
+  syncBoxNumberInput();
   const bridgeSnapshot = {
     active: activeBoxId,
     selected: [...selectedIds],
@@ -279,7 +303,7 @@ const syncExternalControls = () => {
       }
     }
   }
-  if (props.value.step === 4) {
+  if (props.value.step === 4 && active) {
     const statusRadio = root.querySelector(`#status-radio input[value="${active.status}"]`);
     if (statusRadio && !statusRadio.checked) {
       syncingStatusControl = true;
@@ -900,6 +924,41 @@ const setSelection = (ids, active = null, sync = true) => {
   renderSelection(sync);
 };
 root.addEventListener('deselect-regions', () => setSelection([], null));
+function handleBoxNumberKeydown(event) {
+  const input = event.target.closest('#select-box-number');
+  if (!input || event.key !== 'Enter' || event.isComposing) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (props.value.step !== 4 || pending) return;
+  const value = input.value.trim();
+  if (!value) {
+    setBoxNumberError('');
+    input.value = '';
+    setSelection([], null);
+    return;
+  }
+  const number = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(number) || number < 1) {
+    setBoxNumberError('Enter a positive whole box number.');
+    return;
+  }
+  const id = String(number);
+  if (!Object.prototype.hasOwnProperty.call(localBoxes, id)) {
+    setBoxNumberError(`Box #${id} does not exist.`);
+    return;
+  }
+  setBoxNumberError('');
+  input.value = id;
+  setSelection([id], id);
+}
+// Capture Enter before Gradio's input/form shortcuts, including after DOM replacement.
+root.addEventListener('keydown', handleBoxNumberKeydown, true);
+root.addEventListener('input', event => {
+  if (event.target.closest('#select-box-number')) setBoxNumberError('');
+});
+root.addEventListener('focusin', event => {
+  if (event.target.closest('#select-box-number')) syncBoxNumberInput();
+});
 const createOverlayRect = (svg, className) => {
   const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
   rect.setAttribute('class', className); rect.setAttribute('vector-effect', 'non-scaling-stroke');
