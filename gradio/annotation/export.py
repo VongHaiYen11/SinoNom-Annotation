@@ -117,7 +117,7 @@ def collect_content_documents(images, output_dir, allow_empty=False, titles=None
                 document, document.get('image') if isinstance(document, dict) else '', None)
             if titles is not None:
                 document = deepcopy(document)
-                document['content'] = {title: document['content'].get(title) for title in titles}
+                document['content'] = {title: document['content'].get(title) or '' for title in titles}
                 validate_content_document(document, document['image'], titles)
             if document['image'] in by_image:
                 raise ValueError('The saved-content registry contains duplicate images.')

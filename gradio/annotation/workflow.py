@@ -15,6 +15,7 @@ from .state import (new_state, set_verified_content, refresh_bbox_validation,
                     source_mismatch_confirmed)
 from .text_extraction import (annotation_text, edit_content_field,
                               content_fields, content_document, save_content_document,
+                              complete_content_record,
                               validate_content_document,
                               normalize_content_titles, normalize_metadata_fields)
 from .text_alignment import MISSING_ANNOTATION, characters, count_annotation_characters
@@ -137,7 +138,8 @@ class Workflow:
         if len(matches) != 1:
             raise ValueError(f'Image code {code}: found {len(matches)} inscription faces; expected exactly one.')
         record_index, face_index = matches[0]
-        record = deepcopy(records[record_index])
+        record = complete_content_record(
+            records[record_index], code, self.content_titles, self.metadata_fields)
         # Keep the same schema validation as the public extraction adapter.
         annotation_text(record, code, self.annotation_title)
         return dict(record=record, record_index=record_index, face_index=face_index, code=code)

@@ -222,6 +222,9 @@ Character assignments, bounding boxes, damage labels, and geometry for images sa
 ### `inscription_content.json`
 
 Verified source content and configured metadata saved from the Content stage.
+All configured fields are editable, including sections absent from the source JSON.
+Missing values default to empty strings (`""`). Added text is saved in this export
+and restored when reopening the image; the input JSON remains unchanged.
 
 <details>
 <summary><code>inscription_content.json</code> — Example</summary>

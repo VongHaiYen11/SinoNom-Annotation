@@ -37,11 +37,7 @@ def normalize_metadata_fields(fields):
     return tuple(normalized)
 
 
-def content_fields(record, code, titles=None, metadata_fields=()):
-    """Editable text sections on the selected face, with original source paths.
-
-    Keep the full record in state/persistence. Missing sections are not invented.
-    """
+def _selected_content_face(record, code):
     faces = [(index, face) for index, face in enumerate(record.get('noi_dung', []))
              if str(face.get('ky_hieu')) == str(code)]
     if not faces and str(code).isdigit():
@@ -50,7 +46,32 @@ def content_fields(record, code, titles=None, metadata_fields=()):
                  if str(face.get('ky_hieu')) == norm_code]
     if len(faces) != 1:
         raise ValueError('Exactly one inscription face must match the selected image.')
-    face_index, face = faces[0]
+    return faces[0]
+
+
+def complete_content_record(record, code, titles, metadata_fields=()):
+    """Supply editable empty fields on a copy of the selected source record."""
+    result = deepcopy(record)
+    _, face = _selected_content_face(result, code)
+    sections = face.setdefault('chuyen_muc', [])
+    for title in normalize_content_titles(titles):
+        matching = [section for section in sections if section.get('tieu_de') == title]
+        if not matching:
+            sections.append({'tieu_de': title, 'van_ban': ''})
+        for section in matching:
+            if not isinstance(section.get('van_ban'), str):
+                section['van_ban'] = ''
+    for _, field in normalize_metadata_fields(metadata_fields):
+        if not isinstance(result.get(field), str):
+            result[field] = ''
+    return result
+
+
+def content_fields(record, code, titles=None, metadata_fields=()):
+    """Editable fields in config order, defaulting missing configured fields to ''."""
+    if titles is not None:
+        record = complete_content_record(record, code, titles, metadata_fields)
+    face_index, face = _selected_content_face(record, code)
     if titles is None:
         # Schema-free helper behavior for callers inspecting a raw source record.
         # The application always supplies the config-controlled title sequence.
@@ -84,7 +105,7 @@ def content_document(image_name, code, record, titles, metadata_fields=()):
     return {
         'image': Path(image_name).name,
         'inscription_code': str(code),
-        'content': {title: values.get(title) for title in output_titles},
+        'content': {title: values.get(title, '') for title in output_titles},
     }
 
 
@@ -111,7 +132,7 @@ def _configured_content_document(document, titles):
     validate_content_document(
         document, document.get('image') if isinstance(document, dict) else '', None)
     result = deepcopy(document)
-    result['content'] = {title: document['content'].get(title) for title in titles}
+    result['content'] = {title: document['content'].get(title) or '' for title in titles}
     return result
 
 
@@ -144,6 +165,7 @@ def save_content_document(document, output_dir, titles):
 
 
 def edit_content_field(record, code, path, value, titles, metadata_fields=()):
+    record = complete_content_record(record, code, titles, metadata_fields)
     if not isinstance(path, (tuple, list)) or not any(
             tuple(path) == field['path']
             for field in content_fields(record, code, titles, metadata_fields)):
