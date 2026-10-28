@@ -1,18 +1,21 @@
 """Read-only workbench presentation; workflow decisions stay in annotation/."""
 import html
 from pathlib import Path
-from annotation.text_alignment import count_annotation_characters
-from annotation.state import source_mismatch_confirmed
 from .fonts import FONT_CSS
-from .icons import ALERT, CHECK
+from .icons import CHECK
 
 APP_CSS = FONT_CSS + (Path(__file__).parent / 'assets/workbench.css').read_text()
-LABELS = ('Image', 'Content', 'Bounding Boxes & Sort', 'Status & Order', 'Crop', 'Review')
 SECTION_LABELS = {
-    'Nguyên văn chữ Hán Nôm': 'Nguyên văn chữ Hán Nôm',
-    'Phiên âm Hán Việt': 'Phiên âm Hán Việt',
-    'Dịch nghĩa': 'Dịch nghĩa', 'Toát yếu': 'Toát yếu', 'Chú thích': 'Chú thích',
+    'Nguyên văn chữ Hán Nôm': 'Original Hán–Nôm Text',
+    'Phiên âm Hán Việt': 'Sino-Vietnamese Transcription',
+    'Dịch nghĩa': 'Translation', 'Toát yếu': 'Summary', 'Chú thích': 'Notes',
+    'Tên bia': 'Inscription Title', 'Địa điểm': 'Location', 'Niên đại': 'Date',
 }
+UNIFIED_LABELS = ('Content Verification', 'Annotation Workspace', 'Crop', 'Review & Save')
+
+
+def steps_for(state):
+    return UNIFIED_LABELS, {1:1,2:1,3:2,4:2,5:2,6:3,7:4}[state['current_step']]
 
 
 def app_identity(state):
@@ -24,9 +27,9 @@ def app_identity(state):
 
 
 def workflow_progress(state):
-    step = display_step(state['current_step'])
+    labels, step = steps_for(state)
     steps = []
-    for index, label in enumerate(LABELS, 1):
+    for index, label in enumerate(labels, 1):
         active = index == step; done = index < step
         cls = ' is-active' if active else ' is-complete' if done else ''
         current = ' aria-current="step"' if active else ''
@@ -44,48 +47,13 @@ def header(state):
 
 
 def panel_heading(state):
-    step = display_step(state['current_step'])
+    labels, step = steps_for(state)
     return f'''<div class="panel-heading">
       <span class="panel-eyebrow">Inspector</span>
-      <h2>{LABELS[step-1]}</h2>
+      <h2>{labels[step-1]}</h2>
     </div>'''
 
 
-def panel_summary(state):
-    if state['current_step'] not in (3, 7):
-        return ''
-    boxes = (state['regions'] if state['current_step'] == 3 or (
-        state['current_step'] == 7 and source_mismatch_confirmed(state)
-        and state['source_mismatch']['issue_type'] == 'other') else state['bounding_boxes'])
-    count = count_annotation_characters(state['annotation_text'])
-    matched = state['workflow']['content_verified'] and len(boxes) == count and count > 0
-    confirmed = source_mismatch_confirmed(state)
-    label = ('Content not verified' if not state['workflow']['content_verified']
-             else 'Confirmed Mismatch' if confirmed
-             else 'Counts match' if matched
-             else 'Count mismatch')
-    delta = len(boxes) - count
-    return f'''<section class="section sidebar-section panel-summary"><h3>Validation</h3>
-      <div class="validation-badge{' is-count-match' if matched else ''}">{CHECK if matched else ALERT}<span>{label}</span></div>
-      <dl><div><dt>Bounding boxes</dt><dd>{len(boxes)}</dd></div>
-      <div><dt>Characters</dt><dd>{count}</dd></div>
-      <div><dt>Difference (boxes − characters)</dt><dd>{delta:+d}</dd></div></dl></section>'''
-
-
-def status_rows(state):
-    return [[box['status']] for box in state['regions'].values()]
-
-
 def footer(state):
-    step = display_step(state['current_step'])
-    return f'<div class="footer-step-label">{LABELS[step-1]} <span>/</span> {step} of 6</div>'
-
-
-def display_step(step):
-    if step <= 4:
-        return step
-    if step == 6:
-        return 5
-    if step == 7:
-        return 6
-    return 4
+    labels, step = steps_for(state)
+    return f'<div class="footer-step-label">{labels[step-1]} <span>/</span> {step} of {len(labels)}</div>'

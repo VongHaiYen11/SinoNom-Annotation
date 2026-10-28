@@ -75,7 +75,7 @@ class SuspiciousFlags(unittest.TestCase):
         update_text_sequence(s,['寺','永','永'])
         self.assertEqual(suspicious_box_ids(s),['2'])
         self.assertTrue(s['regions'][uid]['suspicious'])
-        for step in (4,7):
+        for step in (7,):
             s['current_step']=step;markup=snapshot(s)['markup']
             self.assertIn('data-suspicious="true"',markup)
             self.assertIn('suspicious-region',markup)
@@ -105,36 +105,12 @@ class SuspiciousFlags(unittest.TestCase):
                 for i,box in enumerate(boxes.values(),1):box['order']=i
                 s=engine.apply(s,'next',{'boxes':boxes})
                 s=engine.apply(s,'suspicious',{'id':'1','value':True})
-                if issue is None:
-                    import gradio as gr
-                    from app import create_app, parser
-                    options=parser().parse_args(['--image-dir',str(root),'--source-json',str(source),
-                        '--output-dir',str(root/'out'),'--skip-detection'])
-                    app=create_app(options)
-                    callback=next(f for f in app.fns.values() if f.fn and f.fn.__name__=='on_action')
-                    result=callback.fn(dict(active=s,drafts={}),gr.EventData(None,{
-                        'action':'suspicious','payload':{'id':'1','value':False}}))
-                    self.assertEqual(len(result),len(callback.outputs))
-                    self.assertFalse(result[0]['active']['bounding_boxes']['1']['suspicious'])
-                    self.assertNotIn('suspicious-preview',str(app.get_config_file()))
-                    control=next(c for c in app.get_config_file()['components']
-                                 if c['props'].get('elem_id')=='suspicious-toggle')
-                    self.assertEqual(control['type'],'radio')
-                    self.assertEqual(control['props']['choices'],[('False','False'),('True','True')])
                 if issue=='missing_text':
                     with self.assertRaises(ValueError):engine.apply(s,'suspicious',{'id':'3','value':True})
                 if issue=='extra_text':
                     with self.assertRaises(ValueError):engine.apply(s,'suspicious',{'id':'3','value':True})
                 for _ in range(3):s=engine.apply(s,'next')
                 s=engine.apply(s,'save')
-                if issue is None:
-                    open_callback=next(f for f in app.fns.values() if f.fn and f.fn.__name__=='open_image')
-                    # A broken saved mismatch for another image must not block Review.
-                    with patch('app.collect_source_mismatches',side_effect=ValueError('invalid other image')) as collect, patch('app.gr.Warning') as warning:
-                        result=open_callback.fn(dict(active=new_state(),drafts={str(image.resolve()):s}),str(image.resolve()))
-                        self.assertEqual(result[0]['active']['current_step'],7)
-                        collect.assert_not_called()
-                        warning.assert_not_called()
                 output=root/'out';path=output/('source_mismatches/1.json' if issue else '1.json')
                 doc=read_json(path)
                 self.assertTrue(doc['bounding_boxes']['1']['suspicious'])

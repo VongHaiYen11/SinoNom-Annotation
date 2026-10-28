@@ -47,6 +47,9 @@ def refresh_bbox_validation(state):
 def source_mismatch_confirmed(state):
     """Return whether the recorded source exception matches current state."""
     issue = state.get('source_mismatch')
+    if state.get('workspace') and issue:
+        from .workspace import workspace_issues
+        return not workspace_issues(state)
     box_count = len(state['regions'])
     character_count = count_annotation_characters(state['annotation_text'])
     return bool(

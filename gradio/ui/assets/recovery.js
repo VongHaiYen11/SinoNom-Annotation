@@ -29,16 +29,6 @@ const draftRecovery = (() => {
     if (!meta) return null;
     const record = records[recordKey(meta)];
     if (!matches(record, meta)) return null;
-    if (record.board && (!record.board.boxes || typeof record.board.boxes !== 'object'
-        || Array.isArray(record.board.boxes)
-        || !Array.isArray(record.board.selected)
-        || Object.values(record.board.boxes).some(box => !box || !Array.isArray(box.bbox)
-          || box.bbox.length !== 4 || !box.bbox.every(Number.isFinite)
-          || !['intact', 'damaged'].includes(box.status)))) {
-      notice('Invalid browser box draft was ignored.');
-      // Preserve independent text input even if the box snapshot is corrupt.
-      delete record.board;
-    }
     return record;
   };
   const write = (meta, update) => {
@@ -46,8 +36,7 @@ const draftRecovery = (() => {
     records[recordKey(meta)] = {...(read(meta) || {}), metadata: meta, ...update};
     persist();
   };
-  const uiSelectors = ['content-value', 'content-draft-bridge', 'mismatch-note',
-    'crop-coordinates', 'bbox-x1', 'bbox-y1', 'bbox-x2', 'bbox-y2', 'manual-box-order'];
+  const uiSelectors = ['content-value', 'content-draft-bridge', 'crop-coordinates'];
   const captureUI = () => {
     if (!metadata?.image || restoring) return;
     const ui = {...(read(metadata)?.ui || {})};
@@ -122,11 +111,8 @@ const draftRecovery = (() => {
     if (metadata?.image) write(metadata, {section: value, content});
     return record?.typing?.[value];
   };
-  const issue = value => {
-    if (metadata?.image) write(metadata, {issue: value});
-  };
   const content = value => write(metadata, {content: JSON.stringify(value)});
-  window.vietnamicaRecovery = {section, issue, content};
+  window.vietnamicaRecovery = {section, content};
   return {read, write, activate, restoreUI, captureUI, notice};
 })();
 window.vietnamicaDraftRecovery = draftRecovery;

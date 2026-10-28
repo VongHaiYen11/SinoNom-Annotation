@@ -33,6 +33,7 @@ from .io import (atomic_write, rollback_saved_files, final_document,
                  canonical_issue_type, validate_document,
                  validate_source_mismatch_type)
 from .detection_adapter import detect
+from .workspace import ensure_workspace, sync_workspace, workspace_issues, materialize_workspace
 from crop.crop import (crop_bbox, default_crop,
                        validate_crop_coordinates, validate_resized_image_size)
 
@@ -265,6 +266,8 @@ class Workflow:
                 normalized_hash = fingerprint(json.dumps(doc, sort_keys=True, ensure_ascii=False))
                 if sidecar.get('document_hash') == normalized_hash:
                     state['loaded_meta'] = sidecar
+                    if sidecar.get('workspace'):
+                        state['pending_workspace'] = deepcopy(sidecar['workspace'])
         # Editing always uses source-image coordinates. Saved crop corners are
         # in image_resize.output_size coordinates, so undo that resize on load.
         state['crop'] = default_crop(size)
@@ -303,12 +306,18 @@ class Workflow:
         if 'revision' in payload and (payload['revision'] != s['revision'] or payload.get('image') != s['image']):
             raise ValueError('This action is out of date. The interface has been refreshed; please try again.')
         step = s['current_step']
+        if action == 'workspace_sync':
+            if step != 3:
+                raise ValueError('Edit annotations in the Annotation Workspace.')
+            sync_workspace(s, payload['model'])
+            s['revision'] += 1
+            return s
         if action == 'back':
             if (step == 7 and source_mismatch_confirmed(s)
                     and s['source_mismatch']['issue_type'] == 'other'):
                 s['current_step'] = 3
             elif step == 6:
-                s['current_step'] = 4
+                s['current_step'] = 3 if s.get('workspace') else 4
             else:
                 s['current_step'] = max(1, step - 1)
         elif action == 'field':
@@ -596,7 +605,18 @@ class Workflow:
             elif step == 2:
                 s = self.apply(s, 'save_content')
                 s['current_step'] = 3
+                if s.get('unified_enabled'):
+                    ensure_workspace(s)
             elif step == 3:
+                if s.get('workspace'):
+                    issues = workspace_issues(s)
+                    if issues:
+                        s['workspace_issues'] = issues
+                    else:
+                        materialize_workspace(s)
+                        s['current_step'] = 6
+                    s['revision'] += 1
+                    return s
                 refresh_bbox_validation(s)
                 if not (s['workflow']['bbox_valid'] or source_mismatch_confirmed(s)):
                     raise ValueError('Match the box and character counts or confirm a source mismatch.')
@@ -670,7 +690,8 @@ class Workflow:
                         else save_annotation(s, self.output))
                 atomic_write(mismatch_meta if mismatch else normal_meta,
                              dict(text_hash=fingerprint(s['annotation_text']),
-                                  document_hash=fingerprint(json.dumps(document, sort_keys=True, ensure_ascii=False))))
+                                  document_hash=fingerprint(json.dumps(document, sort_keys=True, ensure_ascii=False)),
+                                  **({'workspace':deepcopy(s['workspace'])} if s.get('workspace') else {})))
                 (normal_meta if mismatch else mismatch_meta).unlink(missing_ok=True)
             s['saved'] = True
             s['crop_saved'] = True

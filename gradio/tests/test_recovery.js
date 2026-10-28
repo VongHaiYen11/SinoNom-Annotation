@@ -26,14 +26,14 @@ function mount(metadata = meta, blocked = false) {
     run: code => vm.runInContext(code, context)};
 }
 let page = mount();
-page.run(`draftRecovery.write(props.value, {board: {
+page.run(`draftRecovery.write(props.value, {workspace: {
   boxes: {'1': {bbox:[1,2,3,4], status:'damaged', damage_level:null, suspicious:true}},
   active:'1', selected:['1'], tokenOrder:['t2','t1']}})`);
 page = mount();
-assert.equal(page.run('draftRecovery.read(props.value).board.boxes["1"].status'), 'damaged');
-assert.equal(page.run('draftRecovery.read(props.value).board.boxes["1"].damage_level'), null);
-assert.equal(page.run('draftRecovery.read(props.value).board.active'), '1');
-assert.equal(page.run('draftRecovery.read(props.value).board.tokenOrder.join()'), 't2,t1');
+assert.equal(page.run('draftRecovery.read(props.value).workspace.boxes["1"].status'), 'damaged');
+assert.equal(page.run('draftRecovery.read(props.value).workspace.boxes["1"].damage_level'), null);
+assert.equal(page.run('draftRecovery.read(props.value).workspace.active'), '1');
+assert.equal(page.run('draftRecovery.read(props.value).workspace.tokenOrder.join()'), 't2,t1');
 
 // Actual typing and fields never sent to Python survive a new page context.
 const contentMeta = {...meta, step: 2, defaultSection: '[0]'};
@@ -50,7 +50,7 @@ assert.equal(page.run('draftRecovery.read(props.value).typing["[0]"]'), 'typing 
 
 // Per-image drafts survive switching, but superseded generations do not.
 page = mount({...meta, image: '/2.png'});
-page.run('draftRecovery.write(props.value, {board:{boxes:{}}})');
+page.run('draftRecovery.write(props.value, {workspace:{boxes:{}}})');
 page = mount({...meta, generation: 'g2'});
 assert.equal(page.run('draftRecovery.read(props.value)'), null);
 assert.ok([...storage.values()][0].includes('/2.png'));
@@ -68,36 +68,3 @@ assert.match(page.status.textContent, /unavailable/);
 page = mount(meta, true);
 assert.match(page.status.textContent, /unavailable/);
 console.log('PASS: reload, unfinished labels/content, generations, per-image drafts and storage failures');
-
-// Hydrate the real editor from a server baseline plus unapplied browser edits.
-const editor = fs.readFileSync(path.join(__dirname, '../ui/assets/editor.js'), 'utf8');
-const extract = (start, end) => editor.slice(editor.indexOf(start), editor.indexOf(end, editor.indexOf(start)));
-const hydration = {
-  props: {value: {image:'1.png', step:3, width:100, height:100, boxes:{deleted:{bbox:[0,0,5,5]}},
-    recovery: meta}},
-  localBoxes: {}, localContext:'', pendingAction:null, pendingSortSelectedRange:null,
-  localTokenOrder:[], localTextSequence:[], selectedIds:new Set(), activeBoxId:null,
-  activeTokenId:null, imageTransform:{}, recoveredContext:'',
-  mismatchConfirmationInvalidated:false, nextTemporaryBoxId:1,
-  structuredClone, assert,
-  element:{querySelectorAll:()=>[]}, root:{querySelector:()=>null},
-  restoreDraftGeometry:()=>{}, updateCanvasLabels:()=>{},
-  renderSelection:()=>{}, assertUniqueBoxIds:()=>{}, readAnnotationColor:()=>{},
-  applyAnnotationColor:()=>{}, applyImageOnlyMode:()=>{}, syncExternalControls:()=>{},
-  setInputValue:()=>{}, requestAnimationFrame:fn=>fn(),
-  draftRecovery:{read:()=>({board:{boxes:{added:{bbox:[10,20,30,40],status:'damaged',damage_level:null,
-    suspicious:true, order:2}},selected:['added'],active:'added',nextTemporaryBoxId:7,
-    mismatchConfirmationInvalidated:true}}), activate:()=>{},restoreUI:()=>{},notice:()=>{}},
-};
-vm.createContext(hydration);
-vm.runInContext(extract('const cloneBoxes =', 'const assertUniqueBoxIds =')
-  + extract('const hydrateLocalState =', 'const fitCanvas =') + '\nhydrateLocalState();', hydration);
-assert.equal(hydration.localBoxes.deleted, undefined);
-assert.deepEqual(Array.from(hydration.localBoxes.added.bbox), [10,20,30,40]);
-assert.equal(hydration.localBoxes.added.status, 'damaged');
-assert.equal(hydration.localBoxes.added.damage_level, null);
-assert.equal(hydration.localBoxes.added.order, 2);
-assert.equal(hydration.activeBoxId, 'added');
-assert.equal(hydration.nextTemporaryBoxId, 7);
-assert.equal(hydration.mismatchConfirmationInvalidated, true);
-console.log('PASS: editor hydration keeps local additions/deletions, geometry, order, selection and incomplete labels');

@@ -1,4 +1,4 @@
-"""Regression checks for the current six-screen annotation workflow."""
+"""Legacy annotation-domain and document compatibility regressions."""
 import json
 import sys
 import tempfile
@@ -42,15 +42,7 @@ class CurrentWorkflow(unittest.TestCase):
             state = self.engine.apply(state, 'confirm_source_mismatch', {'issue_type': 'missing_text'})
         return self.engine.apply(state, 'sort_boxes')
 
-    def app_callbacks(self):
-        from app import create_app, parser
-        app = create_app(parser().parse_args([
-            '--image-dir', str(self.root), '--source-json', str(self.source),
-            '--output-dir', str(self.output), '--skip-detection']))
-        return {f.fn.__name__: f.fn for f in app.fns.values() if f.fn}
-
     def test_placeholder_flags_follow_submitted_assignment(self):
-        apply = self.app_callbacks()['apply_status_changes']
         for placeholder in ('□', '@'):
             with self.subTest(placeholder=placeholder):
                 state = self.aligned(placeholder + '永')
@@ -65,8 +57,15 @@ class CurrentWorkflow(unittest.TestCase):
                     'suspiciouses': {'1': False, '2': False},
                     'textSequence': ['永', placeholder], 'tokenOrder': ['2', '1'],
                 }
-                result = apply({'active': state, 'drafts': {}}, json.dumps(payload), 'intact')
-                accepted = result[0]['active']
+                accepted = self.engine.apply(state,'reorder_text',{
+                    'sequence':payload['textSequence'],'token_order':payload['tokenOrder']})
+                from annotation.status import replace_statuses, require_damage_levels
+                mapping=accepted['region_uid_by_box_id']
+                remap=lambda values:{mapping[key]:value for key,value in values.items()}
+                replace_statuses(accepted,remap(payload['statuses']),remap(payload['unknowns']),
+                    remap(payload['unavailable_fonts']),remap(payload['expert_predictions']),
+                    remap(payload['suspiciouses']),remap(payload['damage_levels']))
+                require_damage_levels(accepted)
                 self.assertEqual(accepted['annotations'], {'1': '永', '2': placeholder})
                 self.assertEqual(accepted['bounding_boxes']['1']['status'], 'intact')
                 self.assertTrue(all(not accepted['bounding_boxes']['1'][flag] for flag in flags))

@@ -134,6 +134,21 @@ Open the URL printed in the terminal. Add `--skip-detection` for manual boxes or
 
 Reloading the same browser tab automatically restores the current image, workflow step, and unfinished edits, including labels that have not been applied and content still being typed. Recovery uses browser session storage and application memory; keep the Gradio process running in the Kaggle session. Closing the tab, restarting the application, or ending the Kaggle session is outside this recovery guarantee. **Save Annotation** still writes the final annotation, and **Download All** includes saved results only. The recovery message above the workspace reports when browser storage is unavailable.
 
+### Unified Annotation Workspace
+
+The interface uses four steps after selecting an image: **Content Verification → Annotation Workspace → Crop → Review & Save**. Reference content, image geometry, reading order, and box status are edited together in the workspace; matching character/box counts are not required to start.
+
+- The reference sidebar has an icon-only open/close control. Its width, scroll position, and selection are restored in the same tab. Selecting content preserves image zoom; use **Focus** to center a selected box.
+- Right-click a character or use its **⋯** menu to insert literal **MISS** entries before/after it, **Exclude from Alignment**, or **Include in Alignment**. Excluded entries stay visible in place and do not consume an effective sequence number.
+- **Draw Box** or **Alt + drag** adds a box; drag a box to move it or use its corner handles to resize. **Shift + click** selects multiple boxes; **Delete** removes selected boxes. **Space + drag** pans, and **Ctrl + wheel** zooms. Enter a character/box number and press **Enter** to navigate.
+- Reading order is independent of permanent box identity. Changing order 65 to 180 inserts the box at 180 and shifts the intervening orders. Adding a box uses the established spatial sorter to suggest an insertion without reordering the other boxes.
+- Position-based suggestions update automatically. **Confirm Alignment**, **Confirm & Next**, or the explicit batch controls confirm pairs. Confirmed relationships retain their IDs after content/order edits; conflicts require resolution. **Use Suggested Alignment** checks one-to-one assignment before replacing a confirmation. **Remove Confirmation** releases a conflicting relationship.
+- Status and damage levels remain attached to boxes. Suggestions do not change them. Explicit confirmation applies the existing mandatory `□`, `@`, and `MISS` rules after showing any required flag changes. Every damaged box needs level 1, 2, or 3.
+- **Continue** requires nonempty boxes, unique contiguous reading orders `1..N`, valid statuses, and complete confirmed one-to-one alignments. **Cannot Continue** lists issues and offers **Download Issues (.txt)**, generated from the same validation results.
+- **Undo/Redo** (Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z) covers content corrections, geometry edits, reading order, and confirmations. Up to 50 recent editor states are kept, with a size budget for long inscriptions. Detection replaces boxes and starts a new box-edit history.
+
+Saved `.state` sidecars preserve editor IDs, content corrections in their original positions, confirmations, history, and preferences. Keep these sidecars with per-image output to reopen the complete editor state. The downloadable ZIP retains the same three result files and does not include editor metadata. Source JSON is never rewritten.
+
 ## JSON Output
 
 `annotations.zip` contains `text_annotations.json`, `inscription_content.json`, and `source_mismatches.json`. Each file contains a **top-level JSON array of objects** with zero, one, or multiple records. Each record represents one inscription image or face, identified by `image`. Empty categories are `[]`. Match records by `image`, not by array position. The examples below use illustrative 1000 × 1000 images.
@@ -372,16 +387,18 @@ Images saved with missing source text (`missing_text`), extra source text (`extr
 | --- | --- |
 | `image` | Image filename; identifies the face within the dataset. |
 | `inscription_code` | Face identifier matching the image stem. |
-| `issue_type` | Single-item array: `missing_text`, `extra_text`, or `other`. |
+| `issue_type` | `missing_text`, `extra_text`, or `other` as a single-item array; simultaneous corrections use `["missing_text", "extra_text"]`. |
 | `note` | Reviewer explanation; required and nonempty for `other`. |
 | `source_text` | Source text used for alignment; present for missing/extra text. |
 | `source_character_count`, `bounding_box_count` | Normalized source character count and number of boxes; present for missing/extra text. |
 | `bounding_boxes` | Same box fields as normal annotations for missing/extra text; only `bbox` for `other`. |
 | `annotations` | Assignments for missing/extra text; `MISS` marks boxes without source characters. Absent for `other`. |
-| `text_sequence`, `excluded_characters` | Extra-text records only: full reordered sequence and its trailing characters excluded from box assignment. |
+| `text_sequence`, `excluded_characters` | Extra-text and mixed records: annotation values in box order followed by the excluded source characters. The editor retains excluded characters in place; this suffix is an export convention. |
 | `image_resize`, `crop` | Same geometry as normal annotations for missing/extra text; absent for `other`. |
 
 When combining downloads, merge arrays from files with the same name and keep the latest record per `image`. An image should appear in either normal annotations or source mismatches according to its latest saved state; merge content independently.
+
+For mixed corrections, source and box counts may be equal. Validation checks that the non-MISS annotations plus excluded characters account for the normalized source characters. A count difference alone does not identify which correction is needed. Consumers that previously assumed a single `issue_type` must accept both values for mixed records; the JSON fields and archive filenames are unchanged.
 
 ## PDF-to-JSON Extraction
 

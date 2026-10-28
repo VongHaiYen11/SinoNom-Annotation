@@ -8,7 +8,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PIL import Image
-from app import create_app, parser
 from annotation.state import new_state, set_verified_content, initialize_alignment
 from annotation.bbox import add_bbox
 from annotation.status import update_status, confirm_status, replace_statuses
@@ -47,44 +46,22 @@ class DamageLevels(unittest.TestCase):
         initialize_alignment(s, list(reversed(s['regions'])))
         self.assertIsNone(s['regions'][uid]['damage_level'])
 
-    def test_apply_commits_draft_and_order_atomically_without_file(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            image = root / '1.png'
-            Image.new('RGB', (100, 100)).save(image)
-            source = root / 'source.json'
-            atomic_write(source, [{'noi_dung': [{'ky_hieu': '1', 'chuyen_muc': [
-                {'tieu_de': 'Nguyên văn chữ Hán Nôm', 'van_ban': '永寺'}]}]}])
-            app = create_app(parser().parse_args([
-                '--image-dir', str(root), '--source-json', str(source),
-                '--output-dir', str(root / 'out'), '--skip-detection']))
-            apply = next(f.fn for f in app.fns.values()
-                         if f.fn and f.fn.__name__ == 'apply_status_changes')
-            state = self.state()
-            state.update(image_path=str(image), image_url='image.jpg', draft_content={'noi_dung': [{'ky_hieu': '1', 'chuyen_muc': [{'tieu_de': 'Nguyên văn chữ Hán Nôm', 'van_ban': '永寺'}]}]})
-            ctx = dict(active=state, drafts={})
-            payload = {'statuses': {'1': 'damaged', '2': 'intact'},
-                       'damage_levels': {'1': None, '2': None},
-                       'unknowns': {'1': False, '2': False},
-                       'textSequence': ['寺', '永']}
-            result = apply(ctx, json.dumps(payload), 'intact')
-            self.assertEqual(result[0], ctx)
-            self.assertEqual(result[8], {'__type__': 'update'})
-            self.assertFalse((root / 'out' / '1.json').exists())
-            self.assertEqual(ctx['active']['bounding_boxes']['1']['status'], 'intact')
-            payload['damage_levels']['1'] = 2
-            result = apply(ctx, json.dumps(payload), 'intact')
-            committed = result[0]['active']
-            self.assertEqual(committed['current_step'], 4)
-            self.assertEqual(committed['bounding_boxes']['1']['status'], 'damaged')
-            self.assertEqual(committed['annotations'], {'1': '寺', '2': '永'})
-            self.assertEqual(committed['bounding_boxes']['1']['damage_level'], 2)
-            self.assertFalse((root / 'out' / '1.json').exists())
-            before = deepcopy(result[0])
-            payload['textSequence'] = ['永']
-            failed = apply(result[0], json.dumps(payload), 'intact')
-            self.assertEqual(failed[0], before)
-            self.assertEqual(failed[8], {'__type__': 'update'})
+    def test_workspace_status_validation_does_not_write_files(self):
+        from annotation.workspace import ensure_workspace,sync_workspace,workspace_issues,materialize_workspace
+        original=self.state();original['current_step']=3
+        model=deepcopy(ensure_workspace(original))
+        ordered=sorted(model['boxes'],key=lambda uid:model['boxes'][uid]['order'])
+        model['confirmed']={uid:e['char_id'] for uid,e in zip(ordered,model['entries'])}
+        uid=ordered[0];model['boxes'][uid].update(status='damaged',damage_level=None)
+        candidate=deepcopy(original);sync_workspace(candidate,model)
+        self.assertTrue(any('damage level' in issue['reason'] for issue in workspace_issues(candidate)))
+        self.assertEqual(original['regions'][uid]['status'],'intact')
+        with self.assertRaises(ValueError):materialize_workspace(candidate)
+        model['boxes'][uid]['damage_level']=2
+        sync_workspace(candidate,model);materialize_workspace(candidate)
+        self.assertEqual(candidate['bounding_boxes']['1']['damage_level'],2)
+        self.assertEqual(candidate['annotations'],{'1':'永','2':'寺'})
+
 
     def test_legacy_json_stays_unchanged(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -102,55 +79,27 @@ class DamageLevels(unittest.TestCase):
             self.assertEqual(load_annotation(path, '1.png', [100, 100]), doc)
             self.assertEqual(path.read_bytes(), original)
 
-    def test_apply_missing_token_moves_mark_and_preserves_rejected_draft(self):
-        import xml.etree.ElementTree as ET
+    def test_workspace_missing_entry_moves_review_mark_and_preserves_invalid_draft(self):
+        from annotation.workspace import ensure_workspace,sync_workspace,materialize_workspace,workspace_issues
         from ui.editor import snapshot
-
-        def marked_boxes(state):
-            markup = snapshot(state)['markup']
-            start = markup.index('<svg class="annotation-canvas"')
-            svg = ET.fromstring(markup[start:markup.index('</svg>', start) + 6])
-            for node in svg.iter():
-                node.tag = node.tag.rsplit('}', 1)[-1]
-            return [group.attrib['data-box-id'] for group in svg.iter('g')
-                    if 'data-box-id' in group.attrib
-                    and group.find("g[@data-miss-mark='1']") is not None]
-
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            image = root / '1.png'
-            Image.new('RGB', (100, 100)).save(image)
-            source = root / 'source.json'
-            atomic_write(source, [{'noi_dung': [{'ky_hieu': '1', 'chuyen_muc': [
-                {'tieu_de': 'Nguyên văn chữ Hán Nôm', 'van_ban': '永寺'}]}]}])
-            app = create_app(parser().parse_args([
-                '--image-dir', str(root), '--source-json', str(source),
-                '--output-dir', str(root / 'out'), '--skip-detection']))
-            apply = next(f.fn for f in app.fns.values()
-                         if f.fn and f.fn.__name__ == 'apply_status_changes')
-            state = self.state()
-            add_bbox(state, [70, 10, 90, 30])
-            state['source_mismatch'] = dict(
-                source_text='永寺', source_character_count=2,
-                bounding_box_count=3, issue_type='missing_text', note='')
-            initialize_alignment(state, list(state['regions']))
-            state.update(image_path=str(image), image_url='image.jpg',
-                         draft_content=json.loads(source.read_text())[0])
-            ctx = dict(active=state, drafts={})
-            self.assertEqual(marked_boxes(state), ['3'])
-            for sequence, tokens, box_id in (
-                    (['MISS', '永', '寺'], ['3', '1', '2'], '1'),
-                    (['永', 'MISS', '寺'], ['1', '3', '2'], '2')):
-                result = apply(ctx, json.dumps(dict(textSequence=sequence, tokenOrder=tokens)), 'intact')
-                ctx = result[0]
-                self.assertEqual(list(ctx['active']['annotations'].values()), sequence)
-                self.assertEqual(marked_boxes(ctx['active']), [box_id])
-            before = deepcopy(ctx)
-            result = apply(ctx, json.dumps(dict(
-                textSequence=['永', '寺', 'MISS'], tokenOrder=['1', '2', '3'],
-                statuses={'1': 'damaged'}, damage_levels={'1': None})), 'intact')
-            self.assertEqual(result[0], before)
-            # gr.skip() leaves the browser draft and its live X untouched.
-            self.assertEqual(result[8], {'__type__': 'update'})
-            self.assertEqual(marked_boxes(result[0]['active']), ['2'])
-            self.assertFalse((root / 'out' / '1.json').exists())
+        import xml.etree.ElementTree as ET
+        state=self.state();state.update(current_step=3,image_url='image.jpg')
+        add_bbox(state,[70,10,90,30])
+        model=deepcopy(ensure_workspace(state))
+        miss=dict(char_id='miss',value='MISS',source_index=None,type='missing',excluded=False)
+        for position in (2,0,1):
+            model['entries']=[e for e in model['entries'] if e['char_id']!='miss']
+            model['entries'].insert(position,miss)
+            ordered=sorted(model['boxes'],key=lambda uid:model['boxes'][uid]['order'])
+            model['confirmed']={uid:e['char_id'] for uid,e in zip(ordered,model['entries'])}
+            sync_workspace(state,model);materialize_workspace(state)
+            review=deepcopy(state);review['current_step']=7
+            markup=snapshot(review)['markup'];start=markup.index('<svg class="annotation-canvas"')
+            svg=ET.fromstring(markup[start:markup.index('</svg>',start)+6])
+            marked=[g.attrib['data-box-id'] for g in svg.iter('g') if 'data-box-id' in g.attrib and g.find("g[@data-miss-mark='1']") is not None]
+            self.assertEqual(marked,[str(position+1)])
+        before=deepcopy(state)
+        model['boxes'][ordered[0]].update(status='damaged',damage_level=None)
+        candidate=deepcopy(state);sync_workspace(candidate,model)
+        self.assertTrue(workspace_issues(candidate))
+        self.assertEqual(state,before)

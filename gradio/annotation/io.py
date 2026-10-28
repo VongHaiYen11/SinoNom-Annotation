@@ -28,6 +28,8 @@ def issue_types(value):
 def source_mismatch_type(document):
     values = issue_types(document.get('issue_type'))
     mismatch = values
+    if set(mismatch) == {'missing_text', 'extra_text'} and len(mismatch) == 2:
+        return 'mixed'
     if len(mismatch) != 1 or mismatch[0] not in SOURCE_MISMATCH_TYPES:
         raise ValueError('A source mismatch must contain exactly one mismatch issue type.')
     if any(value not in SOURCE_MISMATCH_TYPES for value in values):
@@ -37,6 +39,8 @@ def source_mismatch_type(document):
 
 def validate_source_mismatch_type(issue_type, character_count, box_count):
     issue_type = canonical_issue_type(issue_type)
+    if issue_type == 'mixed':
+        return
     if issue_type not in SOURCE_MISMATCH_TYPES:
         raise ValueError('Invalid source mismatch issue type.')
     if issue_type == 'missing_text' and character_count >= box_count:
@@ -203,14 +207,24 @@ def validate_source_mismatch_document(doc, image, size):
         raise ValueError('Source mismatch character count is invalid.')
     if doc['bounding_box_count'] != len(doc.get('bounding_boxes', {})):
         raise ValueError('Source mismatch bounding-box count is invalid.')
-    if doc['source_character_count'] == doc['bounding_box_count']:
+    if doc['source_character_count'] == doc['bounding_box_count'] and mismatch_type != 'mixed':
         raise ValueError('Source mismatch counts must differ.')
     validate_source_mismatch_type(
         mismatch_type, doc['source_character_count'], doc['bounding_box_count'])
     if not isinstance(doc['note'], str):
         raise ValueError('Source mismatch note must be a string.')
     annotations = doc.get('annotations')
-    if mismatch_type == 'missing_text':
+    if mismatch_type == 'mixed':
+        sequence=doc.get('text_sequence'); excluded=doc.get('excluded_characters')
+        if (not isinstance(annotations,dict) or not isinstance(sequence,list)
+                or not isinstance(excluded,list) or not excluded
+                or not any(value == MISSING_ANNOTATION for value in annotations.values())
+                or sequence != list(annotations.values()) + excluded
+                or any(not isinstance(value,str) or characters(value) != [value] for value in excluded)
+                or Counter(value for value in annotations.values() if value != MISSING_ANNOTATION)
+                   + Counter(excluded) != Counter(characters(doc['source_text']))):
+            raise ValueError('Mixed-source character mapping is invalid.')
+    elif mismatch_type == 'missing_text':
         if not isinstance(annotations, dict):
             raise ValueError('Missing-source documents require annotations.')
         missing_count = doc['bounding_box_count'] - doc['source_character_count']
@@ -252,7 +266,9 @@ def crop_export_geometry(state):
 
 
 def final_document(state):
-    if not all(state['workflow'].values()) or not validate_bbox_text_count(state):
+    from .workspace import workspace_issues
+    valid = not workspace_issues(state) if state.get('workspace') else validate_bbox_text_count(state)
+    if not all(state['workflow'].values()) or not valid:
         raise ValueError('Complete all verification steps and match the box and character counts.')
     doc = {k: state[k] for k in ('image', 'bounding_boxes', 'annotations')}
     from crop.crop import crop_document, image_resize
@@ -290,13 +306,13 @@ def final_source_mismatch_document(state):
         'source_text': state['annotation_text'],
         'source_character_count': issue['source_character_count'],
         'bounding_box_count': issue['bounding_box_count'],
-        'issue_type': [mismatch_type],
+        'issue_type': ['missing_text', 'extra_text'] if mismatch_type == 'mixed' else [mismatch_type],
         'note': issue['note'],
         'bounding_boxes': state['bounding_boxes'],
     }
-    if mismatch_type in ('missing_text','extra_text'):
+    if mismatch_type in ('missing_text','extra_text','mixed'):
         doc['annotations'] = state['annotations']
-    if mismatch_type == 'extra_text':
+    if mismatch_type in ('extra_text','mixed'):
         doc['text_sequence']=list(state['text_sequence'])
         doc['excluded_characters']=list(issue['excluded_characters'])
     from crop.crop import crop_document, image_resize
