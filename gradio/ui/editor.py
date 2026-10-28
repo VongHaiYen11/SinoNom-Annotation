@@ -8,6 +8,7 @@ from annotation.text_alignment import MISSING_ANNOTATION, count_annotation_chara
 from .icons import DOCUMENT
 
 SCRIPT = (Path(__file__).parent / 'assets/editor.js').read_text()
+RECOVERY_SCRIPT = (Path(__file__).parent / 'assets/recovery.js').read_text()
 CSS = (Path(__file__).parent / 'assets/editor.css').read_text()
 
 

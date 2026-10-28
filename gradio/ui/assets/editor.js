@@ -1,4 +1,12 @@
 // Python owns persisted data. Browser-local state owns direct manipulation.
+// The recovery host is always mounted, including during content verification.
+const draftRecovery = {
+  read: meta => window.vietnamicaDraftRecovery?.read(meta),
+  write: (meta, update) => window.vietnamicaDraftRecovery?.write(meta, update),
+  activate: meta => window.vietnamicaDraftRecovery?.activate(meta),
+  restoreUI: (record, setter) => window.vietnamicaDraftRecovery?.restoreUI(record, setter),
+  notice: message => window.vietnamicaDraftRecovery?.notice(message),
+};
 let pending = false, pendingAction = null, moving = null, orderDrag = null;
 let sortRequestSequence = 0;
 let suppressAlignmentClick = false, alignmentClickTimer = null;
@@ -12,6 +20,7 @@ let alignmentStateReady = false, alignmentContainer = null, alignmentCanvas = nu
 let alignmentBoxGroups = [];
 let mismatchConfirmationInvalidated = false;
 let nextTemporaryBoxId = 1;
+let recoveryHydrating = false, recoveredContext = '';
 let annotationColor = '#f4f4f5';
 const annotationColors = {
   White: '#f4f4f5', Cyan: '#22d3ee', Amber: '#f59e0b',
@@ -220,6 +229,11 @@ const syncExternalControls = () => {
     suspiciouses: Object.fromEntries(Object.entries(localBoxes).map(([id, box]) => [id, box.suspicious])),
   };
   const serializedSnapshot = JSON.stringify(bridgeSnapshot);
+  if (typeof draftRecovery !== 'undefined' && !recoveryHydrating
+      && (props.value.step !== 4 || alignmentStateReady)) {
+    draftRecovery.write(props.value.recovery, {board: {...bridgeSnapshot,
+      mismatchConfirmationInvalidated, nextTemporaryBoxId}});
+  }
   // Gradio component values can lag one browser event behind. Keep a
   // synchronous snapshot on the board for button preprocessors such as
   // Confirm Source Mismatch and Next.
@@ -494,7 +508,9 @@ const updateCanvasLabels = () => {
 };
 
 const hydrateLocalState = () => {
-  const context = `${props.value.image || ''}:${props.value.step}`;
+  const context = `${props.value.image || ''}:${props.value.step}:${props.value.recovery?.generation || ''}`;
+  recoveryHydrating = true;
+  const recovered = typeof draftRecovery !== 'undefined' ? draftRecovery.read(props.value.recovery) : null;
   alignmentStateReady = false;
   alignmentContainer = null;
   alignmentCanvas = null;
@@ -544,6 +560,21 @@ const hydrateLocalState = () => {
     }
     isDirty = true;
   }
+  if (recovered?.board && props.value.step !== 7) {
+    try {
+      const boxes = recovered.board.boxes;
+      if (!boxes || typeof boxes !== 'object' || Array.isArray(boxes)
+          || Object.values(boxes).some(box => !Array.isArray(box.bbox)
+            || box.bbox.length !== 4 || !box.bbox.every(Number.isFinite)
+            || !['intact', 'damaged'].includes(box.status))) throw Error();
+      localBoxes = cloneBoxes(boxes);
+      mismatchConfirmationInvalidated = Boolean(recovered.board.mismatchConfirmationInvalidated);
+      nextTemporaryBoxId = Number(recovered.board.nextTemporaryBoxId) || 1;
+      restoreDraftGeometry();
+    } catch (_) {
+      draftRecovery.notice('Invalid browser box draft was ignored.');
+    }
+  }
   if (props.value.step !== 7) updateCanvasLabels();
 
   if (props.value.step !== 4 && props.value.step !== 7) {
@@ -564,6 +595,10 @@ const hydrateLocalState = () => {
     activeTokenId = null;
     localContext = context;
   }
+  if (recovered?.board) {
+    selectedIds = new Set((recovered.board.selected || []).filter(id => localBoxes[id]));
+    activeBoxId = localBoxes[recovered.board.active] ? recovered.board.active : null;
+  }
   element.querySelectorAll('.order-chips').forEach(container => {
     if (preserveOrder && localTokenOrder.length) arrangeOrder(container, localTokenOrder);
     updateExcludedChips(container);
@@ -579,6 +614,19 @@ const hydrateLocalState = () => {
   applyImageOnlyMode(
     root.querySelector('#show-image-only input[type="checkbox"]')?.checked
   );
+  recoveryHydrating = false;
+  if (typeof draftRecovery !== 'undefined') {
+    draftRecovery.activate(props.value.recovery);
+    if (recoveredContext !== context && props.value.recovery) {
+      recoveredContext = context;
+      requestAnimationFrame(() => {
+        draftRecovery.restoreUI(recovered, setInputValue);
+        syncExternalControls();
+        // Restore incomplete coordinate input after control synchronization.
+        draftRecovery.restoreUI(recovered, setInputValue);
+      });
+    }
+  }
 };
 
 const fitCanvas = (width, height, focalPoint = null) => {
@@ -815,6 +863,7 @@ root.addEventListener('input', event => {
   localBoxes[activeBoxId].bbox = [x1, y1, x2, y2];
   isDirty = true;
   drawLocalBox(activeBoxId, localBoxes[activeBoxId].bbox);
+  syncExternalControls();
 });
 
 const point = (event, svg, width = props.value.width, height = props.value.height) => {
@@ -873,6 +922,35 @@ const drawPreview = (group, box) => {
 const drawLocalBox = (id, box) => {
   if (localBoxes[id]) localBoxes[id].bbox = [...box];
   drawPreview(groupFor(id), box);
+};
+const restoreDraftGeometry = () => {
+  const svg = element.querySelector('.annotation-canvas');
+  if (!svg) return;
+  svg.querySelectorAll('[data-box-id]').forEach(group => {
+    if (!localBoxes[group.dataset.boxId]) group.remove();
+  });
+  Object.entries(localBoxes).forEach(([id, box]) => {
+    let group = groupFor(id);
+    if (!group) {
+      group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      group.dataset.boxId = id; group.dataset.regionUid = id;
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('vector-effect', 'non-scaling-stroke');
+      rect.setAttribute('stroke', annotationColor); rect.setAttribute('fill', annotationColor);
+      group.appendChild(rect);
+      if (props.value.step === 3 || props.value.step === 6) {
+        for (let corner = 0; corner < 4; corner++) {
+          const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          handle.dataset.corner = String(corner);
+          handle.setAttribute('r', Math.max(10 * Math.max(props.value.width, props.value.height) / 900, 16));
+          handle.setAttribute('opacity', '0'); handle.setAttribute('pointer-events', 'all');
+          group.appendChild(handle);
+        }
+      }
+      svg.appendChild(group);
+    }
+    drawLocalBox(id, box.bbox);
+  });
 };
 const constrainCrop = (box, width, height) => {
   const cropWidth = Math.min(Math.max(1, box[2] - box[0]), width, props.value.max_crop_side);
@@ -951,6 +1029,12 @@ function initializeAlignmentStateFromDOM() {
     alignmentCanvas = null;
     return false;
   }
+  const recoveredOrder = typeof draftRecovery !== 'undefined'
+    ? draftRecovery.read(props.value.recovery)?.board?.tokenOrder : null;
+  const present = tokenOrderFromDOM(container);
+  if (Array.isArray(recoveredOrder) && recoveredOrder.length === present.length
+      && new Set(recoveredOrder).size === present.length
+      && recoveredOrder.every(id => present.includes(id))) arrangeOrder(container, recoveredOrder);
   localTokenOrder = tokenOrderFromDOM(container);
   localTextSequence = textSequenceFromDOM(container);
   alignmentContainer = container;
@@ -961,6 +1045,7 @@ function initializeAlignmentStateFromDOM() {
   container.setAttribute('aria-busy', 'false');
   updateExcludedChips(container);
   updateCanvasLabels();
+  if (typeof draftRecovery !== 'undefined' && !recoveryHydrating) syncExternalControls();
   return true;
 }
 const updateExcludedChips = container => {

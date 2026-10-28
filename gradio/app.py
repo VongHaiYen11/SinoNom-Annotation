@@ -15,6 +15,7 @@ from annotation.state import (new_state, source_mismatch_confirmed,
                               calculate_spatial_order, refresh_bbox_validation)
 from annotation.reading_order import suspicious_box_ids
 from annotation.workflow import Workflow
+from annotation.recovery import RecoveryStore
 from annotation.io import (final_document,
                            final_source_mismatch_document, load_image_list,
                            read_json)
@@ -23,7 +24,7 @@ from annotation.text_alignment import count_annotation_characters
 from annotation.export import (collect_annotations, collect_content_documents,
                                collect_source_mismatches,
                                save_export_archive)
-from ui.editor import snapshot, source_text, SCRIPT, CSS
+from ui.editor import snapshot, source_text, SCRIPT, CSS, RECOVERY_SCRIPT
 from ui.presentation import (APP_CSS, app_identity, workflow_progress,
                              panel_heading, panel_summary, footer,
                              status_rows, SECTION_LABELS)
@@ -318,8 +319,13 @@ def create_app(options):
         )
 
     initial=dict(active=new_state(), drafts={})
+    recovery_store=RecoveryStore()
     with gr.Blocks(title='Sino-Nôm Annotation Tool', fill_width=True, analytics_enabled=False) as app:
         session=gr.State(initial)
+        recovery_request=gr.Textbox(visible=False)
+        recovery_notice=gr.HTML(value=None,
+                                html_template='<span role="status">Restoring draft…</span>',
+                                js_on_load=RECOVERY_SCRIPT, elem_id='draft-recovery-status')
         with gr.Column(elem_id='header-stack', scale=0):
             with gr.Row(elem_id='topbar', scale=0):
                 progress=gr.HTML(app_identity(initial['active']), elem_id='app-chrome')
@@ -419,7 +425,8 @@ def create_app(options):
                         ],label='Issue type',filterable=False,
                            elem_id='mismatch-issue-type')
                         mismatch_note=gr.Textbox(
-                            label='Note (required only for Other)',lines=2,max_lines=3)
+                            label='Note (required only for Other)',lines=2,max_lines=3,
+                            elem_id='mismatch-note')
                         reset_mismatch_ui=gr.Button(
                             'Reset mismatch fields',elem_id='reset-mismatch-ui',
                             elem_classes=['frontend-bridge'])
@@ -476,7 +483,7 @@ def create_app(options):
                         # These are fixed record sections, so an editable/searchable
                         # combobox only delays committing a click selection.
                         field=gr.Dropdown(label='Section', filterable=False)
-                        field_value=gr.Textbox(label='Content',lines=8, elem_classes='han-nom-text')
+                        field_value=gr.Textbox(label='Content',lines=8, elem_classes='han-nom-text', elem_id='content-value')
                         content_bridge=gr.Textbox(
                             value='{}',visible=False,elem_id='content-draft-bridge')
                         with gr.Row(elem_classes='button-group'):
@@ -522,6 +529,7 @@ def create_app(options):
         ])
         outputs.append(save_all)
         outputs.append(image_choice)
+        outputs.append(recovery_notice)
 
         def render(ctx, msg=''):
             if msg:
@@ -591,6 +599,9 @@ def create_app(options):
                     gr.update(visible=step==7 and bool(source_mismatch_json))]
             rendered.append(gr.update(interactive=has_saved_image_records()))
             rendered.append(gr.update(value=s.get('image_path') if step == 1 else None))
+            metadata=recovery_store.checkpoint(ctx)
+            rendered[8]['value']['recovery']=metadata
+            rendered.append(dict(metadata, defaultSection=chosen) if metadata else None)
             return rendered
 
         def run(ctx, action, payload=None, auto_detect=True):
@@ -604,11 +615,15 @@ def create_app(options):
             try:
                 updated=engine.apply(ctx['active'],action,payload)
                 ctx=dict(ctx,active=updated)
+                if (action in ('undo','detect','save')
+                        or updated['current_step'] != active_before['current_step']):
+                    recovery_store.rotate(ctx, active_before.get('image_path'))
                 msg=''
                 if action == 'save':gr.Info('Saved.')
                 elif action == 'save_content':gr.Info('Updated for this session.')
                 if action == 'save':
                     saved_path=updated.get('image_path')
+                    ctx['_recovery_discard']=saved_path
                     if saved_path:
                         ctx['drafts'].pop(saved_path,None)
                     fresh=new_state()
@@ -633,7 +648,7 @@ def create_app(options):
                     'field': {0,2,6,7},
                 }.get(action)
                 if affected is not None:
-                    always={1,25,37,38}
+                    always={1,25,37,38,outputs.index(recovery_notice)}
                     result = [value if i in affected | always else gr.skip() for i,value in enumerate(result)]
                 return result
             except Exception as exc:
@@ -642,7 +657,7 @@ def create_app(options):
                 ctx=deepcopy(ctx);ctx['active']['revision']+=1
                 return render(ctx,WARNING+' '+html.escape(str(exc)))
 
-        def open_image(ctx,path):
+        def open_image(ctx,path,browser_request=None):
             active=ctx.get('active',{})
             cached=path in ctx.get('drafts',{})
             log.info('open start requested_path=%s active_path=%s active_image=%s active_step=%s active_revision=%s cache_hit=%s cache_paths=%s',
@@ -652,6 +667,7 @@ def create_app(options):
             try:
                 if path not in {str(p.resolve()) for p in images}:raise ValueError('Select an image from the list.')
                 ctx=deepcopy(ctx)
+                ctx.pop('_recovery_discard',None)
                 old=ctx['active']
                 # Step 1 is the image picker. Keep drafts for states that have
                 # progressed into the annotation workflow, but do not overwrite
@@ -667,7 +683,13 @@ def create_app(options):
                          state.get('current_step'),state.get('revision'),
                          state.get('detection_loaded'),
                          state.get('workflow',{}).get('content_verified'),cached)
-                return render(ctx)
+                result=render(ctx)
+                if browser_request:
+                    try:
+                        result=restore_browser_fields(result,ctx,json.loads(browser_request))
+                    except (ValueError,TypeError):
+                        log.warning('Ignoring invalid browser recovery request')
+                return result
             except Exception as exc:
                 log.exception('Cannot open image requested_path=%s active_path=%s active_step=%s',
                               path,active.get('image_path'),active.get('current_step'))
@@ -780,7 +802,15 @@ def create_app(options):
                 document.body.appendChild(link);link.click();link.remove();
                 setTimeout(()=>URL.revokeObjectURL(url),10000);
             }""")
-        clear_loading_when_done(open_button.click(open_image,[session,image_choice],**event_args))
+        open_js=SHOW_LOADING_JS.replace('return args;', '''
+            window.vietnamicaDraftRecovery?.captureUI();
+            let drafts={};
+            try { drafts=JSON.parse(sessionStorage.getItem('vietnamica-drafts-v1') || '{}'); }
+            catch (_) { window.vietnamicaStorageError=true; }
+            return [args[0],args[1],JSON.stringify({drafts})];''')
+        clear_loading_when_done(open_button.click(
+            open_image,[session,image_choice,recovery_request],
+            **dict(event_args,js=open_js)))
         for button,action in [(back,'back'),(save,'save'),(undo,'undo')]:
             clear_loading_when_done(button.click(lambda c,a=action:run(c,a),[session],**event_args))
         def commit_frontend_content(ctx,draft):
@@ -890,9 +920,14 @@ def create_app(options):
         field.change(
             fn=None,inputs=[field,content_bridge],outputs=[field_value],queue=False,
             js="""(path, draft) => {
+                const typed=window.vietnamicaRecovery?.section(path, draft);
+                if (typed !== undefined) return typed;
                 try { return JSON.parse(draft || '{}')?.[path]?.value ?? ''; }
                 catch (_) { return ''; }
             }""",show_progress='hidden')
+        mismatch_type.input(fn=None, inputs=[mismatch_type], outputs=None, queue=False,
+                            js="(value) => { window.vietnamicaRecovery?.issue(value); }",
+                            show_progress='hidden')
         apply_field.click(
             fn=None,inputs=[field,field_value,content_bridge],
             outputs=[content_bridge,content_preview],queue=False,
@@ -900,6 +935,7 @@ def create_app(options):
                 let fields={};
                 try { fields=JSON.parse(draft || '{}'); } catch (_) {}
                 if (fields[path]) fields[path].value=String(value ?? '');
+                window.vietnamicaRecovery?.content(fields);
                 const preview=Object.values(fields).map(
                     field => ({tieu_de:field.title, van_ban:field.value}));
                 return [JSON.stringify(fields), JSON.stringify(preview,null,2)];
@@ -1171,6 +1207,7 @@ def create_app(options):
                 def sort_response(board_state=None, ordered=None, message=''):
                     result=render(ctx,message)
                     board_value=snapshot(board_state or ctx['active'])
+                    board_value['recovery']=recovery_store.metadata(ctx)
                     # Even a rejected sort must update the editor so its pending
                     # flag and progress surface are released. An empty result
                     # consumes any selected-sort range without changing orders.
@@ -1226,8 +1263,96 @@ def create_app(options):
             return run(ctx,evt._data['action'],evt._data['payload'])
         board.action(on_action,[session],outputs=outputs,concurrency_id='annotation-actions',
                      concurrency_limit=1,show_progress='hidden')
-        app.load(fn=None, inputs=None, outputs=None, js=FONT_PRELOAD_JS,
-                 show_progress='hidden')
+        def restore_browser_fields(result,ctx,request):
+            try:
+                meta=recovery_store.metadata(ctx)
+                records=request.get('drafts', {})
+                record=next((item for item in records.values()
+                             if all(item.get('metadata',{}).get(key) == value
+                                    for key,value in meta.items())), None)
+                if record and ctx['active'].get('image'):
+                    fields=json.loads(result[outputs.index(content_bridge)])
+                    content=json.loads(record.get('content') or '{}')
+                    for key, entry in fields.items():
+                        if key in content and isinstance(content[key].get('value'),str):
+                            entry['value']=content[key]['value']
+                        if isinstance(record.get('typing',{}).get(key),str):
+                            entry['value']=record['typing'][key]
+                    section=record.get('section')
+                    if section in fields:
+                        result[4]=gr.update(value=section)
+                        result[5]=fields[section]['value']
+                    result[outputs.index(content_bridge)]=json.dumps(fields,ensure_ascii=False)
+                    result[6]=json.dumps([dict(tieu_de=f['title'],van_ban=f['value'])
+                                          for f in fields.values()],ensure_ascii=False,indent=2)
+                    if record.get('issue') in ('missing_text','extra_text','other',None):
+                        result[outputs.index(mismatch_type)]=gr.update(value=record.get('issue'))
+            except (ValueError, TypeError, AttributeError, StopIteration):
+                log.warning('Ignoring invalid browser recovery fields')
+            return result
+
+        def restore_session(request):
+            try:
+                request=json.loads(request or '{}')
+                tab=request.get('tab')
+            except (ValueError, AttributeError):
+                tab=None
+                request={}
+            ctx=recovery_store.restore(tab, initial)
+            return restore_browser_fields(render(ctx),ctx,request)
+
+        # The input is supplied synchronously by the browser before this callback.
+        bootstrap_js='''async () => {
+            const container=document.querySelector('.gradio-container');
+            if (container) container.inert=true;
+            const workspace=document.querySelector('#workspace');
+            if (workspace) workspace.inert=true;
+            const footer=document.querySelector('#workflow-footer');
+            if (footer) footer.inert=true;
+            let tab;
+            try {
+                tab=sessionStorage.getItem('vietnamica-tab');
+                if (!tab) {
+                    tab=crypto.randomUUID();
+                    sessionStorage.setItem('vietnamica-tab',tab);
+                }
+            } catch (_) {
+                tab=crypto.randomUUID();
+                window.vietnamicaStorageError=true;
+            }
+            // Duplicating a tab can copy sessionStorage. Claim a separate ID
+            // if the original tab is still alive; a reload has no live owner.
+            try { if (typeof BroadcastChannel !== 'undefined') {
+                const channel=new BroadcastChannel('vietnamica-tab-ownership');
+                const nonce=crypto.randomUUID();
+                const owned=await new Promise(resolve => {
+                    const timer=setTimeout(() => resolve(false),150);
+                    channel.onmessage=event => {
+                        if (event.data?.type==='owned' && event.data.nonce===nonce) {
+                            clearTimeout(timer); resolve(true);
+                        }
+                    };
+                    channel.postMessage({type:'probe',tab,nonce});
+                });
+                channel.close();
+                if (owned) {
+                    tab=crypto.randomUUID();
+                    try {
+                        sessionStorage.setItem('vietnamica-tab',tab);
+                        sessionStorage.removeItem('vietnamica-drafts-v1');
+                    } catch (_) { window.vietnamicaStorageError=true; }
+                }
+            } } catch (_) { /* Restricted frames may disable tab discovery. */ }
+            let drafts={};
+            try { drafts=JSON.parse(sessionStorage.getItem('vietnamica-drafts-v1') || '{}'); }
+            catch (_) { window.vietnamicaStorageError=true; }
+            return [JSON.stringify({tab,drafts})];
+        }'''
+        restored=app.load(restore_session, inputs=[recovery_request], outputs=outputs,
+                         js=bootstrap_js, concurrency_id='annotation-actions',
+                         concurrency_limit=1, show_progress='hidden')
+        restored.then(fn=None, inputs=None, outputs=None, js=FONT_PRELOAD_JS,
+                      show_progress='hidden')
     return app
 
 

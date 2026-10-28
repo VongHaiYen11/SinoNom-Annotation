@@ -132,6 +132,8 @@ python gradio/app.py --config configs/tap_1.json \
 
 Open the URL printed in the terminal. Add `--skip-detection` for manual boxes or `--share` for a public Gradio link. Results are saved under `annotations/student_001`; **Download All** creates `annotations.zip`. Download saved results before ending a Kaggle session.
 
+Reloading the same browser tab automatically restores the current image, workflow step, and unfinished edits, including labels that have not been applied and content still being typed. Recovery uses browser session storage and application memory; keep the Gradio process running in the Kaggle session. Closing the tab, restarting the application, or ending the Kaggle session is outside this recovery guarantee. **Save Annotation** still writes the final annotation, and **Download All** includes saved results only. The recovery message above the workspace reports when browser storage is unavailable.
+
 ## JSON Output
 
 `annotations.zip` contains `text_annotations.json`, `inscription_content.json`, and `source_mismatches.json`. Each file contains a **top-level JSON array of objects** with zero, one, or multiple records. Each record represents one inscription image or face, identified by `image`. Empty categories are `[]`. Match records by `image`, not by array position. The examples below use illustrative 1000 × 1000 images.
