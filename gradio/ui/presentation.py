@@ -10,7 +10,7 @@ SECTION_LABELS = {
                               'Dịch nghĩa', 'Toát yếu', 'Chú thích',
                               'Tên bia', 'Địa điểm', 'Niên đại')
 }
-UNIFIED_LABELS = ('Kiểm tra nội dung', 'Annotation Workspace', 'Crop', 'Review & Save')
+UNIFIED_LABELS = ('Content Verification', 'Annotation Workspace', 'Crop', 'Review & Save')
 
 
 def steps_for(state):

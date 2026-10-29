@@ -108,10 +108,13 @@ def snapshot(s):
     board_class = ' review-board' if step == 7 else ''
     markup=f'''<div class="workbench-board{board_class}" data-viewer="1"><div class="workspace-toolbar">
         <div class="workspace-context"><span class="file-icon">{DOCUMENT}</span><strong>{filename}</strong><span class="dimensions">{dimensions}</span></div>
-        <div class="toolbar-tools"><span class="zoom-label" aria-live="polite">100%</span>
+        <div class="toolbar-tools"><button type="button" data-zoom="width" aria-label="Fit image to viewport width" title="Fit image to viewport width">Width</button>
+        <span class="zoom-label" aria-live="polite">100%</span>
+        <button type="button" data-zoom="fit" aria-label="Fit entire image" title="Fit entire image">Fit</button>
         <button type="button" data-zoom="out" aria-label="Zoom out"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
         <button type="button" data-zoom="in" aria-label="Zoom in"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10"/></svg></button></div></div>
-        <div class="image-viewport"><svg class="annotation-canvas" viewBox="0 0 {canvas_w} {canvas_h}" role="img" aria-label="{filename} · {'cropped review' if step == 7 else 'annotation canvas'}" style="aspect-ratio:{canvas_w}/{canvas_h}">
+        <p class="viewport-help">Scroll to move around · Ctrl/⌘ + scroll to zoom at pointer · Space + drag to pan</p>
+        <div class="image-viewport" tabindex="0" role="region" aria-label="Scrollable document image"><svg class="annotation-canvas" viewBox="0 0 {canvas_w} {canvas_h}" role="img" aria-label="{filename} · {'cropped review' if step == 7 else 'annotation canvas'}" style="aspect-ratio:{canvas_w}/{canvas_h}">
         <image href="{html.escape(review_image_url, quote=True)}" x="0" y="0" width="{canvas_w if step == 7 else draw_w}" height="{canvas_h if step == 7 else draw_h}" preserveAspectRatio="none"/>
         '''
     # Scale labels/handles to image size so full-resolution scans remain editable.

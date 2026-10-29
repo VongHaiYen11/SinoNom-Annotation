@@ -67,7 +67,11 @@ class ProgressUICallbacks(unittest.TestCase):
         self.assertEqual(result[value_index], '甲乙□未保存')
         self.assertIsNone(result[-4])
         self.assertFalse(result[-2]['visible'])
-        reloaded = new['restore_session']('{"tab":"new-tab"}').session
+        seeded = new['restore_session'](json.dumps({'tab':'new-tab',
+            'progressImportId':ctx['_progress_seed']['id']}))
+        self.assertNotIn('progressImport',seeded.recovery_notice,
+                         'full backup must not be resent after the browser installed it')
+        reloaded = seeded.session
         self.assertEqual(reloaded['active']['image'], '1.png')
         self.assertFalse((new_root / 'out').exists())
 

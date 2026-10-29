@@ -103,7 +103,7 @@ const workspaceCore = (() => {
 // the stable component element so callbacks never retain a detached root.
 const host = element;
 host.classList.add('unified-workspace');
-let payload = props.value, model = null, context = '', selectedMenu = null, derived = null;
+let payload = props.value, model = null, context = '', selectedMenu = null, menuTrigger = null, pendingConfirmation = null, derived = null;
 let pending = false, blocking = false, queuedAction = null, syncTimer = null, scrollTimer = null, drawing = false, gesture = null, panning = false;
 let issues = [], report = '', controller = new AbortController(), referenceObserver = null;
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -129,6 +129,29 @@ const viewport = () => host.querySelector('.u-viewport');
 const preserveViewport = () => {
   const view = viewport();
   return view ? {left:view.scrollLeft,top:view.scrollTop} : {left:0,top:0};
+};
+const MIN_ZOOM = 5, MAX_ZOOM = 500, ZOOM_STEP = 15;
+const clampZoom = zoom => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(zoom)));
+const zoomTo = (next, anchor) => {
+  const view=viewport();
+  if (!view) return;
+  next=clampZoom(next);
+  const rect=view.getBoundingClientRect();
+  const x=anchor ? anchor.clientX-rect.left : rect.width/2;
+  const y=anchor ? anchor.clientY-rect.top : rect.height/2;
+  const ratio=next/model.preferences.zoom;
+  const left=(view.scrollLeft+x)*ratio-x, top=(view.scrollTop+y)*ratio-y;
+  model.preferences.zoom=next;
+  render();
+  const updated=viewport();
+  updated.scrollLeft=left; updated.scrollTop=top;
+  schedule();
+};
+const fitZoom = () => {
+  const view=viewport(), size=payload?.size;
+  if (!view || !size?.[0] || !size?.[1]) return;
+  const imageRatio=size[1]/size[0];
+  return clampZoom(Math.floor(Math.min(100, 100*view.clientHeight/(view.clientWidth*imageRatio))));
 };
 const selectedBox = () => model.boxes[model.selected_box];
 const chooseBox = (uid, multi=false, reveal=true) => {
@@ -252,20 +275,24 @@ const render = () => {
       <button type="button" data-action="draw" aria-pressed="${drawing}">${drawing?'Drawing…':'Draw Box'}</button>
       <button type="button" data-action="sort">Sort Boxes</button>
       <button type="button" data-action="detect" ${!payload.can_detect?'disabled':''}>Run Detection</button>
-      <button type="button" data-action="undo" ${!model.undo?.length?'disabled':''} title="Undo (Ctrl/Cmd+Z)">↶</button>
-      <button type="button" data-action="redo" ${!model.redo?.length?'disabled':''} title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
-      <button type="button" data-action="zoom-out" aria-label="Zoom out">−</button><span>${prefs.zoom}%</span><button type="button" data-action="zoom-in" aria-label="Zoom in">+</button>
+      <button type="button" data-action="undo" ${!model.undo?.length?'disabled':''} aria-label="Undo" title="Undo (Ctrl/Cmd+Z)">↶</button>
+      <button type="button" data-action="redo" ${!model.redo?.length?'disabled':''} aria-label="Redo" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
+      <button type="button" data-action="zoom-out" aria-label="Zoom out" title="Zoom out">−</button><button type="button" class="u-zoom-width" data-action="zoom-width" aria-label="Fit image to viewport width" title="Fit image to viewport width">Width</button><span class="u-zoom-level" aria-live="polite">${prefs.zoom}%</span><button type="button" data-action="zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
       <button type="button" data-action="fit">Fit</button><button type="button" data-action="focus">Focus</button>
       <select data-field="visibility" aria-label="Show boxes"><option value="all" ${prefs.visibility==='all'?'selected':''}>All Boxes</option><option value="dim" ${prefs.visibility==='dim'?'selected':''}>Dim Others</option><option value="selected" ${prefs.visibility==='selected'?'selected':''}>Selected Only</option></select>
       <label class="u-jump">Box<input type="number" min="1" data-jump="box" placeholder="Number + Enter"/></label>
-    </div><p class="u-help">Alt + drag to draw · Drag to move · Corner handles to resize · Shift + click to select multiple · Space + drag to pan</p>
+    </div><p class="u-help">Scroll to move around · Ctrl/⌘ + scroll to zoom at pointer · Space + drag to pan · Alt + drag to draw · Shift + click to select multiple</p>
     <div class="u-message" role="status" hidden></div>
-    <div class="u-viewport ${drawing?'u-drawing':''}">${svgMarkup()}</div></section>
+    <div class="u-viewport ${drawing?'u-drawing':''}" tabindex="0" role="region" aria-label="Document image canvas. Scroll to move around; hold Control or Command and scroll to zoom.">${svgMarkup()}</div></section>
     <aside class="u-inspector">${inspectorMarkup()}</aside>
     <footer class="u-workspace-footer"><span>Confirmed ${confirmed}/${n} · Active entries ${workspaceCore.active(model).length} · Conflicts ${conflicts}</span>
       <button type="button" data-action="confirm-selected">Confirm Selected</button><button type="button" data-action="confirm-all">Confirm All Suggestions</button>
       <button type="button" data-action="next-unresolved">Next Unresolved</button><button type="button" class="u-primary" data-action="continue">Continue</button></footer>
-    <div class="u-menu" role="menu" hidden></div>
+    <div class="u-menu" role="menu" aria-label="Character actions" hidden></div>
+    <dialog class="u-confirm" aria-labelledby="u-confirm-title" aria-describedby="u-confirm-summary">
+      <h2 id="u-confirm-title">Confirm action</h2><p data-confirm-summary></p><ul data-confirm-details hidden></ul>
+      <div class="u-dialog-actions"><button type="button" data-action="cancel-confirm">Cancel</button><button type="button" class="u-primary" data-action="accept-confirm">Confirm</button></div>
+    </dialog>
     <dialog class="u-issues" aria-labelledby="u-issues-title"><h2 id="u-issues-title">Cannot Continue</h2><p>${issues.length} issue${issues.length===1?'':'s'} must be resolved.</p>
       <ol>${issues.map((issue,index)=>`<li><button type="button" data-issue="${index}">${issue.reading_order ? `Box ${issue.reading_order}: `:''}${esc(issue.reason)}</button></li>`).join('')}</ol>
       <div class="u-dialog-actions"><button type="button" data-action="download-issues">Download Issues (.txt)</button><button type="button" class="u-primary" data-action="close-issues">Back to Annotation</button></div></dialog>
@@ -288,9 +315,25 @@ const openMenu = (id,x,y) => {
   const entry=model.entries.find(item=>item.char_id===id), menu=host.querySelector('.u-menu');
   menu.innerHTML=`<button type="button" role="menuitem" data-action="miss-left">Add MISS to Left</button><button type="button" role="menuitem" data-action="miss-right">Add MISS to Right</button><hr/><button type="button" role="menuitem" data-action="exclude">${entry.excluded?'Include in Alignment':'Exclude from Alignment'}</button>${entry.type==='missing'?'<button type="button" role="menuitem" data-action="remove-miss">Remove MISS</button>':''}`;
   menu.hidden=false;
-  menu.style.left=`${Math.max(8,Math.min(x,window.innerWidth-245))}px`;
+  menu.style.left=`${Math.max(8,Math.min(x,window.innerWidth-menu.offsetWidth-8))}px`;
   menu.style.top=`${Math.max(8,Math.min(y,window.innerHeight-menu.offsetHeight-8))}px`;
   menu.querySelector('button')?.focus();
+};
+const requestConfirmation = ({title,summary,details=[],confirmLabel='Confirm',onConfirm}) => {
+  const dialog=host.querySelector('.u-confirm');
+  if (!dialog) return;
+  dialog.querySelector('#u-confirm-title').textContent=title;
+  dialog.querySelector('[data-confirm-summary]').textContent=summary;
+  const list=dialog.querySelector('[data-confirm-details]');
+  list.replaceChildren(...details.map(detail=>{
+    const item=document.createElement('li');item.textContent=detail;return item;
+  }));
+  list.hidden=!details.length;
+  dialog.querySelector('[data-action="accept-confirm"]').textContent=confirmLabel;
+  dialog.addEventListener('cancel',()=>{pendingConfirmation=null;},{once:true});
+  pendingConfirmation=onConfirm;
+  dialog.showModal();
+  dialog.querySelector('[data-action="cancel-confirm"]')?.focus();
 };
 const confirmBoxes = (ids,next=false) => {
   if (!ids.length) {hint('Select at least one box.');return;}
@@ -304,9 +347,16 @@ const confirmBoxes = (ids,next=false) => {
       }
       workspaceCore.confirm(candidate,uid);
     }
-    if (changes.length && !window.confirm(`${changes.join('\n')}\n\nApply these mandatory annotation rules?`)) return;
-    const changed=edit(current=>{current.boxes=candidate.boxes;current.confirmed=candidate.confirmed;});
-    if (changed && next) nextUnresolved();
+    const commit=()=>{
+      const changed=edit(current=>{current.boxes=candidate.boxes;current.confirmed=candidate.confirmed;});
+      if (changed && next) nextUnresolved();
+    };
+    if (changes.length) requestConfirmation({
+      title:'Confirm alignment and apply rules',
+      summary:'These suggested alignments also require annotation rule changes:',
+      details:changes,confirmLabel:'Apply and confirm',onConfirm:commit
+    });
+    else commit();
   } catch (error) {hint(error.message);}
 };
 const nextUnresolved = () => {
@@ -335,16 +385,21 @@ host.addEventListener('click',event=>{
   const button=event.target.closest('[data-action]');
   if (!button) return;
   const action=button.dataset.action, uid=model.selected_box;
-  if (action==='menu') {const rect=button.getBoundingClientRect();openMenu(button.closest('[data-char]').dataset.char,rect.left,rect.bottom);return;}
+  if (action==='menu') {const rect=button.getBoundingClientRect();menuTrigger=button;openMenu(button.closest('[data-char]').dataset.char,rect.left,rect.bottom);return;}
+  if (action==='cancel-confirm') {pendingConfirmation=null;host.querySelector('.u-confirm')?.close();return;}
+  if (action==='accept-confirm') {
+    const commit=pendingConfirmation;pendingConfirmation=null;host.querySelector('.u-confirm')?.close();commit?.();return;
+  }
   host.querySelector('.u-menu').hidden=true;
   if (action==='char') {chooseChar(button.closest('[data-char]').dataset.char);return;}
   if (action==='toggle-reference') {model.preferences.reference_open=!model.preferences.reference_open;render();if(model.preferences.reference_open) revealReference();schedule();}
   if (action==='reveal') {model.preferences.reference_open=true;render();revealReference();schedule();}
   if (action==='focus') focusBox();
   if (action==='draw') {drawing=!drawing;render();}
-  if (['zoom-in','zoom-out','fit'].includes(action)) {
-    model.preferences.zoom=action==='fit'?100:Math.max(25,Math.min(500,model.preferences.zoom+(action==='zoom-in'?15:-15)));render();schedule();
-  }
+  if (action==='zoom-in') zoomTo(model.preferences.zoom+ZOOM_STEP);
+  if (action==='zoom-out') zoomTo(model.preferences.zoom-ZOOM_STEP);
+  if (action==='zoom-width') zoomTo(100);
+  if (action==='fit') {const fitted=fitZoom();if (fitted) zoomTo(fitted,{clientX:viewport().getBoundingClientRect().left+viewport().clientWidth/2,clientY:viewport().getBoundingClientRect().top+viewport().clientHeight/2});}
   if (['undo','redo'].includes(action) && !blocking && workspaceCore.history(model,action)) {issues=[];render();schedule();}
   if (['miss-left','miss-right'].includes(action)) edit(current=>workspaceCore.insertMiss(current,selectedMenu,action==='miss-left'?'left':'right',crypto.randomUUID()));
   if (action==='exclude') edit(current=>{const entry=current.entries.find(item=>item.char_id===selectedMenu);entry.excluded=!entry.excluded;});
@@ -354,19 +409,27 @@ host.addEventListener('click',event=>{
   if (action==='confirm' || action==='use-suggestion') confirmBoxes(uid?[uid]:[]);
   if (action==='confirm-next') confirmBoxes(uid?[uid]:[],true);
   if (action==='confirm-selected') confirmBoxes((model.selected_boxes || []).filter(id=>model.boxes[id]));
-  if (action==='confirm-all' && window.confirm('Confirm all suggested pairs and apply any mandatory character rules?')) confirmBoxes(Object.keys(model.boxes));
+  if (action==='confirm-all') confirmBoxes(Object.keys(model.boxes));
   if (action==='next-unresolved') nextUnresolved();
   if (action==='continue') checkpoint('continue');
-  if (action==='sort' && !pending && window.confirm('Recalculate reading order for all boxes? Confirmed relationships will be kept and conflicts flagged.')) {
-    workspaceCore.mutate(model,()=>{});persist();checkpoint('sort');
-  }
-  if (action==='detect' && !pending && window.confirm('Run detection and replace existing boxes? Existing box confirmations will be removed.')) checkpoint('detect');
+  if (action==='sort' && !pending) requestConfirmation({
+    title:'Recalculate reading order',
+    summary:'Reading order will be recalculated for all boxes. Confirmed relationships will be kept and conflicts will be flagged.',
+    details:['You can undo this change from the workspace toolbar.'],confirmLabel:'Recalculate',
+    onConfirm:()=>{workspaceCore.mutate(model,()=>{});persist();checkpoint('sort');}
+  });
+  if (action==='detect' && !pending) requestConfirmation({
+    title:'Replace existing boxes?',
+    summary:'Run detection and replace the current box set?',
+    details:['Existing boxes and their confirmations will be removed.'],confirmLabel:'Run detection',
+    onConfirm:()=>checkpoint('detect')
+  });
   if (action==='download-issues') downloadReport();
   if (action==='close-issues') host.querySelector('dialog').close();
 },{signal:controller.signal});
 host.addEventListener('contextmenu',event=>{
   const card=event.target.closest('[data-char]');
-  if (card) {event.preventDefault();openMenu(card.dataset.char,event.clientX,event.clientY);}
+  if (card) {event.preventDefault();menuTrigger=card.querySelector('.u-char-select');openMenu(card.dataset.char,event.clientX,event.clientY);}
 },{signal:controller.signal});
 host.addEventListener('scroll',event=>{
   if (!running() || !event.target.matches?.('.u-content-list')) return;
@@ -466,13 +529,25 @@ host.addEventListener('pointerup',event=>{
 },{signal:controller.signal});
 host.addEventListener('pointercancel',()=>{gesture=null;host.querySelector('.u-geometry-preview')?.remove();},{signal:controller.signal});
 host.addEventListener('wheel',event=>{
-  if (!running() || !event.ctrlKey || !event.target.closest('.u-viewport')) return;
-  event.preventDefault();model.preferences.zoom=Math.max(25,Math.min(500,model.preferences.zoom+(event.deltaY<0?10:-10)));render();schedule();
+  if (!running() || !(event.ctrlKey || event.metaKey) || !event.target.closest('.u-viewport')) return;
+  event.preventDefault();zoomTo(model.preferences.zoom*(event.deltaY<0?1.15:1/1.15),event);
 },{passive:false,signal:controller.signal});
 window.vietnamicaWorkspaceController?.abort();
 window.vietnamicaWorkspaceController=controller;
 window.addEventListener('keydown',event=>{
   if (!running() || blocking) return;
+  if (host.querySelector('dialog[open]')) return;
+  const menu=host.querySelector('.u-menu');
+  if (!menu?.hidden && ['ArrowDown','ArrowUp','Home','End'].includes(event.key)) {
+    const items=[...menu.querySelectorAll('[role="menuitem"]')],current=items.indexOf(document.activeElement);
+    if (items.length) {
+      event.preventDefault();
+      const index=event.key==='Home'?0:event.key==='End'?items.length-1:
+        (current+(event.key==='ArrowDown'?1:-1)+items.length)%items.length;
+      items[index].focus();
+    }
+    return;
+  }
   const typing=event.target.closest('input,textarea,select,[contenteditable=true]');
   if (event.key==='Enter' && event.target.dataset.jump) {
     event.preventDefault();const index=Number(event.target.value);
@@ -487,11 +562,18 @@ window.addEventListener('keydown',event=>{
     event.preventDefault();const direction=event.key.toLowerCase()==='y' || event.shiftKey?'redo':'undo';
     if (!blocking && workspaceCore.history(model,direction)) {issues=[];render();schedule();}
   } else if (['Delete','Backspace'].includes(event.key)) {event.preventDefault();deleteSelected();}
-  else if (event.key==='Escape') {host.querySelector('.u-menu').hidden=true;drawing=false;gesture=null;render();}
+  else if (event.key==='Escape') {
+    if (menu && !menu.hidden) {menu.hidden=true;if(menuTrigger?.isConnected)menuTrigger.focus();menuTrigger=null;return;}
+    if (drawing || gesture) {drawing=false;gesture=null;render();}
+  }
   else if (event.key==='Enter' && model.selected_box) {event.preventDefault();confirmBoxes([model.selected_box],true);}
 },{signal:controller.signal});
 window.addEventListener('keyup',event=>{if(event.code==='Space') panning=false;},{signal:controller.signal});
 window.addEventListener('pagehide',persist,{signal:controller.signal});
+document.addEventListener('pointerdown',event=>{
+  const menu=host.querySelector('.u-menu');
+  if (running() && menu && !menu.hidden && !host.contains(event.target)) {menu.hidden=true;menuTrigger=null;}
+},{signal:controller.signal});
 const load = () => {
   const previousContext=context, previousChar=model?.selected_char;
   payload=props.value;
@@ -516,7 +598,7 @@ const load = () => {
   host.inert=false;
   model.preferences={reference_open:true,reference_width:280,reference_scroll:0,zoom:100,visibility:'dim',...model.preferences};
   model.preferences.reference_width=Math.max(130,Math.min(480,Number(model.preferences.reference_width)||280));
-  model.preferences.zoom=Math.max(25,Math.min(500,Number(model.preferences.zoom)||100));
+  model.preferences.zoom=clampZoom(Number(model.preferences.zoom)||100);
   model.undo ||= [];model.redo ||= [];model.selected_boxes ||= [];
   issues=payload.issues || [];report=payload.report || '';
   render();

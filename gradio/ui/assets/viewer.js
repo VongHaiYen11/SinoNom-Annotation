@@ -46,24 +46,32 @@ const load=()=>{
   if(context!==next){
     context=next;const saved=editable()?record():null;
     crop=saved && valid(saved.crop)?[...saved.crop]:value.crop;
-    zoom=Math.max(25,Math.min(500,Number(saved?.zoom)||100));draft=saved?.draft ?? null;
+    zoom=Math.max(5,Math.min(500,Number(saved?.zoom)||100));draft=saved?.draft ?? null;
   }
   gesture=null;draw();if(editable())setCoordinates();
 };
 const zoomTo=(next,at)=>{
   const view=viewport();if(!view)return;
+  next=Math.max(5,Math.min(500,Math.round(next)));
   const rect=view.getBoundingClientRect();
   const x=at?at.clientX-rect.left:rect.width/2,y=at?at.clientY-rect.top:rect.height/2;
   const ratio=next/zoom, left=(view.scrollLeft+x)*ratio-x,top=(view.scrollTop+y)*ratio-y;
   zoom=next;draw();view.scrollLeft=left;view.scrollTop=top;persist();
 };
+const fitZoom=()=>{
+  const view=viewport();if(!view || !value?.width || !value?.height)return 100;
+  const imageRatio=value.height/value.width;
+  return Math.max(5,Math.min(100,Math.floor(100*view.clientHeight/(view.clientWidth*imageRatio))));
+};
 host.addEventListener('click',event=>{
   if(!active())return;const button=event.target.closest('[data-zoom]');if(!button)return;
-  zoomTo(Math.max(25,Math.min(500,zoom+(button.dataset.zoom==='in'?15:-15))));
+  if(button.dataset.zoom==='fit')zoomTo(fitZoom());
+  else if(button.dataset.zoom==='width')zoomTo(100);
+  else zoomTo(zoom+(button.dataset.zoom==='in'?15:-15));
 },{signal:controller.signal});
 host.addEventListener('wheel',event=>{
-  if(!active() || !event.ctrlKey || !event.target.closest('.image-viewport'))return;
-  event.preventDefault();zoomTo(Math.max(25,Math.min(500,zoom+(event.deltaY<0?15:-15))),event);
+  if(!active() || !(event.ctrlKey || event.metaKey) || !event.target.closest('.image-viewport'))return;
+  event.preventDefault();zoomTo(zoom*(event.deltaY<0?1.15:1/1.15),event);
 },{passive:false,signal:controller.signal});
 host.addEventListener('pointerdown',event=>{
   if(!active() || !event.target.closest('.annotation-canvas') || ![0,1].includes(event.button))return;
@@ -116,7 +124,7 @@ window.vietnamicaViewer={active:editable,
 progressSnapshot:()=>({crop:[...crop],zoom,draft}),
 restoreProgress:saved=>{
   if(!editable() || !valid(saved?.crop))return false;
-  crop=[...saved.crop];zoom=saved.zoom;draft=saved.draft ?? null;
+  crop=[...saved.crop];zoom=Math.max(5,Math.min(500,Number(saved.zoom)||100));draft=saved.draft ?? null;
   gesture=null;draw();setCoordinates();persist();return true;
 },setCrop:box=>{
   if(!editable() || !valid(box))return false;

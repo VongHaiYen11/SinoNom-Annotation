@@ -98,6 +98,38 @@ HISTORY_CLEAR_JS = """(selected) => {
     if (clear) clear.hidden = true;
     return [''];
 }"""
+HISTORY_OPEN_JS = """() => {
+    if (!window.vietnamicaHistoryKeyboard) {
+        document.addEventListener('keydown', event => {
+            const modal = document.getElementById('history-modal');
+            if (!modal || getComputedStyle(modal).display === 'none') return;
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                (document.querySelector('#history-close button') || document.getElementById('history-close'))?.click();
+            } else if (event.key === 'Tab') {
+                const focusable = [...modal.querySelectorAll('button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+                    .filter(element => element.getClientRects().length);
+                if (!focusable.length) return;
+                const first = focusable[0], last = focusable[focusable.length - 1];
+                if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+                    event.preventDefault(); last.focus();
+                } else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+                    event.preventDefault(); first.focus();
+                }
+            }
+        });
+        window.vietnamicaHistoryKeyboard = true;
+    }
+    const modal = document.getElementById('history-modal');
+    modal?.setAttribute('role', 'dialog');
+    modal?.setAttribute('aria-modal', 'true');
+    modal?.setAttribute('aria-label', 'Image History');
+    (document.querySelector('#history-close button') || document.getElementById('history-close'))?.setAttribute('aria-label', 'Close image history');
+    (document.querySelector('#history-search-clear button') || document.getElementById('history-search-clear'))?.setAttribute('aria-label', 'Clear image search');
+    document.querySelector('#history-search input, #history-search textarea')?.setAttribute('aria-label', 'Search image name');
+    setTimeout(() => document.querySelector('#history-search input, #history-search textarea')?.focus(), 0);
+}"""
+HISTORY_CLOSE_JS = """() => setTimeout(() => (document.querySelector('#history-open button') || document.getElementById('history-open'))?.focus(), 0)"""
 
 
 HIDE_LOADING_JS = "() => document.getElementById('global-loading')?.classList.remove('is-visible')"
@@ -156,7 +188,7 @@ def build_app(options):
                 progress=gr.HTML(app_identity(initial['active']),elem_id='app-chrome')
                 with gr.Row(elem_id='header-actions',scale=0):
                     history_open=gr.Button('History',elem_id='history-open',scale=0)
-                    progress_download=gr.Button('Tải tiến trình',elem_id='progress-download',scale=0,interactive=has_saved())
+                    progress_download=gr.Button('Download Progress',elem_id='progress-download',scale=0,interactive=has_saved())
                     save_all=gr.Button('Download All',variant='primary',scale=0,interactive=has_saved(),elem_id='save-all')
             workflow_chrome=gr.HTML(workflow_progress(initial['active']),elem_id='workflow-chrome')
         with gr.Group(visible=False,elem_id='history-modal') as history_modal:
@@ -180,35 +212,35 @@ def build_app(options):
                 gr.Markdown('## Select an image')
                 image_choice=gr.Dropdown(choices=[(p.name,str(p.resolve())) for p in images],label='Image')
                 open_button=gr.Button('Start Verification',variant='primary')
-                with gr.Accordion('Tiếp tục từ file',open=False):
-                    gr.Markdown('Chọn file tiến trình JSON đã tải trước đó. Server cần có cùng bộ ảnh đầu vào. Tối đa 128 MB.')
-                    progress_upload=gr.File(label='File tiến trình JSON',file_types=['.json'],type='filepath')
+                with gr.Accordion('Restore from Progress File',open=False):
+                    gr.Markdown('Choose a previously downloaded progress file. The server must use the same input image set. Maximum file size: 128 MB.')
+                    progress_upload=gr.File(label='Progress JSON file',file_types=['.json'],type='filepath')
                     with gr.Group(visible=False) as progress_preview_group:
                         progress_preview=gr.HTML()
-                        gr.Markdown('Phục hồi sẽ thay các bản nháp của phiên hiện tại và những kết quả trùng được liệt kê. Các kết quả khác được giữ nguyên.')
+                        gr.Markdown('Restoring replaces this session’s drafts and the listed matching results. Other saved results are kept.')
                         with gr.Row():
-                            progress_restore=gr.Button('Phục hồi tiến trình',variant='primary')
-                            progress_cancel=gr.Button('Hủy')
+                            progress_restore=gr.Button('Restore Progress',variant='primary')
+                            progress_cancel=gr.Button('Cancel')
             with gr.Column(visible=False,elem_id='control-panel',elem_classes='panel',min_width=0) as control_panel:
                 heading=gr.HTML()
                 current_image=gr.Markdown('—',elem_id='current-image-name')
-                with gr.Group(visible=False) as content_actions:
-                    undo=gr.Button('Hoàn tác nội dung')
                 with gr.Group(visible=False) as crop_group:
                     gr.Markdown('### Crop')
                     gr.Markdown('Drag the crop frame or its corners. Oversized crops are scaled on export.')
                     crop_coords=gr.Textbox(label='Coordinates [x1, y1, x2, y2]',elem_id='crop-coordinates')
                     crop_suggest=gr.Button('Suggest position',elem_id='crop-suggest')
-                    gr.Markdown('Gợi ý khung crop bao sát tất cả bounding box ở cả bốn cạnh.')
+                    gr.Markdown('The suggested crop includes all bounding boxes on all four sides.')
             with gr.Column(visible=False,elem_id='main-workspace',elem_classes='panel',min_width=0) as main_workspace:
                 with gr.Group(visible=False,elem_id='content-editor') as content_group:
-                    gr.Markdown('## Kiểm tra nội dung')
-                    field=gr.Dropdown(label='Mục',filterable=False)
-                    field_value=gr.Textbox(label='Nội dung',lines=8,elem_id='content-value',elem_classes='han-nom-text')
+                    gr.Markdown('## Content Verification')
+                    field=gr.Dropdown(label='Section',filterable=False)
+                    field_value=gr.Textbox(label='Content',lines=8,elem_id='content-value',elem_classes='han-nom-text')
                     content_bridge=gr.Textbox(value='{}',visible=False,elem_id='content-draft-bridge')
-                    apply_field=gr.Button('Lưu thay đổi',variant='primary')
-                    with gr.Accordion('JSON nội dung',open=False):
-                        content_preview=gr.Code(label='Nội dung',language='json',interactive=False)
+                    with gr.Row(visible=False,elem_id='content-actions') as content_actions:
+                        apply_field=gr.Button('Apply to Draft',variant='primary')
+                        undo=gr.Button('Undo Content')
+                    with gr.Accordion('Content JSON',open=False):
+                        content_preview=gr.Code(label='Content',language='json',interactive=False)
                 workspace_board=gr.HTML(value=None,visible=False,html_template='<div></div>',
                     css_template=WORKSPACE_CSS,js_on_load=WORKSPACE_SCRIPT,elem_id='unified-annotation')
                 board=gr.HTML(value=dict(markup='',image=None,step=1,revision=0),visible=False,html_template='${value.markup}',
@@ -258,7 +290,7 @@ def build_app(options):
                 content_actions=gr.update(visible=step==2 and has),back=gr.update(interactive=has and step>1),
                 next_button=gr.update(visible=step in (2,6),interactive=has),workflow_chrome=workflow_progress(s),
                 loading_modal=LOADING_HIDDEN,image_start=gr.update(visible=step==1),
-                control_panel=gr.update(visible=has and step in (2,6,7)),main_workspace=gr.update(visible=has and step>1),
+                control_panel=gr.update(visible=has and step in (6,7)),main_workspace=gr.update(visible=has and step>1),
                 workflow_footer=gr.update(visible=has and step>1),current_image=f'`{s["image"]}`' if has else '—',
                 content_bridge=json.dumps(draft,ensure_ascii=False),final_json_group=gr.update(visible=step==7),
                 source_mismatches_preview=gr.update(value=[final] if mismatch and final else []),
@@ -372,7 +404,7 @@ def build_app(options):
             state=ctx['active']
             try:
                 if state['current_step']!=6:
-                    raise ValueError('Chỉ gợi ý vị trí tại bước Crop.')
+                    raise ValueError('Crop suggestions are available only in the Crop step.')
                 return json.dumps(suggest_crop(state['regions'].values(),state['image_size']))
             except ValueError as exc:
                 gr.Warning(str(exc))
@@ -428,7 +460,7 @@ def build_app(options):
                 name='vietnamica-progress-'+data['created_at'][:19].replace(':','').replace('-','')+'Z.json'
                 return json.dumps(dict(name=name,content=json.dumps(data,ensure_ascii=False,allow_nan=False)))
             except (ValueError,OSError,KeyError,TypeError,AttributeError) as exc:
-                raise gr.Error(f'Không thể tải tiến trình: {exc}') from exc
+                raise gr.Error(f'Could not download progress: {exc}') from exc
 
         def preview_progress(path):
             try:
@@ -436,27 +468,27 @@ def build_app(options):
                 data=progress_backup.read(path)
                 summary=progress_backup.summary(progress_backup.prepare(data))
                 local_time=datetime.fromisoformat(summary['created_at']).astimezone(timezone(timedelta(hours=7)))
-                rows=[('Thời điểm backup',local_time.strftime('%d/%m/%Y %H:%M:%S (UTC+07)')),
-                      ('Ảnh đang làm',summary['active_image'] or 'Không có'),
-                      ('Bước',summary['step'] or 'Chọn ảnh'),
-                      ('Bản nháp',summary['drafts']),('Kết quả đã lưu',summary['saved'])]
+                rows=[('Backup time',local_time.strftime('%d/%m/%Y %H:%M:%S (UTC+07)')),
+                      ('Active image',summary['active_image'] or 'None'),
+                      ('Step',summary['step'] or 'Image selection'),
+                      ('Drafts',summary['drafts']),('Saved results',summary['saved'])]
                 markup='<dl>'+''.join(f'<dt>{html.escape(label)}</dt><dd>{html.escape(str(value))}</dd>' for label,value in rows)+'</dl>'
-                markup+='<p>Kết quả trên server sẽ bị thay thế: '+html.escape(', '.join(summary['conflicts']) or 'Không có')+'</p>'
+                markup+='<p>Server results that will be replaced: '+html.escape(', '.join(summary['conflicts']) or 'None')+'</p>'
                 return dict(backup=data,conflicts=summary['conflicts']),markup,gr.update(visible=True)
             except (ValueError,OSError,KeyError,TypeError,AttributeError,OverflowError) as exc:
-                gr.Warning(f'Không thể đọc tiến trình: {exc}')
+                gr.Warning(f'Could not read progress file: {exc}')
                 return None,'',gr.update(visible=False)
 
         def restore_progress(ctx,pending,path):
             try:
-                if not pending or not path: raise ValueError('Hãy chọn và kiểm tra file tiến trình trước.')
+                if not pending or not path: raise ValueError('Choose and preview a progress file first.')
                 data=pending['backup']
                 if progress_backup.read(path)!=data:
-                    raise ValueError('File đã thay đổi. Hãy chọn file lại để xem trước.')
+                    raise ValueError('The file changed. Select it again to preview the latest version.')
                 # Revalidate on confirmation: images/source/output may have changed since preview.
                 prepared=progress_backup.prepare(data)
                 if progress_backup.summary(prepared)['conflicts']!=pending['conflicts']:
-                    raise ValueError('Kết quả trên server đã thay đổi. Hãy chọn file lại để xem trước.')
+                    raise ValueError('Server results changed. Select the file again to preview the current state.')
                 candidate=dict(active=dict(new_state(),unified_enabled=True),drafts=deepcopy(prepared['drafts']),
                     _recovery=dict(tab=ctx.get('_recovery',{}).get('tab') or uuid4().hex,generations={}))
                 if prepared['active_name']:
@@ -472,7 +504,7 @@ def build_app(options):
                 result=restore_browser_fields(render(candidate,progress_seed=candidate['_progress_seed']),candidate,dict(drafts=records))
                 return tuple(result)+(None,'',gr.update(visible=False),None)
             except (ValueError,OSError,KeyError,TypeError,AttributeError,OverflowError) as exc:
-                gr.Warning(f'Không thể phục hồi tiến trình: {exc}')
+                gr.Warning(f'Could not restore progress: {exc}')
                 return tuple(gr.skip() for _ in outputs)+(gr.skip(),gr.skip(),gr.skip(),gr.skip())
 
         def history_markup():
@@ -525,8 +557,10 @@ def build_app(options):
             return [JSON.stringify(fields),JSON.stringify(Object.values(fields).map(f=>({tieu_de:f.title,van_ban:f.value})),null,2)];
         }''')
         history_open.click(lambda:(gr.update(visible=True),history_markup()),[],[history_modal,history_results],show_progress='hidden').success(
-            fn=None,inputs=[history_search,history_filter],outputs=None,js=HISTORY_FILTER_JS,show_progress='hidden')
-        history_close.click(lambda:gr.update(visible=False),[],[history_modal],show_progress='hidden')
+            fn=None,inputs=[history_search,history_filter],outputs=None,js=HISTORY_FILTER_JS,show_progress='hidden').success(
+            fn=None,inputs=None,outputs=None,js=HISTORY_OPEN_JS,show_progress='hidden')
+        history_close.click(lambda:gr.update(visible=False),[],[history_modal],show_progress='hidden').success(
+            fn=None,inputs=None,outputs=None,js=HISTORY_CLOSE_JS,show_progress='hidden')
         history_search.input(fn=None,inputs=[history_search,history_filter],outputs=None,js=HISTORY_FILTER_JS,show_progress='hidden')
         history_filter.change(fn=None,inputs=[history_search,history_filter],outputs=None,js=HISTORY_FILTER_JS,show_progress='hidden')
         history_clear.click(fn=None,inputs=[history_filter],outputs=[history_search],js=HISTORY_CLEAR_JS,show_progress='hidden')

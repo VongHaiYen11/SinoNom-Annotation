@@ -191,6 +191,7 @@ body,
 }
 
 #header-actions #history-open,
+#header-actions #progress-download,
 #header-actions #save-all {
   flex: 0 0 auto !important;
   align-self: center;
@@ -200,8 +201,10 @@ body,
 }
 
 #header-actions #history-open button,
+#header-actions #progress-download button,
 #header-actions #save-all button,
 #header-actions button#history-open,
+#header-actions button#progress-download,
 #header-actions button#save-all {
   display: inline-flex;
   align-items: center;
@@ -226,8 +229,10 @@ body,
 }
 
 #header-actions #history-open button::before,
+#header-actions #progress-download button::before,
 #header-actions #save-all button::before,
 #header-actions button#history-open::before,
+#header-actions button#progress-download::before,
 #header-actions button#save-all::before {
   display: block;
   flex: 0 0 18px;
@@ -244,6 +249,8 @@ body,
 }
 
 #header-actions #save-all button::before,
+#header-actions #progress-download button::before,
+#header-actions button#progress-download::before,
 #header-actions button#save-all::before {
   mask: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3'/%3E%3C/svg%3E");
   -webkit-mask: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3'/%3E%3C/svg%3E");
@@ -762,6 +769,9 @@ button#next-button::after { transform: rotate(180deg); }
 
 #content-editor > .styler { gap: var(--section-gap) !important; }
 
+#content-actions { display:flex !important; align-items:center; flex-wrap:wrap; gap:var(--space-3) !important; }
+#content-actions > * { flex:0 0 auto !important; width:auto !important; }
+
 #content-editor .prose h2 { margin: 0; font-size: 20px; }
 
 #annotation-board,
@@ -865,18 +875,27 @@ button#next-button::after { transform: rotate(180deg); }
 
 .gradio-container .main { display: flex; height: auto; overflow: visible; }
 
-#topbar { grid-template-columns: minmax(0, 1fr) auto; padding-inline: var(--space-3); }
+#topbar { grid-template-columns: minmax(0, 1fr); padding-inline: var(--space-3); }
 
 .app-header { padding: 0; }
 
-.app-header h1 { font-size: 14px !important; }
+.app-header h1 { font-size: 14px !important; white-space:nowrap; }
 
-#header-actions { gap: 10px !important; }
+#header-actions { justify-content:flex-start; flex-wrap:wrap; gap:8px !important; width:100% !important; }
 
 #header-actions #history-open button,
+#header-actions #progress-download button,
 #header-actions #save-all button,
 #header-actions button#history-open,
+#header-actions button#progress-download,
 #header-actions button#save-all { padding-inline: 12px; }
+
+#header-actions #history-open button,
+#header-actions #progress-download button,
+#header-actions #save-all button,
+#header-actions button#history-open,
+#header-actions button#progress-download,
+#header-actions button#save-all { white-space:nowrap; }
 
 #workflow-chrome { padding-inline: var(--space-3); }
 
@@ -910,6 +929,7 @@ button#next-button::after { transform: rotate(180deg); }
 
 #workspace:has(.u-workbench) { grid-template-columns: minmax(0, 1fr); }
 #workspace:has(.u-workbench) #main-workspace { grid-column: 1 / -1; }
+#workspace:has(#content-editor[style*="display: flex"]) #main-workspace { grid-column: 1 / -1; }
 
 /* Font preparation owns a native modal, independent of queued annotation actions. */
 #font-loading {

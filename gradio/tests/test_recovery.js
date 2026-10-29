@@ -78,6 +78,7 @@ assert.equal(page.run('draftRecovery.read(props.value).typing["[0]"]'),'imported
 page.run('draftRecovery.write(props.value,{typing:{"[0]":"edited after import"}})');
 page=mount(imported);
 assert.equal(page.run('draftRecovery.read(props.value).typing["[0]"]'),'edited after import');
+assert.equal(page.run('draftRecovery.read(props.value).metadata.progressImport'),undefined);
 page.context.window.vietnamicaWorkspace={active:()=>true,snapshot:()=>({boxes:{latest:{bbox:[1,2,3,4]}}})};
 page.nodes.set('#content-value input, #content-value textarea',{value:'still typing'});
 const exported=page.run('draftRecovery.exportProgress()');
