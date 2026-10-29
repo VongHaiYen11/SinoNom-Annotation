@@ -6,12 +6,11 @@ from .icons import CHECK
 
 APP_CSS = FONT_CSS + (Path(__file__).parent / 'assets/workbench.css').read_text()
 SECTION_LABELS = {
-    'Nguyên văn chữ Hán Nôm': 'Original Hán–Nôm Text',
-    'Phiên âm Hán Việt': 'Sino-Vietnamese Transcription',
-    'Dịch nghĩa': 'Translation', 'Toát yếu': 'Summary', 'Chú thích': 'Notes',
-    'Tên bia': 'Inscription Title', 'Địa điểm': 'Location', 'Niên đại': 'Date',
+    title: title for title in ('Nguyên văn chữ Hán Nôm', 'Phiên âm Hán Việt',
+                              'Dịch nghĩa', 'Toát yếu', 'Chú thích',
+                              'Tên bia', 'Địa điểm', 'Niên đại')
 }
-UNIFIED_LABELS = ('Content Verification', 'Annotation Workspace', 'Crop', 'Review & Save')
+UNIFIED_LABELS = ('Kiểm tra nội dung', 'Annotation Workspace', 'Crop', 'Review & Save')
 
 
 def steps_for(state):

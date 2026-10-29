@@ -83,3 +83,33 @@
   .u-reference { max-width:38vw; min-width:130px; }
   .u-toolbar .u-jump { display:none; }
 }
+
+/* Selected characters remain distinct from confirmed/conflicting relations. */
+.u-card.selected {
+  background:#593214;
+  border:2px solid #ff9f43;
+  outline:2px solid #ff9f43;
+  outline-offset:1px;
+  box-shadow:0 0 0 4px #ff7a1a24;
+}
+.u-card.selected .u-glyph { color:#fff3df; }
+.u-card.selected .u-index,.u-card.selected .u-relation { color:#ffcf98; font-weight:700; }
+.u-inspector .u-inline,.u-inspector .u-check {
+  display:flex; align-items:center; gap:9px; min-height:40px;
+  margin:6px 0; padding:8px 10px; border:1px solid #555b66;
+  border-radius:7px; background:#22252b; cursor:pointer;
+}
+.u-inspector label:has(input:checked) { border-color:#ff9f43; background:#47301e; color:#ffe0b5; }
+.u-inspector label:has(input:disabled) { opacity:.45; cursor:not-allowed; }
+.unified-workspace .u-inspector input[type=checkbox],.unified-workspace .u-inspector input[type=radio] {
+  appearance:none; -webkit-appearance:none; display:inline-block;
+  width:20px; height:20px; min-width:20px; min-height:20px;
+  flex:0 0 20px; margin:0; padding:0; border:2px solid #9ca3af !important;
+  border-radius:4px; background:#111318 !important; cursor:inherit;
+}
+.unified-workspace .u-inspector input:checked {
+  border-color:#ff9f43 !important; background-color:#ff9f43 !important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='m4 10 4 4 8-8' fill='none' stroke='%2317191c' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  background-repeat:no-repeat !important; background-position:center !important; background-size:18px 18px !important;
+}
+.u-inspector label:focus-within { outline:2px solid #ff9f43; outline-offset:2px; }

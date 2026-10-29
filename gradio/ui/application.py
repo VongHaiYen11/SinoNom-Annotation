@@ -6,18 +6,21 @@ import logging
 from collections import namedtuple
 from copy import deepcopy
 from pathlib import Path
+from uuid import uuid4
 
 import gradio as gr
 from annotation.state import new_state, source_mismatch_confirmed, calculate_spatial_order
 from annotation.workflow import Workflow
 from annotation.recovery import RecoveryStore
+from annotation.progress import ProgressBackup
 from annotation.workspace import ensure_workspace, spatial_insert, issues_text, active_entries
 from annotation.io import read_json, load_image_list, final_document, final_source_mismatch_document
-from annotation.text_extraction import content_fields
+from annotation.text_extraction import CONTENT_LOCK, content_fields
 from annotation.export import collect_annotations, collect_content_documents, collect_source_mismatches, save_export_archive
 from .editor import snapshot, SCRIPT, CSS, RECOVERY_SCRIPT, WORKSPACE_SCRIPT, WORKSPACE_CSS
 from .presentation import app_identity, workflow_progress, panel_heading, footer, SECTION_LABELS
 from .fonts import FONT_FILES, FONT_PRELOAD_JS
+from crop.crop import suggest_crop
 
 log = logging.getLogger(__name__)
 
@@ -106,6 +109,19 @@ LIVE_EDITOR_JS = '''async (...args) => {
     }
     return args;
 }'''
+PROGRESS_EXPORT_JS = '''async (ctx, request) => {
+    if (window.vietnamicaWorkspace?.active()) await window.vietnamicaWorkspace.ready();
+    const backup = window.vietnamicaDraftRecovery?.exportProgress() || {drafts:{}};
+    return [ctx, JSON.stringify(backup)];
+}'''
+PROGRESS_DOWNLOAD_JS = '''payload => {
+    if (!payload) return;
+    const download=JSON.parse(payload);
+    const url=URL.createObjectURL(new Blob([download.content],{type:'application/json;charset=utf-8'}));
+    const link=document.createElement('a');link.href=url;link.download=download.name;
+    document.body.appendChild(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+}'''
 
 
 def build_app(options):
@@ -121,6 +137,7 @@ def build_app(options):
     except (ValueError,OSError) as exc:
         images=[];startup=str(exc)
     store=RecoveryStore()
+    progress_backup=ProgressBackup(engine,images)
     initial=dict(active=dict(new_state(),unified_enabled=True),drafts={})
     def has_saved():
         output=Path(options.output_dir)
@@ -138,6 +155,7 @@ def build_app(options):
                 progress=gr.HTML(app_identity(initial['active']),elem_id='app-chrome')
                 with gr.Row(elem_id='header-actions',scale=0):
                     history_open=gr.Button('History',elem_id='history-open',scale=0)
+                    progress_download=gr.Button('Tải tiến trình',elem_id='progress-download',scale=0,interactive=has_saved())
                     save_all=gr.Button('Download All',variant='primary',scale=0,interactive=has_saved(),elem_id='save-all')
             workflow_chrome=gr.HTML(workflow_progress(initial['active']),elem_id='workflow-chrome')
         with gr.Group(visible=False,elem_id='history-modal') as history_modal:
@@ -153,29 +171,43 @@ def build_app(options):
         message=gr.Markdown(startup,visible=bool(startup),elem_id='action-message')
         loading_modal=gr.HTML(LOADING_HIDDEN,elem_id='global-loading-host')
         download_payload=gr.Textbox(visible=False)
+        progress_export_request=gr.Textbox(visible=False)
+        progress_download_payload=gr.Textbox(visible=False)
+        progress_pending=gr.State(None)
         with gr.Row(elem_id='workspace'):
             with gr.Column(elem_id='image-start',elem_classes='panel') as image_start:
                 gr.Markdown('## Select an image')
                 image_choice=gr.Dropdown(choices=[(p.name,str(p.resolve())) for p in images],label='Image')
                 open_button=gr.Button('Start Verification',variant='primary')
+                with gr.Accordion('Tiếp tục từ file',open=False):
+                    gr.Markdown('Chọn file tiến trình JSON đã tải trước đó. Server cần có cùng bộ ảnh đầu vào. Tối đa 128 MB.')
+                    progress_upload=gr.File(label='File tiến trình JSON',file_types=['.json'],type='filepath')
+                    with gr.Group(visible=False) as progress_preview_group:
+                        progress_preview=gr.HTML()
+                        gr.Markdown('Phục hồi sẽ thay các bản nháp của phiên hiện tại và những kết quả trùng được liệt kê. Các kết quả khác được giữ nguyên.')
+                        with gr.Row():
+                            progress_restore=gr.Button('Phục hồi tiến trình',variant='primary')
+                            progress_cancel=gr.Button('Hủy')
             with gr.Column(visible=False,elem_id='control-panel',elem_classes='panel',min_width=0) as control_panel:
                 heading=gr.HTML()
                 current_image=gr.Markdown('—',elem_id='current-image-name')
                 with gr.Group(visible=False) as content_actions:
-                    undo=gr.Button('Undo content changes')
+                    undo=gr.Button('Hoàn tác nội dung')
                 with gr.Group(visible=False) as crop_group:
                     gr.Markdown('### Crop')
                     gr.Markdown('Drag the crop frame or its corners. Oversized crops are scaled on export.')
                     crop_coords=gr.Textbox(label='Coordinates [x1, y1, x2, y2]',elem_id='crop-coordinates')
+                    crop_suggest=gr.Button('Suggest position',elem_id='crop-suggest')
+                    gr.Markdown('Gợi ý khung crop bao sát tất cả bounding box ở cả bốn cạnh.')
             with gr.Column(visible=False,elem_id='main-workspace',elem_classes='panel',min_width=0) as main_workspace:
                 with gr.Group(visible=False,elem_id='content-editor') as content_group:
-                    gr.Markdown('## Content Verification')
-                    field=gr.Dropdown(label='Section',filterable=False)
-                    field_value=gr.Textbox(label='Content',lines=8,elem_id='content-value',elem_classes='han-nom-text')
+                    gr.Markdown('## Kiểm tra nội dung')
+                    field=gr.Dropdown(label='Mục',filterable=False)
+                    field_value=gr.Textbox(label='Nội dung',lines=8,elem_id='content-value',elem_classes='han-nom-text')
                     content_bridge=gr.Textbox(value='{}',visible=False,elem_id='content-draft-bridge')
-                    apply_field=gr.Button('Save change',variant='primary')
-                    with gr.Accordion('Content JSON',open=False):
-                        content_preview=gr.Code(label='Content',language='json',interactive=False)
+                    apply_field=gr.Button('Lưu thay đổi',variant='primary')
+                    with gr.Accordion('JSON nội dung',open=False):
+                        content_preview=gr.Code(label='Nội dung',language='json',interactive=False)
                 workspace_board=gr.HTML(value=None,visible=False,html_template='<div></div>',
                     css_template=WORKSPACE_CSS,js_on_load=WORKSPACE_SCRIPT,elem_id='unified-annotation')
                 board=gr.HTML(value=dict(markup='',image=None,step=1,revision=0),visible=False,html_template='${value.markup}',
@@ -199,7 +231,7 @@ def build_app(options):
             workflow_footer=workflow_footer,current_image=current_image,content_bridge=content_bridge,
             final_json_group=final_json_group,source_mismatches_preview=source_mismatches_preview,
             mismatch_preview_group=mismatch_preview_group,save_all=save_all,image_choice=image_choice,
-            recovery_notice=recovery_notice,workspace_board=workspace_board)
+            recovery_notice=recovery_notice,workspace_board=workspace_board,progress_download=progress_download)
         Output=namedtuple('AnnotationUI',components)
         outputs=list(components.values())
 
@@ -231,7 +263,9 @@ def build_app(options):
                 source_mismatches_preview=gr.update(value=[final] if mismatch and final else []),
                 mismatch_preview_group=gr.update(visible=step==7 and mismatch),save_all=gr.update(interactive=has_saved()),
                 image_choice=gr.update(value=s.get('image_path') if step==1 else None),
-                recovery_notice=dict(metadata,defaultSection=chosen) if metadata else None,
+                recovery_notice=dict(metadata,defaultSection=chosen,
+                    **({'progressImport':ctx['_progress_seed']} if ctx.get('_progress_seed') else {})) if metadata else None,
+                progress_download=gr.update(interactive=has or bool(ctx.get('drafts')) or has_saved()),
                 workspace_board=gr.update(visible=step==3,value=dict(step=step,model=s.get('workspace'),image=s.get('image'),
                     image_url=s.get('image_url'),size=s.get('image_size'),recovery=metadata,
                     issues=s.get('workspace_issues',[]),report=issues_text(s.get('image'),s.get('workspace_issues',[])),can_detect=not skip_detection)))
@@ -333,6 +367,16 @@ def build_app(options):
         def save_image(ctx): return run(ctx,'save')
         def undo_content(ctx): return run(ctx,'undo')
 
+        def suggest_crop_position(ctx):
+            state=ctx['active']
+            try:
+                if state['current_step']!=6:
+                    raise ValueError('Chỉ gợi ý vị trí tại bước Crop.')
+                return json.dumps(suggest_crop(state['regions'].values(),state['image_size']))
+            except ValueError as exc:
+                gr.Warning(str(exc))
+                return gr.skip()
+
         def on_workspace_action(ctx,evt:gr.EventData):
             data=evt._data
             try:
@@ -344,7 +388,8 @@ def build_app(options):
                     for i,uid in enumerate(ordered,1): model['boxes'][uid]['order']=i
                     ctx['active']['regions']=deepcopy(model['boxes'])
                     pos=model['boxes'].get(model.get('selected_box'),{}).get('order');entries=active_entries(model)
-                    model['selected_char']=entries[pos-1]['char_id'] if pos and pos<=len(entries) else None
+                    model['selected_char']=(model['confirmed'].get(model.get('selected_box'))
+                        or (entries[pos-1]['char_id'] if pos and pos<=len(entries) else None))
                 elif data['action']=='continue': return run(ctx,'next')
                 elif data['action']=='detect': return run(ctx,'detect')
                 elif data['action']!='checkpoint': raise ValueError('Unknown workspace action.')
@@ -371,6 +416,61 @@ def build_app(options):
                 return json.dumps(dict(name=archive.name,content=base64.b64encode(archive.read_bytes()).decode('ascii')))
             except (ValueError,OSError,KeyError,TypeError) as exc: raise gr.Error(str(exc)) from exc
 
+        def download_progress(ctx,browser_request):
+            try:
+                browser=json.loads(browser_request or '{}')
+                browser['application']=store.application
+                with CONTENT_LOCK:
+                    data=progress_backup.export(ctx,browser)
+                name='vietnamica-progress-'+data['created_at'][:19].replace(':','').replace('-','')+'Z.json'
+                return json.dumps(dict(name=name,content=json.dumps(data,ensure_ascii=False,allow_nan=False)))
+            except (ValueError,OSError,KeyError,TypeError,AttributeError) as exc:
+                raise gr.Error(f'Không thể tải tiến trình: {exc}') from exc
+
+        def preview_progress(path):
+            try:
+                if not path: return None,'',gr.update(visible=False)
+                data=progress_backup.read(path)
+                summary=progress_backup.summary(progress_backup.prepare(data))
+                rows=[('Thời điểm backup',summary['created_at']),
+                      ('Ảnh đang làm',summary['active_image'] or 'Không có'),
+                      ('Bước',summary['step'] or 'Chọn ảnh'),
+                      ('Bản nháp',summary['drafts']),('Kết quả đã lưu',summary['saved'])]
+                markup='<dl>'+''.join(f'<dt>{html.escape(label)}</dt><dd>{html.escape(str(value))}</dd>' for label,value in rows)+'</dl>'
+                markup+='<p>Kết quả trên server sẽ bị thay thế: '+html.escape(', '.join(summary['conflicts']) or 'Không có')+'</p>'
+                return dict(backup=data,conflicts=summary['conflicts']),markup,gr.update(visible=True)
+            except (ValueError,OSError,KeyError,TypeError,AttributeError,OverflowError) as exc:
+                gr.Warning(f'Không thể đọc tiến trình: {exc}')
+                return None,'',gr.update(visible=False)
+
+        def restore_progress(ctx,pending,path):
+            try:
+                if not pending or not path: raise ValueError('Hãy chọn và kiểm tra file tiến trình trước.')
+                data=pending['backup']
+                if progress_backup.read(path)!=data:
+                    raise ValueError('File đã thay đổi. Hãy chọn file lại để xem trước.')
+                # Revalidate on confirmation: images/source/output may have changed since preview.
+                prepared=progress_backup.prepare(data)
+                if progress_backup.summary(prepared)['conflicts']!=pending['conflicts']:
+                    raise ValueError('Kết quả trên server đã thay đổi. Hãy chọn file lại để xem trước.')
+                candidate=dict(active=dict(new_state(),unified_enabled=True),drafts=deepcopy(prepared['drafts']),
+                    _recovery=dict(tab=ctx.get('_recovery',{}).get('tab') or uuid4().hex,generations={}))
+                if prepared['active_name']:
+                    candidate['active']=deepcopy(prepared['drafts'][str(progress_backup.images[prepared['active_name']])])
+                records={}
+                for state in candidate['drafts'].values():
+                    metadata=store.metadata(dict(candidate,active=state))
+                    key=json.dumps([metadata['application'],metadata['tab'],metadata['image'],metadata['step']],separators=(',',':'))
+                    records[key]=dict(prepared['ui'][state['image']],metadata=metadata)
+                candidate['_progress_seed']=dict(id=uuid4().hex,records=records)
+                # All validation, generation allocation and browser seed construction precede writes.
+                progress_backup.commit(prepared)
+                result=restore_browser_fields(render(candidate),candidate,dict(drafts=records))
+                return tuple(result)+(None,'',gr.update(visible=False),None)
+            except (ValueError,OSError,KeyError,TypeError,AttributeError,OverflowError) as exc:
+                gr.Warning(f'Không thể phục hồi tiến trình: {exc}')
+                return tuple(gr.skip() for _ in outputs)+(gr.skip(),gr.skip(),gr.skip(),gr.skip())
+
         def history_markup():
             items=[];processed=0;out=Path(options.output_dir)
             for image in images:
@@ -394,6 +494,21 @@ def build_app(options):
         clear_loading(back.click(go_back,[session,selection_bridge],js=back_js,**event_args))
         clear_loading(save.click(save_image,[session],js=SHOW_LOADING_JS,**event_args))
         clear_loading(undo.click(undo_content,[session],**event_args))
+        progress_download.click(download_progress,[session,progress_export_request],[progress_download_payload],
+            js=PROGRESS_EXPORT_JS,concurrency_id='annotation-actions',concurrency_limit=1,show_progress='hidden').success(
+                fn=None,inputs=[progress_download_payload],outputs=None,js=PROGRESS_DOWNLOAD_JS,show_progress='hidden')
+        progress_upload.change(preview_progress,[progress_upload],
+            [progress_pending,progress_preview,progress_preview_group],show_progress='hidden')
+        progress_cancel.click(lambda:(None,'',gr.update(visible=False),None),[],
+            [progress_pending,progress_preview,progress_preview_group,progress_upload],show_progress='hidden')
+        progress_restore.click(restore_progress,[session,progress_pending,progress_upload],
+            outputs+[progress_pending,progress_preview,progress_preview_group,progress_upload],
+            concurrency_id='annotation-actions',concurrency_limit=1,show_progress='hidden')
+        crop_suggest.click(suggest_crop_position,[session],[crop_coords],
+            concurrency_id='annotation-actions',concurrency_limit=1,show_progress='hidden').success(
+                fn=None,inputs=[crop_coords],outputs=None,show_progress='hidden',js='''coordinates => {
+                    try { window.vietnamicaViewer?.setCrop(JSON.parse(coordinates)); } catch (_) {}
+                }''')
         workspace_board.action(on_workspace_action,[session],**event_args)
         field.change(fn=None,inputs=[field,content_bridge],outputs=[field_value],queue=False,show_progress='hidden',js='''(path,draft) => {
             const typed=window.vietnamicaRecovery?.section(path,draft);

@@ -106,6 +106,32 @@ const draftRecovery = (() => {
       }
     } finally { restoring = false; }
   };
+  let installedProgress = null;
+  const installProgress = meta => {
+    const imported = meta?.progressImport;
+    if (!imported || imported.id === installedProgress) return;
+    try {
+      if (sessionStorage.getItem('vietnamica-progress-import-id') === imported.id) {
+        installedProgress = imported.id;
+        return;
+      }
+    } catch (_) { /* In-memory recovery still works when storage is blocked. */ }
+    // A portable import establishes a new generation. Old tab drafts must never
+    // win a subsequent component mount or a page reload.
+    records = structuredClone(imported.records);
+    installedProgress = imported.id;
+    persist();
+    try { sessionStorage.setItem('vietnamica-progress-import-id', imported.id); }
+    catch (_) { failed = true; }
+  };
+  const exportProgress = () => {
+    captureUI();
+    if (metadata?.image) {
+      if (window.vietnamicaWorkspace?.active()) write(metadata, {workspace: window.vietnamicaWorkspace.snapshot()});
+      if (window.vietnamicaViewer?.active()) write(metadata, {viewer: window.vietnamicaViewer.progressSnapshot()});
+    }
+    return {application: metadata?.application, drafts: structuredClone(records)};
+  };
   const section = (value, content) => {
     const record = read(metadata);
     if (metadata?.image) write(metadata, {section: value, content});
@@ -113,13 +139,14 @@ const draftRecovery = (() => {
   };
   const content = value => write(metadata, {content: JSON.stringify(value)});
   window.vietnamicaRecovery = {section, content};
-  return {read, write, activate, restoreUI, captureUI, notice};
+  return {read, write, activate, restoreUI, captureUI, notice, installProgress, exportProgress};
 })();
 window.vietnamicaDraftRecovery = draftRecovery;
 let lastRecoveryKey = '';
 const initializeRecovery = () => {
   const meta = props.value;
   if (!meta) return;
+  draftRecovery.installProgress(meta);
   const record = draftRecovery.read(meta);
   draftRecovery.activate(meta);
   const identity = JSON.stringify(meta);
@@ -133,6 +160,9 @@ const initializeRecovery = () => {
     input.dispatchEvent(new Event('input', {bubbles: true}));
     input.dispatchEvent(new Event('change', {bubbles: true}));
   }));
+  if (meta.progressImport && meta.step === 6 && record?.viewer) {
+    requestAnimationFrame(() => window.vietnamicaViewer?.restoreProgress(record.viewer));
+  }
 };
 watch('value', initializeRecovery);
 initializeRecovery();

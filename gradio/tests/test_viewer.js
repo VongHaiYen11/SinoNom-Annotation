@@ -43,6 +43,8 @@ assert.deepEqual(Array.from(api.snapshot().crop),[20,15,70,65]);
 input._value='not JSON';input.closest=()=>true;
 root.listeners.input[0]({isTrusted:true,target:input});
 assert.equal(api.snapshot().crop,'not JSON');
+assert.equal(api.progressSnapshot().draft,'not JSON');
+assert.deepEqual(Array.from(api.progressSnapshot().crop),[20,15,70,65]);
 input._value='[5,6,80,90]';root.listeners.input[0]({isTrusted:true,target:input});
 assert.deepEqual(Array.from(api.snapshot().crop),[5,6,80,90]);
 watcher();assert.equal(input.value,'[5,6,80,90]');
@@ -54,9 +56,17 @@ host.listeners.pointermove[0]({clientX:-10,clientY:-10});
 host.listeners.pointerup[0]({pointerId:2});
 assert.deepEqual(Array.from(api.snapshot().crop),[0,0,80,90]);
 assert.equal(handles[0].attrs.cx,0);assert.equal(handles[0].attrs.cy,0);
+// A suggested crop replaces even an invalid typed draft and survives template refresh.
+input._value='invalid';root.listeners.input[0]({isTrusted:true,target:input});
+assert.equal(api.setCrop([4,5,170,95]),true);
+assert.deepEqual(Array.from(api.snapshot().crop),[4,5,170,95]);
+assert.equal(input.value,'[4,5,170,95]');
+watcher();assert.deepEqual(Array.from(api.snapshot().crop),[4,5,170,95]);
+assert.equal(api.setCrop([-1,0,20,30]),false);
 // Review is read-only and does not capture Delete/Enter or content/status changes.
 props.value={...props.value,step:7,recovery:{generation:'review'}};watcher();
 assert.equal(api.active(),false);
+assert.equal(api.setCrop([1,2,50,60]),false);
 const before=rect.attrs.x;
 down(10,10);host.listeners.pointermove[0]({clientX:50,clientY:50});
 assert.equal(rect.attrs.x,before);

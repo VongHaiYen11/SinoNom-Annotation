@@ -168,7 +168,7 @@ class Workflow:
                 self.content_titles, self.metadata_fields)
         return restored
 
-    def open_image(self, path):
+    def open_image(self, path, *, load_saved=True):
         state = new_state()
         path = Path(path).resolve()
         with Image.open(path) as im:
@@ -202,10 +202,10 @@ class Workflow:
                      draft_content=deepcopy(located['record']), code=located['code'], current_step=2)
         saved = self.output / (path.stem + '.json')
         mismatch_saved = self.output / 'source_mismatches' / (path.stem + '.json')
-        if saved.exists() and mismatch_saved.exists():
+        if load_saved and saved.exists() and mismatch_saved.exists():
             raise ValueError('Both a normal annotation and source mismatch exist for this image.')
         saved_crop = None
-        persisted = saved if saved.exists() else mismatch_saved if mismatch_saved.exists() else None
+        persisted = (saved if saved.exists() else mismatch_saved if mismatch_saved.exists() else None) if load_saved else None
         if persisted:
             restored_content = self._saved_content_for(path.name, located['code'], located['record'])
             state.update(source_content=deepcopy(restored_content),

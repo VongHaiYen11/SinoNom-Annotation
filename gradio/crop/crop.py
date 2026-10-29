@@ -12,6 +12,15 @@ def default_crop(size):
     return [0, 0, width, height]
 
 
+def suggest_crop(boxes, size):
+    """Smallest source-coordinate rectangle enclosing every annotation box."""
+    coordinates = [validate_coordinates(box['bbox'], size) for box in boxes]
+    if not coordinates:
+        raise ValueError('Chưa có bounding box để gợi ý vị trí crop.')
+    return [min(box[0] for box in coordinates), min(box[1] for box in coordinates),
+            max(box[2] for box in coordinates), max(box[3] for box in coordinates)]
+
+
 def validate_crop_coordinates(bbox, size):
     x1, y1, x2, y2 = validate_coordinates(bbox, size)
     return [x1, y1, x2, y2]

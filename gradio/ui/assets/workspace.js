@@ -142,7 +142,7 @@ const chooseBox = (uid, multi=false, reveal=true) => {
   model.selected_char=workspaceCore.related(model,uid)?.char_id || null;
   model.version=(model.version || 0)+1;
   render(); schedule();
-  if (reveal && model.preferences.reference_open) revealReference();
+  if (reveal && model.preferences.reference_open) {revealReference();persist();}
 };
 const chooseChar = id => {
   model.selected_char=id;
@@ -158,8 +158,10 @@ const chooseChar = id => {
 const edit = action => {
   if (blocking) {hint('Please wait for the current update.');return false;}
   const previous=model.selected_char;
-  workspaceCore.mutate(model,action); issues=[]; report=''; render();
-  if (model.preferences.reference_open && previous!==model.selected_char) revealReference();
+  workspaceCore.mutate(model,action);
+  if (model.boxes[model.selected_box]) model.selected_char=workspaceCore.related(model,model.selected_box)?.char_id || null;
+  issues=[]; report=''; render();
+  if (model.preferences.reference_open && (model.selected_box || previous!==model.selected_char)) revealReference();
   schedule(); return true;
 };
 const revealReference = () => {
@@ -168,6 +170,7 @@ const revealReference = () => {
   if (!card || !list) return;
   const a=card.getBoundingClientRect(), b=list.getBoundingClientRect();
   if (a.top<b.top || a.bottom>b.bottom) list.scrollTop += a.top-b.top-b.height/2+a.height/2;
+  model.preferences.reference_scroll=list.scrollTop;
 };
 const focusBox = () => {
   const uid=model.selected_box;
@@ -185,7 +188,7 @@ const cardsMarkup = () => {
     const box=uid || (!entry.excluded && derived.byOrder.get(effective));
     const state=entry.excluded ? (uid ? 'Conflict' : 'Excluded') : box ? workspaceCore.relation(model,box,derived) : 'Unaligned';
     return `<div class="u-card ${state.toLowerCase()} ${entry.char_id===model.selected_char?'selected':''}" data-char="${esc(entry.char_id)}">
-      <button type="button" class="u-char-select" data-action="char" aria-label="Character ${effective}: ${esc(entry.value)}, ${state}">
+      <button type="button" class="u-char-select" data-action="char" aria-pressed="${entry.char_id===model.selected_char}" aria-label="Character ${effective}: ${esc(entry.value)}, ${state}">
       <span class="u-index">${effective}</span><span class="u-glyph">${esc(entry.value)}</span>
       <span class="u-relation">${state==='Confirmed'?'✓ ':''}${state}</span></button>
       <button type="button" class="u-card-menu" data-action="menu" title="Character actions" aria-label="Character actions">⋯</button></div>`;
@@ -335,7 +338,7 @@ host.addEventListener('click',event=>{
   if (action==='menu') {const rect=button.getBoundingClientRect();openMenu(button.closest('[data-char]').dataset.char,rect.left,rect.bottom);return;}
   host.querySelector('.u-menu').hidden=true;
   if (action==='char') {chooseChar(button.closest('[data-char]').dataset.char);return;}
-  if (action==='toggle-reference') {model.preferences.reference_open=!model.preferences.reference_open;render();schedule();}
+  if (action==='toggle-reference') {model.preferences.reference_open=!model.preferences.reference_open;render();if(model.preferences.reference_open) revealReference();schedule();}
   if (action==='reveal') {model.preferences.reference_open=true;render();revealReference();schedule();}
   if (action==='focus') focusBox();
   if (action==='draw') {drawing=!drawing;render();}
@@ -424,7 +427,7 @@ host.addEventListener('pointerdown',event=>{
   } else if (group) {
     const uid=group.dataset.region, corner=event.target.dataset.corner;
     if (event.shiftKey) {chooseBox(uid,true);return;}
-    if (uid!==model.selected_box) chooseBox(uid,false);
+    chooseBox(uid,false);
     gesture={kind:corner===undefined?'move':'resize',uid,corner:Number(corner),point,bbox:[...model.boxes[uid].bbox]};
   } else {model.selected_box=null;model.selected_boxes=[];render();schedule();return;}
   host.setPointerCapture(event.pointerId);
@@ -516,8 +519,9 @@ const load = () => {
   model.preferences.zoom=Math.max(25,Math.min(500,Number(model.preferences.zoom)||100));
   model.undo ||= [];model.redo ||= [];model.selected_boxes ||= [];
   issues=payload.issues || [];report=payload.report || '';
-  render();persist();
-  if (model.preferences.reference_open && previousContext===context && previousChar!==model.selected_char) revealReference();
+  render();
+  if (model.preferences.reference_open && (model.selected_box || previousContext===context && previousChar!==model.selected_char)) revealReference();
+  persist();
   if (issues.length) host.querySelector('dialog').showModal();
   if (queuedAction) {const next=queuedAction;queuedAction=null;checkpoint(next.action,next.extra);}
   else if ((model.version || 0)>(incoming.version || 0)) schedule();

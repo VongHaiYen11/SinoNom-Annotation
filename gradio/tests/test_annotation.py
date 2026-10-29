@@ -369,6 +369,21 @@ class Invariants(unittest.TestCase):
             candidate=state();uid=next(iter(candidate['regions']))
             with self.assertRaises(ValueError):update_bbox(candidate,uid,coords)
 
+    def test_suggest_crop_encloses_all_boxes_without_rounding_or_scaling(self):
+        from crop.crop import suggest_crop
+        boxes = [{'bbox': [18.5, 200, 300, 5100]},
+                 {'bbox': [100, 7.25, 4900, 400]},
+                 {'bbox': [200, 300, 500, 600]}]
+        before = deepcopy(boxes)
+        self.assertEqual(suggest_crop(boxes, [5000, 6000]), [18.5, 7.25, 4900, 5100])
+        self.assertEqual(boxes, before)
+        self.assertEqual(suggest_crop([{'bbox': [0, 0, 5000, 6000]}], [5000, 6000]),
+                         [0, 0, 5000, 6000])
+        with self.assertRaises(ValueError):
+            suggest_crop([], [5000, 6000])
+        with self.assertRaises(ValueError):
+            suggest_crop([{'bbox': [-1, 0, 20, 30]}], [5000, 6000])
+
     def test_crop_dimensions_are_limited_to_4096(self):
         self.assertEqual(default_crop([5000, 3000]), [0, 0, 5000, 3000])
         valid = crop_document('scan.png', [500, 600, 4596, 4696], [6000, 6000])

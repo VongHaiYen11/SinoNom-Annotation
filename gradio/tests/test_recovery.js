@@ -17,7 +17,7 @@ function mount(metadata = meta, blocked = false) {
     window: {addEventListener: () => {}},
     document: {querySelector: selector => selector === '#draft-recovery-status' ? status : nodes.get(selector),
       addEventListener: (type, handler) => {listeners[type] = handler;}},
-    AbortController, queueMicrotask: fn => fn(), requestAnimationFrame: () => {},
+    AbortController, structuredClone, queueMicrotask: fn => fn(), requestAnimationFrame: () => {},
     props: {value: metadata}, watch: () => {},
   };
   vm.createContext(context);
@@ -67,4 +67,23 @@ page = mount();
 assert.match(page.status.textContent, /unavailable/);
 page = mount(meta, true);
 assert.match(page.status.textContent, /unavailable/);
-console.log('PASS: reload, unfinished labels/content, generations, per-image drafts and storage failures');
+// Imports replace stale generations, but must not replace newer edits on reload.
+storage.clear();
+const importedMeta={...meta, generation:'imported',step:2,defaultSection:'[0]'};
+const importedRecord={metadata:importedMeta,section:'[0]',typing:{'[0]':'imported text'}};
+const imported={...importedMeta,progressImport:{id:'import-1',records:{
+  [JSON.stringify([meta.application,meta.tab,meta.image,2])]:importedRecord}}};
+page=mount(imported);
+assert.equal(page.run('draftRecovery.read(props.value).typing["[0]"]'),'imported text');
+page.run('draftRecovery.write(props.value,{typing:{"[0]":"edited after import"}})');
+page=mount(imported);
+assert.equal(page.run('draftRecovery.read(props.value).typing["[0]"]'),'edited after import');
+page.context.window.vietnamicaWorkspace={active:()=>true,snapshot:()=>({boxes:{latest:{bbox:[1,2,3,4]}}})};
+page.nodes.set('#content-value input, #content-value textarea',{value:'still typing'});
+const exported=page.run('draftRecovery.exportProgress()');
+const latest=Object.values(exported.drafts)[0];
+assert.equal(latest.typing['[0]'],'still typing');
+assert.deepEqual(Array.from(latest.workspace.boxes.latest.bbox),[1,2,3,4]);
+page=mount({...imported,progressImport:{id:'import-2',records:imported.progressImport.records}});
+assert.equal(page.run('draftRecovery.read(props.value).typing["[0]"]'),'imported text');
+console.log('PASS: portable import/export, post-import reload, reload, unfinished labels/content, generations, per-image drafts and storage failures');

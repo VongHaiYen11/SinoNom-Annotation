@@ -112,7 +112,16 @@ window.addEventListener('keydown',event=>{
 },{signal:controller.signal});
 window.addEventListener('keyup',event=>{if(event.code==='Space')space=false;},{signal:controller.signal});
 window.addEventListener('pagehide',persist,{signal:controller.signal});
-window.vietnamicaViewer={active:editable,snapshot:()=>{
+window.vietnamicaViewer={active:editable,
+progressSnapshot:()=>({crop:[...crop],zoom,draft}),
+restoreProgress:saved=>{
+  if(!editable() || !valid(saved?.crop))return false;
+  crop=[...saved.crop];zoom=saved.zoom;draft=saved.draft ?? null;
+  gesture=null;draw();setCoordinates();persist();return true;
+},setCrop:box=>{
+  if(!editable() || !valid(box))return false;
+  crop=[...box];draft=null;gesture=null;draw();setCoordinates();persist();return true;
+},snapshot:()=>{
   if(draft!==null){try{return {crop:JSON.parse(draft)};}catch(_){return {crop:draft};}}
   return {crop:[...crop]};
 }};
