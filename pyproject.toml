@@ -1,7 +1,7 @@
 [project]
 name = "vietnamica-alignment"
 version = "0.1.0"
-description = "Add your description here"
+description = "Tools for extracting and annotating Hán–Nôm inscriptions"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
