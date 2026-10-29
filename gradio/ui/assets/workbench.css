@@ -933,21 +933,39 @@ button#next-button::after { transform: rotate(180deg); }
 
 /* Font preparation owns a native modal, independent of queued annotation actions. */
 #font-loading {
-  width: min(560px, calc(100vw - 48px));
-  max-height: calc(100dvh - 48px);
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10002;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(52dvh, calc(100dvh - 32px));
+  margin: 0;
   overflow: auto;
   box-sizing: border-box;
-  padding: 24px;
+  padding: 14px;
   border: 1px solid #5d6168;
   border-radius: 12px;
   background: #17191c;
   color: #f4f4f5;
-  font: 14px/1.6 Arial, sans-serif;
+  font: 13px/1.4 Arial, sans-serif;
+  box-shadow: 0 12px 36px rgb(0 0 0 / 48%);
 }
-#font-loading::backdrop { background: rgb(0 0 0 / 65%); }
-#font-loading h2 { margin: 0; font-size: 20px; }
+#font-loading h2 { margin: 0 0 5px; font-size: 16px; }
+#font-loading p { margin: 5px 0; }
+#font-loading.font-error { padding: 11px 12px; }
+#font-loading.font-error h2 { font-size: 14px; }
+#font-loading.font-error [data-font-total] { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+#font-loading.font-error p { margin: 3px 0; }
+#font-loading.font-error details { margin-block: 4px 6px; }
 #font-loading progress { width: 100%; accent-color: #ff7a1a; }
-#font-loading ul { padding-left: 20px; overflow-wrap: anywhere; }
-#font-loading [data-font-actions]:not([hidden]) { display: flex; flex-wrap: wrap; gap: 12px; }
-#font-loading button { padding: 10px 14px; border: 1px solid #777; border-radius: 6px; background: #303238; color: #fff; cursor: pointer; font: inherit; }
+#font-loading ul { max-height: 16vh; padding-left: 20px; overflow: auto; overflow-wrap: anywhere; }
+#font-loading details { margin-block:6px 8px; }
+#font-loading summary { width:fit-content; color:#d4d4d8; cursor:pointer; }
+#font-loading [data-font-actions]:not([hidden]) { display: flex; flex-wrap: wrap; gap: 7px; }
+#font-loading [hidden] { display: none !important; }
+#font-loading button { padding: 7px 9px; border: 1px solid #777; border-radius: 6px; background: #303238; color: #fff; cursor: pointer; font: inherit; }
 #font-loading button:focus-visible { outline: 3px solid #ff7a1a; outline-offset: 3px; }
+
+@media (max-width: 600px) {
+  #font-loading { right: 12px; bottom: 12px; width: min(360px, calc(100vw - 24px)); padding: 12px; }
+}

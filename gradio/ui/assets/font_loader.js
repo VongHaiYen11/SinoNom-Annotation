@@ -3,75 +3,83 @@ function startFontLoader(manifest, unicodeRange) {
     if (window.vietnamicaFontLoader) return;
     const fonts = manifest.map(spec => ({...spec, received: 0, total: spec.size || null,
         status: 'loading', face: null, error: null}));
-    const dialog = document.createElement('dialog');
+    const dialog = document.createElement('section');
     dialog.id = 'font-loading';
+    dialog.setAttribute('role', 'region');
     dialog.setAttribute('aria-labelledby', 'font-loading-title');
     dialog.setAttribute('aria-describedby', 'font-loading-help');
-    dialog.innerHTML = `<h2 id="font-loading-title" tabindex="-1">Đang tải font Hán/Nôm</h2>
-        <p id="font-loading-help">Đang chuẩn bị font cho ký tự Hán/Nôm.</p>
+    dialog.hidden = true;
+    dialog.innerHTML = `<h2 id="font-loading-title">Preparing character fonts</h2>
+        <p id="font-loading-help">Fonts are loading in the background. You can start working now.</p>
         <p data-font-total role="status" aria-live="polite"></p>
-        <progress aria-label="Dung lượng tải font"></progress>
-        <ul data-font-list></ul>
-        <div data-font-actions hidden><button type="button" data-font-wait>Tiếp tục chờ</button>
-        <button type="button" data-font-work>Làm việc với font đã có</button></div>`;
+        <progress aria-label="Font download progress"></progress>
+        <details data-font-details><summary data-font-summary>Font details</summary><ul data-font-list></ul></details>
+        <div data-font-actions><button type="button" data-font-wait hidden>Retry failed fonts</button>
+        <button type="button" data-font-work>Continue working</button></div>`;
     document.body.appendChild(dialog);
     const find = selector => dialog.querySelector(selector);
     const actions = find('[data-font-actions]');
     const wait = find('[data-font-wait]');
     const work = find('[data-font-work]');
     const help = find('#font-loading-help');
-    const title = find('#font-loading-title');
+    const detailSummary = find('[data-font-summary]');
     const progress = find('progress');
     const rows = fonts.map(font => {
         const row = document.createElement('li');
         find('[data-font-list]').appendChild(row);
         return row;
     });
-    const labels = {loading: 'Đang tải', processing: 'Đang xử lý', ready: 'Sẵn sàng', error: 'Lỗi'};
+    const labels = {loading: 'Loading', processing: 'Preparing', ready: 'Ready', error: 'Error'};
     const mb = bytes => `${(bytes / 1e6).toFixed(2)} MB`;
     const amount = (received, total) => total
         ? `${mb(received)} / ${mb(total)} · ${Math.min(100, Math.floor(received / total * 100))}%`
         : mb(received);
-    let timer, background = false, previousFocus = document.activeElement;
+    let background = false;
     const pending = () => fonts.some(font => ['loading', 'processing'].includes(font.status));
     function close() {
-        if (!dialog.open) return;
-        dialog.close();
-        if (previousFocus?.isConnected) previousFocus.focus();
+        dialog.hidden = true;
     }
     function choose() {
-        if (background) return;
+        background = false;
+        dialog.hidden = false;
         actions.hidden = false;
-        help.textContent = 'Một số ký tự có thể chưa hiển thị đủ. Bạn có thể chờ hoặc làm việc trong khi font tiếp tục tải ngầm.';
-        wait.textContent = pending() ? 'Tiếp tục chờ' : 'Thử lại font lỗi';
-        if (!dialog.open) {
-            previousFocus = document.activeElement;
-            dialog.showModal();
-        }
-        if (document.activeElement === title) wait.focus();
+        wait.hidden = false;
+        help.textContent = 'One or more fonts could not be loaded.';
+        wait.textContent = pending() ? 'Keep waiting' : 'Retry failed fonts';
+        work.textContent = pending() ? 'Continue working' : 'Use available fonts';
     }
     function render() {
         const total = fonts.every(font => font.total) ? fonts.reduce((n, f) => n + f.total, 0) : null;
         const received = fonts.reduce((n, f) => n + f.received, 0);
-        find('[data-font-total]').textContent = amount(received, total);
+        const errorCount=fonts.filter(font=>font.status==='error').length;
+        const readyCount=fonts.filter(font=>font.status==='ready').length;
+        const failureText=errorCount?`, ${errorCount} error${errorCount===1?'':'s'}`:'';
+        const status=`${amount(received,total)} · ${readyCount}/${fonts.length} fonts ready${failureText}`;
+        find('#font-loading-title').textContent=errorCount?`Font issue · ${readyCount}/${fonts.length} ready`:'Preparing character fonts';
+        dialog.classList.toggle('font-error', !pending() && errorCount > 0);
+        find('[data-font-total]').textContent = status;
+        detailSummary.textContent=errorCount?`${errorCount} font error${errorCount===1?'':'s'} · View details`:`Font details · ${fonts.length} fonts`;
         progress.max = total || 1;
         if (total) progress.value = Math.min(received, total);
         else progress.removeAttribute('value');
+        progress.hidden = !pending();
         fonts.forEach((font, i) => {
             rows[i].textContent = `${font.name}: ${amount(font.received, font.total)} — ${labels[font.status]}`;
             rows[i].title = font.error || '';
         });
         if (fonts.every(font => font.status === 'ready')) {
-            clearTimeout(timer);
             close();
         } else if (!pending()) {
-            clearTimeout(timer);
             choose();
-        } else if (!actions.hidden) wait.textContent = 'Tiếp tục chờ';
-    }
-    function armTimer() {
-        clearTimeout(timer);
-        timer = setTimeout(choose, 300000);
+        } else if (background) {
+            dialog.hidden = true;
+        } else {
+            dialog.hidden = false;
+            actions.hidden = false;
+            wait.hidden = true;
+            work.textContent = 'Continue working';
+            help.textContent = 'Fonts are loading in the background. You can start working now.';
+        }
     }
     async function load(font) {
         font.status = 'loading'; font.received = 0; font.total = font.size || null; font.error = null;
@@ -117,9 +125,7 @@ function startFontLoader(manifest, unicodeRange) {
     }
     wait.addEventListener('click', () => {
         actions.hidden = true;
-        help.textContent = 'Đang chuẩn bị font cho ký tự Hán/Nôm.';
-        title.focus();
-        armTimer();
+        help.textContent = 'Retrying failed fonts…';
         // Mark every failed font pending before starting retries, so fast failures do not
         // reopen the choice while other retries are still being scheduled.
         const failed = fonts.filter(font => font.status === 'error');
@@ -128,12 +134,9 @@ function startFontLoader(manifest, unicodeRange) {
         render();
     });
     work.addEventListener('click', () => {
-        background = true; clearTimeout(timer); close();
+        background = true; close();
     });
-    // Native modal dialog supplies focus containment and makes the page inert.
-    // Escape and backdrop clicks must not dismiss this explicit choice.
-    dialog.addEventListener('cancel', event => event.preventDefault());
     window.vietnamicaFontLoader = {fonts};
-    dialog.showModal(); title.focus(); armTimer(); render();
+    render();
     fonts.forEach(load);
 }
