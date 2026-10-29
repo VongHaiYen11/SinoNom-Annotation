@@ -45,6 +45,10 @@ Input PDFs, inscription images, source JSON, matching reference fonts, and pretr
 
 **Download All** exports saved results as a ZIP archive.
 
+Font preparation displays downloaded MB and byte percentages for each bundled font and the combined download. A font becomes ready only after the browser parses it. Unknown totals display received MB without a percentage. After five minutes, choose **Tiếp tục chờ** to wait another five minutes (retrying failed fonts), or **Làm việc với font đã có** to continue with available fonts while downloads finish in the background. Some characters may remain unavailable until their font is ready. Finished downloads with errors offer **Thử lại font lỗi** immediately. Font preparation has its own dialog and does not dismiss annotation task loading, reload the page, or restart the server.
+
+To verify font preparation locally, run `node gradio/tests/test_font_loader.js`. For browser acceptance, use network throttling with a cold cache: check per-font and total progress, leave a request pending for five minutes, test both choices and keyboard focus, then restore the connection and confirm glyphs update automatically. Block a font request to check immediate retry once the other requests finish. Repeat with a warm cache and confirm each font has only one request and annotation loading is unaffected.
+
 ## Getting Started
 
 ### Prerequisites

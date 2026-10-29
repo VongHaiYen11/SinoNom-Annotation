@@ -910,3 +910,24 @@ button#next-button::after { transform: rotate(180deg); }
 
 #workspace:has(.u-workbench) { grid-template-columns: minmax(0, 1fr); }
 #workspace:has(.u-workbench) #main-workspace { grid-column: 1 / -1; }
+
+/* Font preparation owns a native modal, independent of queued annotation actions. */
+#font-loading {
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 24px;
+  border: 1px solid #5d6168;
+  border-radius: 12px;
+  background: #17191c;
+  color: #f4f4f5;
+  font: 14px/1.6 Arial, sans-serif;
+}
+#font-loading::backdrop { background: rgb(0 0 0 / 65%); }
+#font-loading h2 { margin: 0; font-size: 20px; }
+#font-loading progress { width: 100%; accent-color: #ff7a1a; }
+#font-loading ul { padding-left: 20px; overflow-wrap: anywhere; }
+#font-loading [data-font-actions]:not([hidden]) { display: flex; flex-wrap: wrap; gap: 12px; }
+#font-loading button { padding: 10px 14px; border: 1px solid #777; border-radius: 6px; background: #303238; color: #fff; cursor: pointer; font: inherit; }
+#font-loading button:focus-visible { outline: 3px solid #ff7a1a; outline-offset: 3px; }

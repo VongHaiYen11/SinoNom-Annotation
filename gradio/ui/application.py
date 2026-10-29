@@ -17,7 +17,7 @@ from annotation.text_extraction import content_fields
 from annotation.export import collect_annotations, collect_content_documents, collect_source_mismatches, save_export_archive
 from .editor import snapshot, SCRIPT, CSS, RECOVERY_SCRIPT, WORKSPACE_SCRIPT, WORKSPACE_CSS
 from .presentation import app_identity, workflow_progress, panel_heading, footer, SECTION_LABELS
-from .fonts import FONT_FILES
+from .fonts import FONT_FILES, FONT_PRELOAD_JS
 
 log = logging.getLogger(__name__)
 
@@ -35,24 +35,6 @@ def loading_markup(label='Loading…', visible=False):
 
 
 LOADING_HIDDEN = loading_markup()
-FONT_PRELOAD_JS = f"""() => {{
-    if (window.__vietnamicaFontsReady) return;
-    window.__vietnamicaFontsReady = true;
-    const overlay = document.getElementById('global-loading');
-    const families = {json.dumps(list(FONT_FILES), ensure_ascii=False)};
-    const sample = '漢字𠀀';
-    const specs = families.map(family => `20px "${{family}}"`);
-    if (specs.every(spec => document.fonts.check(spec, sample))) {{
-        overlay?.classList.remove('is-visible');
-        return;
-    }}
-    const label = overlay?.querySelector('span:not(.global-loading-spinner)');
-    if (label) label.textContent = 'Loading Hán/Nôm fonts…';
-    overlay?.classList.add('is-visible');
-    Promise.all(specs.map(spec => document.fonts.load(spec, sample)))
-        .catch(() => {{}}) // Continue with the browser's normal fallback if a font fails.
-        .finally(() => overlay?.classList.remove('is-visible'));
-}}"""
 SHOW_LOADING_JS = """(...args) => {
     const el = document.getElementById('global-loading');
     const image = document.querySelector('#current-image-name')?.textContent?.trim() || 'picker';

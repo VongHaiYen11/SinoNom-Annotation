@@ -13,11 +13,14 @@ import gradio as gr
 
 class GradioCallbacks(unittest.TestCase):
     def test_fonts_preload_pmingliu(self):
-        from ui.fonts import FONT_CSS, FONT_FILES, DEFAULT_FONT_STACK
+        from ui.fonts import FONT_CSS, FONT_FILES, DEFAULT_FONT_STACK, font_manifest
         from app import FONT_PRELOAD_JS
         for family in ('PMingLiU', 'PMingLiU-ExtB'):
             self.assertTrue(FONT_FILES[family].is_file())
-            self.assertIn(f'font-family: "{family}"', FONT_CSS)
+            self.assertNotIn("@font-face", FONT_CSS)
+            spec = next(item for item in font_manifest() if item["name"] == family)
+            self.assertEqual(spec["size"], FONT_FILES[family].stat().st_size)
+            self.assertIn("gradio_api/file=", spec["url"])
             self.assertIn(f'"{family}"', DEFAULT_FONT_STACK)
             self.assertIn(family, FONT_PRELOAD_JS)
 
