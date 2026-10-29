@@ -71,7 +71,7 @@ def resolve_app_paths(options):
 
 def parser():
     p=argparse.ArgumentParser(description='Vietnamica character annotation workflow')
-    p.add_argument('--config', default=str(REPO_ROOT / 'configs/tap_1.json'),
+    p.add_argument('--config', default=str(REPO_ROOT / 'helpers/configs/tap_1.json'),
                    help='Config used for omitted image/source/output paths.')
     p.add_argument('--image-dir', default=None,
                    help='Override config gradio.image_dir.')

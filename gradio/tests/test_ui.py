@@ -12,6 +12,18 @@ import gradio as gr
 
 
 class GradioCallbacks(unittest.TestCase):
+    def test_bundled_configs_resolve_relocated_data_paths(self):
+        root = Path(__file__).resolve().parents[2]
+        defaults = resolve_app_paths(parser().parse_args([]))
+        self.assertEqual(Path(defaults.config), root / 'helpers/configs/tap_1.json')
+        self.assertEqual(Path(defaults.source_json), root / 'outputs/extraction/tap_1.json')
+        self.assertEqual(Path(defaults.output_dir), root / 'outputs/annotations')
+        demo = resolve_app_paths(parser().parse_args([
+            '--config', str(root / 'helpers/configs/demo.json')]))
+        self.assertEqual(Path(demo.image_dir), root / 'input/demo')
+        self.assertEqual(Path(demo.source_json), root / 'input/demo/student_113.json')
+        self.assertEqual(Path(demo.output_dir), root / 'outputs/demo')
+
     def test_fonts_preload_pmingliu(self):
         from ui.fonts import FONT_CSS, FONT_FILES, DEFAULT_FONT_STACK, font_manifest
         from app import FONT_PRELOAD_JS
