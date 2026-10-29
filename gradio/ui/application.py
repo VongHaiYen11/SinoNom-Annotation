@@ -5,6 +5,7 @@ import json
 import logging
 from collections import namedtuple
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -235,7 +236,7 @@ def build_app(options):
         Output=namedtuple('AnnotationUI',components)
         outputs=list(components.values())
 
-        def render(ctx,msg=''):
+        def render(ctx,msg='',progress_seed=None):
             s=ctx['active'];step=s['current_step'];has=bool(s.get('image'))
             if msg: gr.Warning(str(msg))
             fields=content_fields(s['draft_content'],s['code'],engine.content_titles,engine.metadata_fields) if has else []
@@ -264,7 +265,7 @@ def build_app(options):
                 mismatch_preview_group=gr.update(visible=step==7 and mismatch),save_all=gr.update(interactive=has_saved()),
                 image_choice=gr.update(value=s.get('image_path') if step==1 else None),
                 recovery_notice=dict(metadata,defaultSection=chosen,
-                    **({'progressImport':ctx['_progress_seed']} if ctx.get('_progress_seed') else {})) if metadata else None,
+                    **({'progressImport':progress_seed} if progress_seed else {})) if metadata else None,
                 progress_download=gr.update(interactive=has or bool(ctx.get('drafts')) or has_saved()),
                 workspace_board=gr.update(visible=step==3,value=dict(step=step,model=s.get('workspace'),image=s.get('image'),
                     image_url=s.get('image_url'),size=s.get('image_size'),recovery=metadata,
@@ -403,7 +404,9 @@ def build_app(options):
                 if not isinstance(request,dict): request={}
             except ValueError: request={}
             ctx=store.restore(request.get('tab'),initial)
-            return restore_browser_fields(render(ctx),ctx,request)
+            seed=ctx.get('_progress_seed')
+            if seed and request.get('progressImportId')==seed['id']: seed=None
+            return restore_browser_fields(render(ctx,progress_seed=seed),ctx,request)
 
         def save_folder():
             try:
@@ -432,7 +435,8 @@ def build_app(options):
                 if not path: return None,'',gr.update(visible=False)
                 data=progress_backup.read(path)
                 summary=progress_backup.summary(progress_backup.prepare(data))
-                rows=[('Thời điểm backup',summary['created_at']),
+                local_time=datetime.fromisoformat(summary['created_at']).astimezone(timezone(timedelta(hours=7)))
+                rows=[('Thời điểm backup',local_time.strftime('%d/%m/%Y %H:%M:%S (UTC+07)')),
                       ('Ảnh đang làm',summary['active_image'] or 'Không có'),
                       ('Bước',summary['step'] or 'Chọn ảnh'),
                       ('Bản nháp',summary['drafts']),('Kết quả đã lưu',summary['saved'])]
@@ -465,7 +469,7 @@ def build_app(options):
                 candidate['_progress_seed']=dict(id=uuid4().hex,records=records)
                 # All validation, generation allocation and browser seed construction precede writes.
                 progress_backup.commit(prepared)
-                result=restore_browser_fields(render(candidate),candidate,dict(drafts=records))
+                result=restore_browser_fields(render(candidate,progress_seed=candidate['_progress_seed']),candidate,dict(drafts=records))
                 return tuple(result)+(None,'',gr.update(visible=False),None)
             except (ValueError,OSError,KeyError,TypeError,AttributeError,OverflowError) as exc:
                 gr.Warning(f'Không thể phục hồi tiến trình: {exc}')
@@ -578,7 +582,8 @@ def build_app(options):
             let drafts={};
             try { drafts=JSON.parse(sessionStorage.getItem('vietnamica-drafts-v1') || '{}'); }
             catch (_) { window.vietnamicaStorageError=true; }
-            return [JSON.stringify({tab,drafts})];
+            let progressImportId;try {progressImportId=sessionStorage.getItem('vietnamica-progress-import-id');} catch (_) {}
+            return [JSON.stringify({tab,drafts,progressImportId})];
         }'''
         restored=app.load(restore_session,inputs=[recovery_request],js=bootstrap_js,**event_args)
         restored.then(fn=None,inputs=None,outputs=None,js=FONT_PRELOAD_JS,show_progress='hidden')

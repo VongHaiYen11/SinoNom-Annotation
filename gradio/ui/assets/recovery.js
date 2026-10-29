@@ -33,7 +33,11 @@ const draftRecovery = (() => {
   };
   const write = (meta, update) => {
     if (!meta?.image || restoring) return;
-    records[recordKey(meta)] = {...(read(meta) || {}), metadata: meta, ...update};
+    const {version, application, tab, image, step, generation, discardImage} = meta;
+    // Recovery instructions can contain every imported draft; never embed those
+    // instructions recursively inside each browser record.
+    const identity = {version, application, tab, image, step, generation, discardImage};
+    records[recordKey(meta)] = {...(read(meta) || {}), metadata: identity, ...update};
     persist();
   };
   const uiSelectors = ['content-value', 'content-draft-bridge', 'crop-coordinates'];

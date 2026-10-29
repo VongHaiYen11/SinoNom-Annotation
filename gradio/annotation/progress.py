@@ -305,7 +305,8 @@ class ProgressBackup:
             raise ValueError('Hãy chọn file tiến trình Vietnamica, không phải JSON annotation.')
         if type(data.get('version')) is not int or data['version'] != VERSION:
             raise ValueError('Phiên bản file tiến trình không được hỗ trợ.')
-        datetime.fromisoformat(data['created_at'])
+        if datetime.fromisoformat(data['created_at']).tzinfo is None:
+            raise ValueError('Thời điểm backup phải có múi giờ.')
         if data['schema'] != schema(self.engine):
             raise ValueError('Cấu hình mục nội dung/annotation không tương thích.')
         identities = data['dataset']
@@ -394,8 +395,12 @@ class ProgressBackup:
             registry = read_json(registry_path) if registry_path.exists() else []
             if not isinstance(registry, list):
                 raise ValueError('Danh sách nội dung đã lưu không hợp lệ.')
+            registry_names = set()
             for doc in registry:
                 validate_content_document(doc, doc.get('image', ''), None)
+                if doc['image'] in registry_names:
+                    raise ValueError('Danh sách nội dung đã lưu bị trùng ảnh.')
+                registry_names.add(doc['image'])
             replacing = {item['image'] for item in prepared['saved']}
             registry = [doc for doc in registry if doc['image'] not in replacing]
             for item in prepared['saved']:
